@@ -1,9 +1,11 @@
 name: Deploy to GitHub Pages
 
 # Requires Settings -> Pages -> Build and deployment -> Source: "GitHub Actions".
+# The github-pages environment only accepts deployments from the gh-pages
+# branch, so deploys run from there. To ship: git push origin main:gh-pages
 on:
   push:
-    branches: [main]
+    branches: [gh-pages]
   workflow_dispatch:
 
 permissions:
