@@ -1,0 +1,15 @@
+{
+  "name": "Learnæway — Path to Trading Course",
+  "short_name": "Learnæway",
+  "description": "The education arm of the Æway ecosystem. Learn the pillars of wealth and your path to becoming a trader.",
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#050614",
+  "theme_color": "#050614",
+  "icons": [
+    { "src": "assets/pwa/icon-192.png", "sizes": "192x192", "type": "image/png", "purpose": "any" },
+    { "src": "assets/pwa/icon-512.png", "sizes": "512x512", "type": "image/png", "purpose": "any maskable" }
+  ]
+}
