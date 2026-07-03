@@ -337,6 +337,370 @@ window.COURSE_DATA = {
      ]
     },
     {
+     "id": "financial-roadmap-outline",
+     "title": "Financial Roadmap Outline",
+     "fullTitle": "Building Wealth: Your Financial Roadmap",
+     "subsections": [
+      {
+       "id": "financial-roadmap-outline--overview-0",
+       "title": "Overview",
+       "screens": [
+        {
+         "id": "financial-roadmap-outline--overview-0--1",
+         "headline": "Financial Roadmap Outline",
+         "subhead": "",
+         "body": [
+          "Learning to trade is only one piece of the puzzle.",
+          "The ultimate goal isn't to become a trader it's to become financially free.",
+          "Trading should be viewed as one tool that helps generate income, not your entire financial plan. Building long-term wealth requires multiple income streams, smart financial decisions, protecting your assets, and investing consistently over time.",
+          "The roadmap below provides a practical path that anyone can follow regardless of where they're starting."
+         ],
+         "audio": "financial-roadmap-outline/1.mp3"
+        }
+       ]
+      },
+      {
+       "id": "financial-roadmap-outline--step-1-develop-a-skill-that-pays-1",
+       "title": "Step 1 — Develop a Skill That Pays",
+       "screens": [
+        {
+         "id": "financial-roadmap-outline--step-1-develop-a-skill-that-pays-1--1",
+         "headline": "Financial Roadmap Outline",
+         "subhead": "Step 1 — Develop a Skill That Pays",
+         "body": [
+          "Your first investment should always be yourself. Develop a skill that someone is willing to pay you for.",
+          "Examples include:",
+          "Barbering",
+          "Photography",
+          "Sales",
+          "Coding",
+          "Marketing",
+          "Graphic Design",
+          "Electrician",
+          "Plumbing",
+          "HVAC",
+          "Real Estate",
+          "Insurance",
+          "Personal Training",
+          "Content Creation",
+          "The goal is to create reliable income."
+         ],
+         "audio": "financial-roadmap-outline/1.mp3"
+        }
+       ]
+      },
+      {
+       "id": "financial-roadmap-outline--step-2-secure-stable-income-2",
+       "title": "Step 2 — Secure Stable Income",
+       "screens": [
+        {
+         "id": "financial-roadmap-outline--step-2-secure-stable-income-2--1",
+         "headline": "Financial Roadmap Outline",
+         "subhead": "Step 2 — Secure Stable Income",
+         "body": [
+          "Find a stable job or career that provides predictable income. Having consistent income removes emotional pressure from trading and allows you to focus on improving your skills instead of trying to survive. Never depend on trading to pay your bills while you're still learning."
+         ],
+         "audio": "financial-roadmap-outline/1.mp3"
+        }
+       ]
+      },
+      {
+       "id": "financial-roadmap-outline--step-3-build-a-side-business-3",
+       "title": "Step 3 — Build a Side Business",
+       "screens": [
+        {
+         "id": "financial-roadmap-outline--step-3-build-a-side-business-3--1",
+         "headline": "Financial Roadmap Outline",
+         "subhead": "Step 3 — Build a Side Business",
+         "body": [
+          "Once your income is stable, begin creating another income stream.",
+          "Examples:",
+          "Service business",
+          "Online business",
+          "Digital products",
+          "Consulting",
+          "E-commerce",
+          "Rental equipment",
+          "YouTube",
+          "Social media",
+          "AI automation",
+          "Freelancing",
+          "The goal is to make money while you're not actively working."
+         ],
+         "audio": "financial-roadmap-outline/1.mp3"
+        }
+       ]
+      },
+      {
+       "id": "financial-roadmap-outline--step-4-make-it-official-4",
+       "title": "Step 4 — Make It Official",
+       "screens": [
+        {
+         "id": "financial-roadmap-outline--step-4-make-it-official-4--1",
+         "headline": "Financial Roadmap Outline",
+         "subhead": "Step 4 — Make It Official",
+         "body": [
+          "Treat your business like a real business.",
+          "Register your LLC",
+          "Open a business bank account",
+          "Separate business and personal finances",
+          "Track expenses",
+          "Build business credit"
+         ],
+         "audio": "financial-roadmap-outline/1.mp3"
+        }
+       ]
+      },
+      {
+       "id": "financial-roadmap-outline--step-5-build-an-emergency-fund-5",
+       "title": "Step 5 — Build an Emergency Fund",
+       "screens": [
+        {
+         "id": "financial-roadmap-outline--step-5-build-an-emergency-fund-5--1",
+         "headline": "Financial Roadmap Outline",
+         "subhead": "Step 5 — Build an Emergency Fund",
+         "body": [
+          "Save consistently. Even if it's only $5, $10, or $20 per day. Your first goal should be approximately $3,000-$5,000 in emergency savings. This money should never be used for trading."
+         ],
+         "audio": "financial-roadmap-outline/1.mp3"
+        }
+       ]
+      },
+      {
+       "id": "financial-roadmap-outline--step-6-protect-yourself-6",
+       "title": "Step 6 — Protect Yourself",
+       "screens": [
+        {
+         "id": "financial-roadmap-outline--step-6-protect-yourself-6--1",
+         "headline": "Financial Roadmap Outline",
+         "subhead": "Step 6 — Protect Yourself",
+         "body": [
+          "Your greatest asset is YOU. Before building wealth, protect it.",
+          "Health Insurance",
+          "Life Insurance",
+          "Disability Insurance",
+          "Emergency Savings",
+          "The younger and healthier you are, the cheaper insurance generally is. Protect your future before chasing wealth."
+         ],
+         "audio": "financial-roadmap-outline/1.mp3"
+        }
+       ]
+      },
+      {
+       "id": "financial-roadmap-outline--step-7-start-investing-early-7",
+       "title": "Step 7 — Start Investing Early",
+       "screens": [
+        {
+         "id": "financial-roadmap-outline--step-7-start-investing-early-7--1",
+         "headline": "Financial Roadmap Outline",
+         "subhead": "Step 7 — Start Investing Early",
+         "body": [
+          "Begin investing as early as possible.",
+          "Priority:",
+          "Roth IRA",
+          "401(k) (if available)",
+          "Index Funds",
+          "ETFs",
+          "Allow compound interest to work for decades. Time is one of your greatest advantages."
+         ],
+         "audio": "financial-roadmap-outline/1.mp3"
+        }
+       ]
+      },
+      {
+       "id": "financial-roadmap-outline--step-8-purchase-assets-8",
+       "title": "Step 8 — Purchase Assets",
+       "screens": [
+        {
+         "id": "financial-roadmap-outline--step-8-purchase-assets-8--1",
+         "headline": "Financial Roadmap Outline",
+         "subhead": "Step 8 — Purchase Assets",
+         "body": [
+          "Instead of buying liabilities first, buy assets.",
+          "Examples:",
+          "Duplex",
+          "Triplex",
+          "Condo",
+          "Land",
+          "Rental Property",
+          "Let your money begin producing more money."
+         ],
+         "audio": "financial-roadmap-outline/1.mp3"
+        }
+       ]
+      },
+      {
+       "id": "financial-roadmap-outline--step-9-learn-the-markets-9",
+       "title": "Step 9 — Learn the Markets",
+       "screens": [
+        {
+         "id": "financial-roadmap-outline--step-9-learn-the-markets-9--1",
+         "headline": "Financial Roadmap Outline",
+         "subhead": "Step 9 — Learn the Markets",
+         "body": [
+          "Now begin developing financial knowledge.",
+          "Study:",
+          "Technical Analysis",
+          "Market Structure",
+          "Risk Management",
+          "Options",
+          "Stocks",
+          "Futures",
+          "Become financially literate."
+         ],
+         "audio": "financial-roadmap-outline/1.mp3"
+        }
+       ]
+      },
+      {
+       "id": "financial-roadmap-outline--step-10-build-long-term-investments-10",
+       "title": "Step 10 — Build Long-Term Investments",
+       "screens": [
+        {
+         "id": "financial-roadmap-outline--step-10-build-long-term-investments-10--1",
+         "headline": "Financial Roadmap Outline",
+         "subhead": "Step 10 — Build Long-Term Investments",
+         "body": [
+          "Learn to own assets.",
+          "Examples:",
+          "ETFs",
+          "Index Funds",
+          "Dividend Stocks",
+          "Selling Covered Calls",
+          "Cash Secured Puts",
+          "Allow your investments to begin producing monthly income."
+         ],
+         "audio": "financial-roadmap-outline/1.mp3"
+        }
+       ]
+      },
+      {
+       "id": "financial-roadmap-outline--step-11-learn-futures-trading-11",
+       "title": "Step 11 — Learn Futures Trading",
+       "screens": [
+        {
+         "id": "financial-roadmap-outline--step-11-learn-futures-trading-11--1",
+         "headline": "Financial Roadmap Outline",
+         "subhead": "Step 11 — Learn Futures Trading",
+         "body": [
+          "Once you have consistency, practice using a simulated account. Then pursue a Prop Firm Evaluation.",
+          "Recommended:",
+          "$25,000 Account",
+          "$50,000 Account",
+          "Focus on Micro E-mini S&P 500 (MES). Learn consistency before increasing size."
+         ],
+         "audio": "financial-roadmap-outline/1.mp3"
+        }
+       ]
+      },
+      {
+       "id": "financial-roadmap-outline--step-12-pay-yourself-12",
+       "title": "Step 12 — Pay Yourself",
+       "screens": [
+        {
+         "id": "financial-roadmap-outline--step-12-pay-yourself-12--1",
+         "headline": "Financial Roadmap Outline",
+         "subhead": "Step 12 — Pay Yourself",
+         "body": [
+          "After becoming funded, set income goals. Example: $150-$400/day. Withdraw profits. Do not let large balances accumulate unnecessarily. Pay yourself."
+         ],
+         "audio": "financial-roadmap-outline/1.mp3"
+        }
+       ]
+      },
+      {
+       "id": "financial-roadmap-outline--step-13-scale-slowly-13",
+       "title": "Step 13 — Scale Slowly",
+       "screens": [
+        {
+         "id": "financial-roadmap-outline--step-13-scale-slowly-13--1",
+         "headline": "Financial Roadmap Outline",
+         "subhead": "Step 13 — Scale Slowly",
+         "body": [
+          "Instead of taking bigger risks, scale responsibly.",
+          "One Prop Account",
+          "Two Accounts",
+          "Four Accounts",
+          "Larger Account Sizes",
+          "Consistency creates wealth."
+         ],
+         "audio": "financial-roadmap-outline/1.mp3"
+        }
+       ]
+      },
+      {
+       "id": "financial-roadmap-outline--step-14-upgrade-your-lifestyle-responsibly-14",
+       "title": "Step 14 — Upgrade Your Lifestyle Responsibly",
+       "screens": [
+        {
+         "id": "financial-roadmap-outline--step-14-upgrade-your-lifestyle-responsibly-14--1",
+         "headline": "Financial Roadmap Outline",
+         "subhead": "Step 14 — Upgrade Your Lifestyle Responsibly",
+         "body": [
+          "Avoid lifestyle inflation.",
+          "Reliable cash vehicle",
+          "Business lease",
+          "Don't buy liabilities simply because you had a profitable month."
+         ],
+         "audio": "financial-roadmap-outline/1.mp3"
+        }
+       ]
+      },
+      {
+       "id": "financial-roadmap-outline--step-15-build-your-circle-15",
+       "title": "Step 15 — Build Your Circle",
+       "screens": [
+        {
+         "id": "financial-roadmap-outline--step-15-build-your-circle-15--1",
+         "headline": "Financial Roadmap Outline",
+         "subhead": "Step 15 — Build Your Circle",
+         "body": [
+          "Surround yourself with people who challenge you.",
+          "Find:",
+          "Mentors",
+          "Business Owners",
+          "Traders",
+          "Investors",
+          "Entrepreneurs",
+          "Your environment influences your future."
+         ],
+         "audio": "financial-roadmap-outline/1.mp3"
+        }
+       ]
+      },
+      {
+       "id": "financial-roadmap-outline--step-16-repeat-the-process-16",
+       "title": "Step 16 — Repeat the Process",
+       "screens": [
+        {
+         "id": "financial-roadmap-outline--step-16-repeat-the-process-16--1",
+         "headline": "Financial Roadmap Outline",
+         "subhead": "Step 16 — Repeat the Process",
+         "body": [
+          "Continue building. Learn. Invest. Protect. Scale. Teach others. Create generational wealth."
+         ],
+         "audio": "financial-roadmap-outline/1.mp3"
+        }
+       ]
+      },
+      {
+       "id": "financial-roadmap-outline--final-thought-17",
+       "title": "Final Thought",
+       "screens": [
+        {
+         "id": "financial-roadmap-outline--final-thought-17--1",
+         "headline": "Financial Roadmap Outline",
+         "subhead": "Final Thought",
+         "body": [
+          "Don't trade to become rich. Trade to build assets. Build assets to create freedom."
+         ],
+         "audio": "financial-roadmap-outline/1.mp3"
+        }
+       ]
+      }
+     ]
+    },
+    {
      "id": "transition-to-module-2",
      "title": "Transition to Module 2",
      "fullTitle": "Transition to Module 2 — Where Trading Fits and Where We Go Next",
@@ -569,6 +933,172 @@ window.COURSE_DATA = {
           "This journey will challenge you, but for those who are truly committed, the rewards both financial and personal can be life-changing."
          ],
          "audio": "the-reality-of-trading/1.mp3"
+        }
+       ]
+      }
+     ]
+    },
+    {
+     "id": "key-trading-vocabulary",
+     "title": "Key Trading Vocabulary",
+     "fullTitle": "Key Trading Vocabulary",
+     "subsections": [
+      {
+       "id": "key-trading-vocabulary--trading-vocabulary-common-slang-0",
+       "title": "Trading Vocabulary & Common Slang",
+       "screens": [
+        {
+         "id": "key-trading-vocabulary--trading-vocabulary-common-slang-0--1",
+         "headline": "Key Trading Vocabulary",
+         "subhead": "Trading Vocabulary & Common Slang",
+         "body": [
+          "1. Bullish — Expecting price to move higher.",
+          "2. Bearish — Expecting price to move lower.",
+          "3. Long — Buying an asset expecting price to increase.",
+          "4. Short — Selling an asset expecting price to decline.",
+          "5. Position — An active trade currently open.",
+          "6. Entry — The price where you enter a trade.",
+          "7. Exit — The price where you close a trade.",
+          "8. Stop Loss — A predetermined price to automatically limit losses.",
+          "9. Take Profit — A predetermined level to secure profits."
+         ],
+         "audio": "key-trading-vocabulary/1.mp3"
+        },
+        {
+         "id": "key-trading-vocabulary--trading-vocabulary-common-slang-0--2",
+         "headline": "Key Trading Vocabulary",
+         "subhead": "Trading Vocabulary & Common Slang",
+         "body": [
+          "10. Risk-to-Reward (R:R) — The amount you're risking compared to your potential reward.",
+          "11. Breakout — Price moves outside a key support or resistance level.",
+          "12. Breakdown — Price falls below an important support level.",
+          "13. Fakeout — A false breakout that quickly reverses.",
+          "14. Liquidity — Areas where many buy or sell orders exist.",
+          "15. Liquidity Grab — When price intentionally sweeps stops before reversing.",
+          "16. Market Structure — The sequence of higher highs, higher lows, lower highs, and lower lows."
+         ],
+         "audio": "key-trading-vocabulary/2.mp3"
+        },
+        {
+         "id": "key-trading-vocabulary--trading-vocabulary-common-slang-0--3",
+         "headline": "Key Trading Vocabulary",
+         "subhead": "Trading Vocabulary & Common Slang",
+         "body": [
+          "17. Trend — The overall direction of the market.",
+          "18. Consolidation — Price moving sideways in a range.",
+          "19. Pullback — A temporary move against the trend.",
+          "20. Reversal — A complete change in trend direction.",
+          "21. Support — A price level where buyers tend to step in.",
+          "22. Resistance — A price level where sellers tend to step in.",
+          "23. Fair Value Gap (FVG) — An imbalance where price moved so quickly that little trading occurred.",
+          "24. Premium — Price trading above equilibrium.",
+          "25. Discount — Price trading below equilibrium."
+         ],
+         "audio": "key-trading-vocabulary/3.mp3"
+        },
+        {
+         "id": "key-trading-vocabulary--trading-vocabulary-common-slang-0--4",
+         "headline": "Key Trading Vocabulary",
+         "subhead": "Trading Vocabulary & Common Slang",
+         "body": [
+          "26. Drawdown — The decline in your account from its highest value.",
+          "27. Going on Tilt — Losing emotional control and making irrational trades after wins or losses.",
+          "28. Revenge Trading — Trying to quickly win back money after losing.",
+          "29. FOMO — Fear Of Missing Out entering trades because you don't want to miss the move.",
+          "30. Overtrading — Taking too many unnecessary trades.",
+          "31. Blowing an Account — Losing most or all of your trading capital."
+         ],
+         "audio": "key-trading-vocabulary/4.mp3"
+        },
+        {
+         "id": "key-trading-vocabulary--trading-vocabulary-common-slang-0--5",
+         "headline": "Key Trading Vocabulary",
+         "subhead": "Trading Vocabulary & Common Slang",
+         "body": [
+          "32. Liquidated — Having your position automatically closed because losses exceeded margin requirements.",
+          "33. Margin — Borrowed capital used to increase buying power.",
+          "34. Leverage — Using borrowed money to control a larger position.",
+          "35. Margin Call — A broker's demand to deposit more funds when account equity falls too low.",
+          "36. Scalping — Taking very quick trades for small profits.",
+          "37. Day Trading — Opening and closing trades within the same trading day.",
+          "38. Swing Trading — Holding trades for several days or weeks."
+         ],
+         "audio": "key-trading-vocabulary/5.mp3"
+        },
+        {
+         "id": "key-trading-vocabulary--trading-vocabulary-common-slang-0--6",
+         "headline": "Key Trading Vocabulary",
+         "subhead": "Trading Vocabulary & Common Slang",
+         "body": [
+          "39. Position Trading — Holding trades for months or even years.",
+          "40. Paper Trading — Practicing with simulated money instead of real capital.",
+          "41. Bag Holder — Someone holding a losing position hoping it recovers.",
+          "42. Diamond Hands — Holding a position despite extreme volatility.",
+          "43. Paper Hands — Selling too early because of fear.",
+          "44. Chop — A market with erratic sideways movement and no clear trend.",
+          "45. Whipsaw — Rapid price movement in one direction followed immediately by a sharp reversal."
+         ],
+         "audio": "key-trading-vocabulary/6.mp3"
+        },
+        {
+         "id": "key-trading-vocabulary--trading-vocabulary-common-slang-0--7",
+         "headline": "Key Trading Vocabulary",
+         "subhead": "Trading Vocabulary & Common Slang",
+         "body": [
+          "46. Pump — A rapid increase in price.",
+          "47. Dump — A rapid decline in price.",
+          "48. Stop Hunt — Price intentionally moves to trigger stop losses before reversing.",
+          "49. Confirmation — Additional evidence that supports taking a trade.",
+          "50. Confluence — Multiple independent factors aligning to strengthen a trade setup."
+         ],
+         "audio": "key-trading-vocabulary/7.mp3"
+        }
+       ]
+      },
+      {
+       "id": "key-trading-vocabulary--bonus-terms-every-professional-trader-uses-1",
+       "title": "Bonus Terms Every Professional Trader Uses",
+       "screens": [
+        {
+         "id": "key-trading-vocabulary--bonus-terms-every-professional-trader-uses-1--1",
+         "headline": "Key Trading Vocabulary",
+         "subhead": "Bonus Terms Every Professional Trader Uses",
+         "body": [
+          "ATH (All-Time High)",
+          "ATL (All-Time Low)",
+          "VWAP",
+          "EMA",
+          "SMA",
+          "Volume",
+          "Volatility",
+          "Open Interest",
+          "Tick Size",
+          "Bid",
+          "Ask",
+          "Spread",
+          "Slippage",
+          "Fill",
+          "Gap Up",
+          "Gap Down",
+          "Premarket",
+          "After Hours",
+          "Session High",
+          "Session Low",
+          "New York Open",
+          "London Session",
+          "Asian Session",
+          "Risk On",
+          "Risk Off",
+          "Buy Side Liquidity",
+          "Sell Side Liquidity",
+          "Break of Structure (BOS)",
+          "Change of Character (CHOCH)",
+          "Higher High (HH)",
+          "Higher Low (HL)",
+          "Lower High (LH)",
+          "Lower Low (LL)"
+         ],
+         "audio": "key-trading-vocabulary/1.mp3"
         }
        ]
       }
@@ -2628,172 +3158,6 @@ window.COURSE_DATA = {
      ]
     },
     {
-     "id": "key-trading-vocabulary",
-     "title": "Key Trading Vocabulary",
-     "fullTitle": "Key Trading Vocabulary",
-     "subsections": [
-      {
-       "id": "key-trading-vocabulary--trading-vocabulary-common-slang-0",
-       "title": "Trading Vocabulary & Common Slang",
-       "screens": [
-        {
-         "id": "key-trading-vocabulary--trading-vocabulary-common-slang-0--1",
-         "headline": "Key Trading Vocabulary",
-         "subhead": "Trading Vocabulary & Common Slang",
-         "body": [
-          "1. Bullish — Expecting price to move higher.",
-          "2. Bearish — Expecting price to move lower.",
-          "3. Long — Buying an asset expecting price to increase.",
-          "4. Short — Selling an asset expecting price to decline.",
-          "5. Position — An active trade currently open.",
-          "6. Entry — The price where you enter a trade.",
-          "7. Exit — The price where you close a trade.",
-          "8. Stop Loss — A predetermined price to automatically limit losses.",
-          "9. Take Profit — A predetermined level to secure profits."
-         ],
-         "audio": "key-trading-vocabulary/1.mp3"
-        },
-        {
-         "id": "key-trading-vocabulary--trading-vocabulary-common-slang-0--2",
-         "headline": "Key Trading Vocabulary",
-         "subhead": "Trading Vocabulary & Common Slang",
-         "body": [
-          "10. Risk-to-Reward (R:R) — The amount you're risking compared to your potential reward.",
-          "11. Breakout — Price moves outside a key support or resistance level.",
-          "12. Breakdown — Price falls below an important support level.",
-          "13. Fakeout — A false breakout that quickly reverses.",
-          "14. Liquidity — Areas where many buy or sell orders exist.",
-          "15. Liquidity Grab — When price intentionally sweeps stops before reversing.",
-          "16. Market Structure — The sequence of higher highs, higher lows, lower highs, and lower lows."
-         ],
-         "audio": "key-trading-vocabulary/2.mp3"
-        },
-        {
-         "id": "key-trading-vocabulary--trading-vocabulary-common-slang-0--3",
-         "headline": "Key Trading Vocabulary",
-         "subhead": "Trading Vocabulary & Common Slang",
-         "body": [
-          "17. Trend — The overall direction of the market.",
-          "18. Consolidation — Price moving sideways in a range.",
-          "19. Pullback — A temporary move against the trend.",
-          "20. Reversal — A complete change in trend direction.",
-          "21. Support — A price level where buyers tend to step in.",
-          "22. Resistance — A price level where sellers tend to step in.",
-          "23. Fair Value Gap (FVG) — An imbalance where price moved so quickly that little trading occurred.",
-          "24. Premium — Price trading above equilibrium.",
-          "25. Discount — Price trading below equilibrium."
-         ],
-         "audio": "key-trading-vocabulary/3.mp3"
-        },
-        {
-         "id": "key-trading-vocabulary--trading-vocabulary-common-slang-0--4",
-         "headline": "Key Trading Vocabulary",
-         "subhead": "Trading Vocabulary & Common Slang",
-         "body": [
-          "26. Drawdown — The decline in your account from its highest value.",
-          "27. Going on Tilt — Losing emotional control and making irrational trades after wins or losses.",
-          "28. Revenge Trading — Trying to quickly win back money after losing.",
-          "29. FOMO — Fear Of Missing Out entering trades because you don't want to miss the move.",
-          "30. Overtrading — Taking too many unnecessary trades.",
-          "31. Blowing an Account — Losing most or all of your trading capital."
-         ],
-         "audio": "key-trading-vocabulary/4.mp3"
-        },
-        {
-         "id": "key-trading-vocabulary--trading-vocabulary-common-slang-0--5",
-         "headline": "Key Trading Vocabulary",
-         "subhead": "Trading Vocabulary & Common Slang",
-         "body": [
-          "32. Liquidated — Having your position automatically closed because losses exceeded margin requirements.",
-          "33. Margin — Borrowed capital used to increase buying power.",
-          "34. Leverage — Using borrowed money to control a larger position.",
-          "35. Margin Call — A broker's demand to deposit more funds when account equity falls too low.",
-          "36. Scalping — Taking very quick trades for small profits.",
-          "37. Day Trading — Opening and closing trades within the same trading day.",
-          "38. Swing Trading — Holding trades for several days or weeks."
-         ],
-         "audio": "key-trading-vocabulary/5.mp3"
-        },
-        {
-         "id": "key-trading-vocabulary--trading-vocabulary-common-slang-0--6",
-         "headline": "Key Trading Vocabulary",
-         "subhead": "Trading Vocabulary & Common Slang",
-         "body": [
-          "39. Position Trading — Holding trades for months or even years.",
-          "40. Paper Trading — Practicing with simulated money instead of real capital.",
-          "41. Bag Holder — Someone holding a losing position hoping it recovers.",
-          "42. Diamond Hands — Holding a position despite extreme volatility.",
-          "43. Paper Hands — Selling too early because of fear.",
-          "44. Chop — A market with erratic sideways movement and no clear trend.",
-          "45. Whipsaw — Rapid price movement in one direction followed immediately by a sharp reversal."
-         ],
-         "audio": "key-trading-vocabulary/6.mp3"
-        },
-        {
-         "id": "key-trading-vocabulary--trading-vocabulary-common-slang-0--7",
-         "headline": "Key Trading Vocabulary",
-         "subhead": "Trading Vocabulary & Common Slang",
-         "body": [
-          "46. Pump — A rapid increase in price.",
-          "47. Dump — A rapid decline in price.",
-          "48. Stop Hunt — Price intentionally moves to trigger stop losses before reversing.",
-          "49. Confirmation — Additional evidence that supports taking a trade.",
-          "50. Confluence — Multiple independent factors aligning to strengthen a trade setup."
-         ],
-         "audio": "key-trading-vocabulary/7.mp3"
-        }
-       ]
-      },
-      {
-       "id": "key-trading-vocabulary--bonus-terms-every-professional-trader-uses-1",
-       "title": "Bonus Terms Every Professional Trader Uses",
-       "screens": [
-        {
-         "id": "key-trading-vocabulary--bonus-terms-every-professional-trader-uses-1--1",
-         "headline": "Key Trading Vocabulary",
-         "subhead": "Bonus Terms Every Professional Trader Uses",
-         "body": [
-          "ATH (All-Time High)",
-          "ATL (All-Time Low)",
-          "VWAP",
-          "EMA",
-          "SMA",
-          "Volume",
-          "Volatility",
-          "Open Interest",
-          "Tick Size",
-          "Bid",
-          "Ask",
-          "Spread",
-          "Slippage",
-          "Fill",
-          "Gap Up",
-          "Gap Down",
-          "Premarket",
-          "After Hours",
-          "Session High",
-          "Session Low",
-          "New York Open",
-          "London Session",
-          "Asian Session",
-          "Risk On",
-          "Risk Off",
-          "Buy Side Liquidity",
-          "Sell Side Liquidity",
-          "Break of Structure (BOS)",
-          "Change of Character (CHOCH)",
-          "Higher High (HH)",
-          "Higher Low (HL)",
-          "Lower High (LH)",
-          "Lower Low (LL)"
-         ],
-         "audio": "key-trading-vocabulary/1.mp3"
-        }
-       ]
-      }
-     ]
-    },
-    {
      "id": "emotional-checklist-for-trading",
      "title": "Emotional Checklist for Trading",
      "fullTitle": "Emotional Checklist for Trading",
@@ -3128,370 +3492,6 @@ window.COURSE_DATA = {
           "Withdraw responsibly: As you build your account, take small, calculated profits rather than overextending yourself."
          ],
          "audio": "how-to-pay-yourself-prop-firms/1.mp3"
-        }
-       ]
-      }
-     ]
-    },
-    {
-     "id": "financial-roadmap-outline",
-     "title": "Financial Roadmap Outline",
-     "fullTitle": "Building Wealth: Your Financial Roadmap",
-     "subsections": [
-      {
-       "id": "financial-roadmap-outline--overview-0",
-       "title": "Overview",
-       "screens": [
-        {
-         "id": "financial-roadmap-outline--overview-0--1",
-         "headline": "Financial Roadmap Outline",
-         "subhead": "",
-         "body": [
-          "Learning to trade is only one piece of the puzzle.",
-          "The ultimate goal isn't to become a trader it's to become financially free.",
-          "Trading should be viewed as one tool that helps generate income, not your entire financial plan. Building long-term wealth requires multiple income streams, smart financial decisions, protecting your assets, and investing consistently over time.",
-          "The roadmap below provides a practical path that anyone can follow regardless of where they're starting."
-         ],
-         "audio": "financial-roadmap-outline/1.mp3"
-        }
-       ]
-      },
-      {
-       "id": "financial-roadmap-outline--step-1-develop-a-skill-that-pays-1",
-       "title": "Step 1 — Develop a Skill That Pays",
-       "screens": [
-        {
-         "id": "financial-roadmap-outline--step-1-develop-a-skill-that-pays-1--1",
-         "headline": "Financial Roadmap Outline",
-         "subhead": "Step 1 — Develop a Skill That Pays",
-         "body": [
-          "Your first investment should always be yourself. Develop a skill that someone is willing to pay you for.",
-          "Examples include:",
-          "Barbering",
-          "Photography",
-          "Sales",
-          "Coding",
-          "Marketing",
-          "Graphic Design",
-          "Electrician",
-          "Plumbing",
-          "HVAC",
-          "Real Estate",
-          "Insurance",
-          "Personal Training",
-          "Content Creation",
-          "The goal is to create reliable income."
-         ],
-         "audio": "financial-roadmap-outline/1.mp3"
-        }
-       ]
-      },
-      {
-       "id": "financial-roadmap-outline--step-2-secure-stable-income-2",
-       "title": "Step 2 — Secure Stable Income",
-       "screens": [
-        {
-         "id": "financial-roadmap-outline--step-2-secure-stable-income-2--1",
-         "headline": "Financial Roadmap Outline",
-         "subhead": "Step 2 — Secure Stable Income",
-         "body": [
-          "Find a stable job or career that provides predictable income. Having consistent income removes emotional pressure from trading and allows you to focus on improving your skills instead of trying to survive. Never depend on trading to pay your bills while you're still learning."
-         ],
-         "audio": "financial-roadmap-outline/1.mp3"
-        }
-       ]
-      },
-      {
-       "id": "financial-roadmap-outline--step-3-build-a-side-business-3",
-       "title": "Step 3 — Build a Side Business",
-       "screens": [
-        {
-         "id": "financial-roadmap-outline--step-3-build-a-side-business-3--1",
-         "headline": "Financial Roadmap Outline",
-         "subhead": "Step 3 — Build a Side Business",
-         "body": [
-          "Once your income is stable, begin creating another income stream.",
-          "Examples:",
-          "Service business",
-          "Online business",
-          "Digital products",
-          "Consulting",
-          "E-commerce",
-          "Rental equipment",
-          "YouTube",
-          "Social media",
-          "AI automation",
-          "Freelancing",
-          "The goal is to make money while you're not actively working."
-         ],
-         "audio": "financial-roadmap-outline/1.mp3"
-        }
-       ]
-      },
-      {
-       "id": "financial-roadmap-outline--step-4-make-it-official-4",
-       "title": "Step 4 — Make It Official",
-       "screens": [
-        {
-         "id": "financial-roadmap-outline--step-4-make-it-official-4--1",
-         "headline": "Financial Roadmap Outline",
-         "subhead": "Step 4 — Make It Official",
-         "body": [
-          "Treat your business like a real business.",
-          "Register your LLC",
-          "Open a business bank account",
-          "Separate business and personal finances",
-          "Track expenses",
-          "Build business credit"
-         ],
-         "audio": "financial-roadmap-outline/1.mp3"
-        }
-       ]
-      },
-      {
-       "id": "financial-roadmap-outline--step-5-build-an-emergency-fund-5",
-       "title": "Step 5 — Build an Emergency Fund",
-       "screens": [
-        {
-         "id": "financial-roadmap-outline--step-5-build-an-emergency-fund-5--1",
-         "headline": "Financial Roadmap Outline",
-         "subhead": "Step 5 — Build an Emergency Fund",
-         "body": [
-          "Save consistently. Even if it's only $5, $10, or $20 per day. Your first goal should be approximately $3,000-$5,000 in emergency savings. This money should never be used for trading."
-         ],
-         "audio": "financial-roadmap-outline/1.mp3"
-        }
-       ]
-      },
-      {
-       "id": "financial-roadmap-outline--step-6-protect-yourself-6",
-       "title": "Step 6 — Protect Yourself",
-       "screens": [
-        {
-         "id": "financial-roadmap-outline--step-6-protect-yourself-6--1",
-         "headline": "Financial Roadmap Outline",
-         "subhead": "Step 6 — Protect Yourself",
-         "body": [
-          "Your greatest asset is YOU. Before building wealth, protect it.",
-          "Health Insurance",
-          "Life Insurance",
-          "Disability Insurance",
-          "Emergency Savings",
-          "The younger and healthier you are, the cheaper insurance generally is. Protect your future before chasing wealth."
-         ],
-         "audio": "financial-roadmap-outline/1.mp3"
-        }
-       ]
-      },
-      {
-       "id": "financial-roadmap-outline--step-7-start-investing-early-7",
-       "title": "Step 7 — Start Investing Early",
-       "screens": [
-        {
-         "id": "financial-roadmap-outline--step-7-start-investing-early-7--1",
-         "headline": "Financial Roadmap Outline",
-         "subhead": "Step 7 — Start Investing Early",
-         "body": [
-          "Begin investing as early as possible.",
-          "Priority:",
-          "Roth IRA",
-          "401(k) (if available)",
-          "Index Funds",
-          "ETFs",
-          "Allow compound interest to work for decades. Time is one of your greatest advantages."
-         ],
-         "audio": "financial-roadmap-outline/1.mp3"
-        }
-       ]
-      },
-      {
-       "id": "financial-roadmap-outline--step-8-purchase-assets-8",
-       "title": "Step 8 — Purchase Assets",
-       "screens": [
-        {
-         "id": "financial-roadmap-outline--step-8-purchase-assets-8--1",
-         "headline": "Financial Roadmap Outline",
-         "subhead": "Step 8 — Purchase Assets",
-         "body": [
-          "Instead of buying liabilities first, buy assets.",
-          "Examples:",
-          "Duplex",
-          "Triplex",
-          "Condo",
-          "Land",
-          "Rental Property",
-          "Let your money begin producing more money."
-         ],
-         "audio": "financial-roadmap-outline/1.mp3"
-        }
-       ]
-      },
-      {
-       "id": "financial-roadmap-outline--step-9-learn-the-markets-9",
-       "title": "Step 9 — Learn the Markets",
-       "screens": [
-        {
-         "id": "financial-roadmap-outline--step-9-learn-the-markets-9--1",
-         "headline": "Financial Roadmap Outline",
-         "subhead": "Step 9 — Learn the Markets",
-         "body": [
-          "Now begin developing financial knowledge.",
-          "Study:",
-          "Technical Analysis",
-          "Market Structure",
-          "Risk Management",
-          "Options",
-          "Stocks",
-          "Futures",
-          "Become financially literate."
-         ],
-         "audio": "financial-roadmap-outline/1.mp3"
-        }
-       ]
-      },
-      {
-       "id": "financial-roadmap-outline--step-10-build-long-term-investments-10",
-       "title": "Step 10 — Build Long-Term Investments",
-       "screens": [
-        {
-         "id": "financial-roadmap-outline--step-10-build-long-term-investments-10--1",
-         "headline": "Financial Roadmap Outline",
-         "subhead": "Step 10 — Build Long-Term Investments",
-         "body": [
-          "Learn to own assets.",
-          "Examples:",
-          "ETFs",
-          "Index Funds",
-          "Dividend Stocks",
-          "Selling Covered Calls",
-          "Cash Secured Puts",
-          "Allow your investments to begin producing monthly income."
-         ],
-         "audio": "financial-roadmap-outline/1.mp3"
-        }
-       ]
-      },
-      {
-       "id": "financial-roadmap-outline--step-11-learn-futures-trading-11",
-       "title": "Step 11 — Learn Futures Trading",
-       "screens": [
-        {
-         "id": "financial-roadmap-outline--step-11-learn-futures-trading-11--1",
-         "headline": "Financial Roadmap Outline",
-         "subhead": "Step 11 — Learn Futures Trading",
-         "body": [
-          "Once you have consistency, practice using a simulated account. Then pursue a Prop Firm Evaluation.",
-          "Recommended:",
-          "$25,000 Account",
-          "$50,000 Account",
-          "Focus on Micro E-mini S&P 500 (MES). Learn consistency before increasing size."
-         ],
-         "audio": "financial-roadmap-outline/1.mp3"
-        }
-       ]
-      },
-      {
-       "id": "financial-roadmap-outline--step-12-pay-yourself-12",
-       "title": "Step 12 — Pay Yourself",
-       "screens": [
-        {
-         "id": "financial-roadmap-outline--step-12-pay-yourself-12--1",
-         "headline": "Financial Roadmap Outline",
-         "subhead": "Step 12 — Pay Yourself",
-         "body": [
-          "After becoming funded, set income goals. Example: $150-$400/day. Withdraw profits. Do not let large balances accumulate unnecessarily. Pay yourself."
-         ],
-         "audio": "financial-roadmap-outline/1.mp3"
-        }
-       ]
-      },
-      {
-       "id": "financial-roadmap-outline--step-13-scale-slowly-13",
-       "title": "Step 13 — Scale Slowly",
-       "screens": [
-        {
-         "id": "financial-roadmap-outline--step-13-scale-slowly-13--1",
-         "headline": "Financial Roadmap Outline",
-         "subhead": "Step 13 — Scale Slowly",
-         "body": [
-          "Instead of taking bigger risks, scale responsibly.",
-          "One Prop Account",
-          "Two Accounts",
-          "Four Accounts",
-          "Larger Account Sizes",
-          "Consistency creates wealth."
-         ],
-         "audio": "financial-roadmap-outline/1.mp3"
-        }
-       ]
-      },
-      {
-       "id": "financial-roadmap-outline--step-14-upgrade-your-lifestyle-responsibly-14",
-       "title": "Step 14 — Upgrade Your Lifestyle Responsibly",
-       "screens": [
-        {
-         "id": "financial-roadmap-outline--step-14-upgrade-your-lifestyle-responsibly-14--1",
-         "headline": "Financial Roadmap Outline",
-         "subhead": "Step 14 — Upgrade Your Lifestyle Responsibly",
-         "body": [
-          "Avoid lifestyle inflation.",
-          "Reliable cash vehicle",
-          "Business lease",
-          "Don't buy liabilities simply because you had a profitable month."
-         ],
-         "audio": "financial-roadmap-outline/1.mp3"
-        }
-       ]
-      },
-      {
-       "id": "financial-roadmap-outline--step-15-build-your-circle-15",
-       "title": "Step 15 — Build Your Circle",
-       "screens": [
-        {
-         "id": "financial-roadmap-outline--step-15-build-your-circle-15--1",
-         "headline": "Financial Roadmap Outline",
-         "subhead": "Step 15 — Build Your Circle",
-         "body": [
-          "Surround yourself with people who challenge you.",
-          "Find:",
-          "Mentors",
-          "Business Owners",
-          "Traders",
-          "Investors",
-          "Entrepreneurs",
-          "Your environment influences your future."
-         ],
-         "audio": "financial-roadmap-outline/1.mp3"
-        }
-       ]
-      },
-      {
-       "id": "financial-roadmap-outline--step-16-repeat-the-process-16",
-       "title": "Step 16 — Repeat the Process",
-       "screens": [
-        {
-         "id": "financial-roadmap-outline--step-16-repeat-the-process-16--1",
-         "headline": "Financial Roadmap Outline",
-         "subhead": "Step 16 — Repeat the Process",
-         "body": [
-          "Continue building. Learn. Invest. Protect. Scale. Teach others. Create generational wealth."
-         ],
-         "audio": "financial-roadmap-outline/1.mp3"
-        }
-       ]
-      },
-      {
-       "id": "financial-roadmap-outline--final-thought-17",
-       "title": "Final Thought",
-       "screens": [
-        {
-         "id": "financial-roadmap-outline--final-thought-17--1",
-         "headline": "Financial Roadmap Outline",
-         "subhead": "Final Thought",
-         "body": [
-          "Don't trade to become rich. Trade to build assets. Build assets to create freedom."
-         ],
-         "audio": "financial-roadmap-outline/1.mp3"
         }
        ]
       }

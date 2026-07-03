@@ -25,6 +25,11 @@ data/course-data.js     generated course content (2 modules · 34 sections ·
                         137 subsections · 230 screens)
 tools/generate_course_data.py   regenerates data/course-data.js from the
                         course text extracted from Learnaeway_Course_Complete.docx
+                        (includes the section-order overrides in SECTION_MOVES)
+tools/generate_toc.py   regenerates docs/Learnaeway_Table_of_Contents.md from
+                        data/course-data.js — run after generate_course_data.py
+docs/Learnaeway_Table_of_Contents.md   generated outline, kept in sync with the
+                        app's actual section/subsection/screen order
 assets/                 brand assets, trimmed + optimized from the delivery zip,
                         organized per the spec's asset manifest
 manifest.webmanifest    PWA manifest
@@ -73,7 +78,11 @@ sw.js                   cache-first service worker
 
 ```bash
 python3 tools/generate_course_data.py path/to/course.txt data/course-data.js
+python3 tools/generate_toc.py data/course-data.js docs/Learnaeway_Table_of_Contents.md
 ```
 
 `course.txt` is the plain-text extraction of `Learnaeway_Course_Complete.docx`
 (`#` module / `##` section / `###` subsection headings, body lines as paragraphs).
+Section order is the doc's natural order plus the overrides listed in
+`SECTION_MOVES` at the top of `generate_course_data.py` — edit that list (not
+the copy) to reorder sections; content and screen ids stay stable either way.

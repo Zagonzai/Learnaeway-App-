@@ -114,6 +114,35 @@ def main():
             subsection["paras"].append(fix_ae(line))
         # lines before the first module heading (course title/byline) are skipped
 
+    # Section reorders — content and copy are untouched; only sequence moves.
+    # Each entry: (section fullTitle to move, destination module num,
+    # fullTitle of the section it should follow, or None for "first").
+    SECTION_MOVES = [
+        ("Building Wealth: Your Financial Roadmap", 1, "Generational Wealth Mindset — Thinking Beyond Yourself"),
+        ("Key Trading Vocabulary", 2, "The Reality of Trading: What You Must Know Before You Begin"),
+    ]
+
+    def move_section(from_full_title, to_module_num, after_full_title):
+        moved = None
+        for m in modules:
+            for i, s in enumerate(m["sections"]):
+                if s["fullTitle"] == from_full_title:
+                    moved = m["sections"].pop(i)
+                    break
+            if moved is not None:
+                break
+        if moved is None:
+            raise ValueError(f"section not found: {from_full_title!r}")
+        dest = next(m for m in modules if m["num"] == to_module_num)
+        if after_full_title is None:
+            insert_at = 0
+        else:
+            insert_at = next(i for i, s in enumerate(dest["sections"]) if s["fullTitle"] == after_full_title) + 1
+        dest["sections"].insert(insert_at, moved)
+
+    for move in SECTION_MOVES:
+        move_section(*move)
+
     # Build final structure with chunked screens + ids
     total = 0
     for m in modules:
