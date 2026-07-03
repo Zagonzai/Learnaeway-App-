@@ -1,17 +1,15 @@
 name: Deploy to GitHub Pages
 
-# Pages is served from the gh-pages branch (branch-based build).
-# This workflow keeps gh-pages in sync with main on every push, then
-# explicitly requests a Pages build — pushes made with GITHUB_TOKEN do
-# not trigger the automatic pages-build-deployment run.
+# Requires Settings -> Pages -> Build and deployment -> Source: "GitHub Actions".
 on:
   push:
     branches: [main]
   workflow_dispatch:
 
 permissions:
-  contents: write
+  contents: read
   pages: write
+  id-token: write
 
 concurrency:
   group: pages
@@ -20,21 +18,14 @@ concurrency:
 jobs:
   deploy:
     runs-on: ubuntu-latest
+    environment:
+      name: github-pages
+      url: ${{ steps.deployment.outputs.page_url }}
     steps:
       - uses: actions/checkout@v4
+      - uses: actions/configure-pages@v5
+      - uses: actions/upload-pages-artifact@v3
         with:
-          fetch-depth: 0
-      - name: Mirror main to gh-pages
-        run: git push origin HEAD:gh-pages --force
-      # Best effort: the default workflow token is currently rejected by the
-      # Pages build API on this repo. If this step fails, the site keeps
-      # serving the previous build; trigger a rebuild by pushing to gh-pages
-      # from a user account, or set Settings -> Pages -> Source to
-      # "GitHub Actions" and switch this workflow to actions/deploy-pages.
-      - name: Request Pages build
-        continue-on-error: true
-        run: |
-          curl -sf -X POST \
-            -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
-            -H "Accept: application/vnd.github+json" \
-            "https://api.github.com/repos/${{ github.repository }}/pages/builds"
+          path: .
+      - id: deployment
+        uses: actions/deploy-pages@v4
