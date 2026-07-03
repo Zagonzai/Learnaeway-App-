@@ -26,7 +26,13 @@ jobs:
           fetch-depth: 0
       - name: Mirror main to gh-pages
         run: git push origin HEAD:gh-pages --force
+      # Best effort: the default workflow token is currently rejected by the
+      # Pages build API on this repo. If this step fails, the site keeps
+      # serving the previous build; trigger a rebuild by pushing to gh-pages
+      # from a user account, or set Settings -> Pages -> Source to
+      # "GitHub Actions" and switch this workflow to actions/deploy-pages.
       - name: Request Pages build
+        continue-on-error: true
         run: |
           curl -sf -X POST \
             -H "Authorization: Bearer ${{ secrets.GITHUB_TOKEN }}" \
