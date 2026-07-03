@@ -1,0 +1,104 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover, user-scalable=no">
+  <meta name="theme-color" content="#050614">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="description" content="Learnæway — Path to Trading Course. The education arm of the Æway ecosystem.">
+  <title>Learnæway</title>
+  <link rel="manifest" href="manifest.webmanifest">
+  <link rel="icon" type="image/png" href="assets/pwa/icon-192.png">
+  <link rel="apple-touch-icon" href="assets/pwa/icon-192.png">
+  <link rel="stylesheet" href="css/style.css">
+</head>
+<body>
+  <div id="app" class="app">
+
+    <!-- ===================== HEADER ZONE ===================== -->
+    <header class="header-zone">
+      <div class="wave-bg"></div>
+      <div class="header-controls">
+        <div class="header-side header-side-left">
+          <button id="btnAskAeway" class="img-btn img-btn-lg" aria-label="Ask Æway">
+            <img src="assets/buttons-icon/btn-ask-aeway@2x.png" alt="">
+          </button>
+          <button id="btnVolume" class="img-btn img-btn-sm" aria-label="Toggle sound">
+            <img id="volumeImg" src="assets/buttons-icon/btn-volume-on@2x.png" alt="">
+          </button>
+        </div>
+
+        <div class="avatar-wrap" id="avatarWrap">
+          <img id="avatarImg" class="avatar" src="assets/avatars/avatar-eyes-open@2x.png" alt="Æway avatar">
+        </div>
+
+        <div class="header-side header-side-right">
+          <button id="btnPlay" class="img-btn img-btn-lg" aria-label="Play narration">
+            <img id="playImg" src="assets/buttons-icon/btn-play@2x.png" alt="">
+          </button>
+          <button id="btnReplay" class="img-btn img-btn-sm" aria-label="Replay narration">
+            <img src="assets/buttons-icon/btn-replay@2x.png" alt="">
+          </button>
+        </div>
+      </div>
+    </header>
+
+    <!-- ===================== HEADER ICON ROW ===================== -->
+    <div class="bar header-icon-row">
+      <button id="btnMenu" class="bar-icon" aria-label="Open course menu">
+        <img src="assets/nav-icons/icon-menu@2x.png" alt="">
+      </button>
+      <div id="barTitle" class="bar-title">Learnæway's Path to Trading Course</div>
+      <button id="btnSettings" class="bar-icon" aria-label="Open settings">
+        <img src="assets/nav-icons/icon-settings@2x.png" alt="">
+      </button>
+    </div>
+
+    <!-- ===================== PROGRESS ROW ===================== -->
+    <div class="bar progress-row">
+      <button id="btnProfile" class="bar-icon" aria-label="Open profile">
+        <img src="assets/nav-icons/icon-user@2x.png" alt="">
+      </button>
+      <div class="progress-track" aria-hidden="false">
+        <div id="progressFill" class="progress-fill" style="width:0%"></div>
+        <span id="progressLabel" class="progress-label">0%</span>
+      </div>
+      <button id="btnLayers" class="bar-icon" aria-label="Toggle screen list">
+        <img src="assets/nav-icons/icon-layer@2x.png" alt="">
+      </button>
+    </div>
+
+    <!-- ===================== MAIN CONTENT CARD ===================== -->
+    <main class="card-outer" id="cardOuter">
+      <div class="card" id="card">
+        <div class="card-scroll" id="cardScroll">
+          <!-- view content injected by app.js -->
+        </div>
+        <div class="card-footer" id="cardFooter">
+          <button id="btnBookmark" class="footer-icon" aria-label="Bookmark this screen"></button>
+          <img class="wordmark" src="assets/logo/logo-wordmark@3x.png" alt="Learnæway">
+          <button id="btnHeart" class="footer-icon" aria-label="Like this screen"></button>
+        </div>
+      </div>
+    </main>
+
+    <!-- ===================== BOTTOM NAV ===================== -->
+    <nav class="bottom-nav">
+      <button id="navNotes" class="nav-pill" aria-label="Notes"></button>
+      <button id="navHome" class="nav-pill nav-pill-wide" aria-label="Home">
+        <img src="assets/nav-icons/icon-home@2x.png" alt="">
+      </button>
+      <button id="navBookmark" class="nav-pill" aria-label="Bookmark this screen"></button>
+    </nav>
+
+    <!-- ===================== OVERLAYS ===================== -->
+    <div id="overlay" class="overlay hidden">
+      <div class="overlay-panel" id="overlayPanel"></div>
+    </div>
+  </div>
+
+  <script src="data/course-data.js"></script>
+  <script src="js/app.js"></script>
+</body>
+</html>
