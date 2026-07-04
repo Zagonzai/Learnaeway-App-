@@ -1,5 +1,9 @@
-/* Learnæway service worker — cache-first app shell for offline use. */
-const CACHE = "learnaeway-v1";
+/* Learnæway service worker.
+ * Content that can change (HTML/CSS/JS/course data) is network-first so
+ * deploys show up immediately; only falls back to cache when offline.
+ * Heavy binary assets (images) are cache-first since they rarely change.
+ */
+const CACHE = "learnaeway-v2";
 
 const SHELL = [
   "./",
@@ -41,18 +45,30 @@ self.addEventListener("activate", (e) => {
   );
 });
 
+const CACHE_FIRST = /\/assets\//;
+
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
+  const url = new URL(e.request.url);
+  if (url.origin !== location.origin) return;
+
+  if (CACHE_FIRST.test(url.pathname)) {
+    e.respondWith(
+      caches.match(e.request).then((hit) => hit || fetch(e.request).then((res) => {
+        if (res.ok) caches.open(CACHE).then((c) => c.put(e.request, res.clone()));
+        return res;
+      }))
+    );
+    return;
+  }
+
+  // network-first: always serve the latest deploy when online
   e.respondWith(
-    caches.match(e.request).then((hit) =>
-      hit ||
-      fetch(e.request).then((res) => {
-        const copy = res.clone();
-        if (res.ok && new URL(e.request.url).origin === location.origin) {
-          caches.open(CACHE).then((c) => c.put(e.request, copy));
-        }
+    fetch(e.request)
+      .then((res) => {
+        if (res.ok) caches.open(CACHE).then((c) => c.put(e.request, res.clone()));
         return res;
       })
-    )
+      .catch(() => caches.match(e.request))
   );
 });
