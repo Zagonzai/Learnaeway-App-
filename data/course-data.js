@@ -2,7 +2,7 @@
 window.COURSE_DATA = {
  "courseTitle": "Learnæway's Path to Trading Course",
  "byline": "By Æway",
- "totalScreens": 230,
+ "totalScreens": 235,
  "modules": [
   {
    "id": "module-1",
@@ -96,6 +96,70 @@ window.COURSE_DATA = {
           "High-Yield Savings Account — A high-yield savings account is a savings account that offers a higher interest rate than a traditional bank savings account. It allows your money to grow while still keeping it safe and accessible."
          ],
          "audio": "pillar-1-earned-income/2.mp3"
+        },
+        {
+         "id": "pillar-1-earned-income--overview-0--3",
+         "headline": "The 60/20/20 Rule",
+         "subhead": "",
+         "body": [
+          "Once you begin earning income, every dollar should have a purpose. Instead of spending first and saving what's left over, flip the process."
+         ],
+         "audio": "pillar-1-earned-income/3.mp3"
+        },
+        {
+         "id": "pillar-1-earned-income--overview-0--4",
+         "headline": "60% — Living Expenses",
+         "subhead": "Use approximately 60% of your income for necessities",
+         "body": [],
+         "audio": "pillar-1-earned-income/4.mp3",
+         "list": [
+          "Housing",
+          "Food",
+          "Transportation",
+          "Insurance",
+          "Bills",
+          "Everyday expenses"
+         ]
+        },
+        {
+         "id": "pillar-1-earned-income--overview-0--5",
+         "headline": "20% — High-Yield Savings",
+         "subhead": "Build financial stability first",
+         "body": [],
+         "audio": "pillar-1-earned-income/5.mp3",
+         "list": [
+          "Emergency Fund",
+          "Opportunity Fund",
+          "Future investments",
+          "Large purchases"
+         ],
+         "listClose": "Your first goal is to build a strong cash reserve before taking unnecessary financial risks."
+        },
+        {
+         "id": "pillar-1-earned-income--overview-0--6",
+         "headline": "20% — Investing & Wealth Building",
+         "subhead": "Use the remaining 20% to invest in your future",
+         "body": [],
+         "audio": "pillar-1-earned-income/6.mp3",
+         "list": [
+          "Roth IRA",
+          "401(k)",
+          "Brokerage Account",
+          "Index Funds",
+          "Business",
+          "Real Estate",
+          "Trading Education",
+          "Building additional income streams"
+         ]
+        },
+        {
+         "id": "pillar-1-earned-income--overview-0--7",
+         "headline": "Why This Matters",
+         "subhead": "",
+         "body": [
+          "A trader without savings is forced to trade. A trader with savings has the freedom to wait for high-quality opportunities. Building wealth isn't about making more money — it's about developing the discipline to manage the money you already earn. Income creates opportunity. Savings create security. Investing creates wealth."
+         ],
+         "audio": "pillar-1-earned-income/7.mp3"
         }
        ]
       }

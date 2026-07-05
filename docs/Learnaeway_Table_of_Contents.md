@@ -10,7 +10,7 @@ By Æway
 - 1 screen
 
 ### 3. Pillar 1 - Earned Income
-- 2 screens
+- 7 screens
 
 ### 4. Pillar 2 - Protection & Life Insurance
 - 2 screens
@@ -210,4 +210,4 @@ By Æway
 - AI Tools for Traders (1 screen)
 - Websites Every Trader Should Bookmark (1 screen)
 
-**Total: 2 modules, 34 sections, 137 subsections, 230 screens.**
+**Total: 2 modules, 34 sections, 137 subsections, 235 screens.**

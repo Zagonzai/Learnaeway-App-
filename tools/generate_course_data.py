@@ -165,6 +165,65 @@ def main():
                     })
                 subs.append({"id": sid, "title": ss["title"], "screens": screens})
             s["subsections"] = subs
+    # Authored screens not present in the source doc. Appended to the end of
+    # their section (after the doc-derived screens), so existing screen ids —
+    # and the progress/likes/notes keyed on them — stay stable.
+    # Screens with a "list" render the numbered-list template; "listClose" is
+    # an optional closing paragraph below the list.
+    AUTHORED_SCREENS = {
+        "Pillar 1: Earned Income — Your Foundation": [
+            {
+                "headline": "The 60/20/20 Rule",
+                "subhead": "",
+                "body": ["Once you begin earning income, every dollar should have a purpose. Instead of spending first and saving what's left over, flip the process."],
+            },
+            {
+                "headline": "60% — Living Expenses",
+                "subhead": "Use approximately 60% of your income for necessities",
+                "body": [],
+                "list": ["Housing", "Food", "Transportation", "Insurance", "Bills", "Everyday expenses"],
+            },
+            {
+                "headline": "20% — High-Yield Savings",
+                "subhead": "Build financial stability first",
+                "body": [],
+                "list": ["Emergency Fund", "Opportunity Fund", "Future investments", "Large purchases"],
+                "listClose": "Your first goal is to build a strong cash reserve before taking unnecessary financial risks.",
+            },
+            {
+                "headline": "20% — Investing & Wealth Building",
+                "subhead": "Use the remaining 20% to invest in your future",
+                "body": [],
+                "list": ["Roth IRA", "401(k)", "Brokerage Account", "Index Funds", "Business", "Real Estate", "Trading Education", "Building additional income streams"],
+            },
+            {
+                "headline": "Why This Matters",
+                "subhead": "",
+                "body": ["A trader without savings is forced to trade. A trader with savings has the freedom to wait for high-quality opportunities. Building wealth isn't about making more money — it's about developing the discipline to manage the money you already earn. Income creates opportunity. Savings create security. Investing creates wealth."],
+            },
+        ],
+    }
+
+    for full_title, authored in AUTHORED_SCREENS.items():
+        sec = next(s for m in modules for s in m["sections"] if s["fullTitle"] == full_title)
+        sub = sec["subsections"][0]
+        base = len(sub["screens"])
+        for j, scr in enumerate(authored):
+            n = base + j + 1
+            entry = {
+                "id": f"{sub['id']}--{n}",
+                "headline": scr["headline"],
+                "subhead": scr.get("subhead", ""),
+                "body": scr.get("body", []),
+                "audio": f"{sec['id']}/{n}.mp3",  # v2 hook, no playback in v1
+            }
+            if scr.get("list"):
+                entry["list"] = scr["list"]
+            if scr.get("listClose"):
+                entry["listClose"] = scr["listClose"]
+            sub["screens"].append(entry)
+            total += 1
+
     data = {
         "courseTitle": "Learnæway's Path to Trading Course",
         "byline": "By Æway",

@@ -48,8 +48,9 @@ sw.js                   cache-first service worker
 - **Card footer** — bookmark (fills cyan when saved) · wordmark · heart (fills magenta
   when liked). Independent per screen, both persist.
 - **Bottom nav** — Notes (per-screen note modal, localStorage; backend sync is v2) ·
-  Home (cyan glow on tap) · Bookmark (mirrors the card bookmark, glows magenta when
-  the current screen is saved).
+  Home (cyan glow on tap) · Bookmark (opens the Saved Screens list — navigation
+  only, it never toggles save state; glows magenta while the current screen is
+  saved as a status indicator).
 - **Home/outline** — stacked-card deck per section with peeking layers; tap to expand
   into the subsection list; % badges per section/subsection. Tabs: **All Sections**
   (with a module switcher), **Liked**, and **Saved** (bookmark got its own tab).

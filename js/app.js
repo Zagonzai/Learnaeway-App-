@@ -216,6 +216,8 @@
         ${scr.subhead ? `<h2 class="screen-subhead">${esc(scr.subhead)}</h2>` : ""}
         ${diagramFor(entry)}
         <div class="screen-body">${bodyHTML(scr.body)}</div>
+        ${scr.list ? `<ol class="screen-list">${scr.list.map((it) => `<li>${esc(it)}</li>`).join("")}</ol>` : ""}
+        ${scr.listClose ? `<div class="screen-body"><p>${esc(scr.listClose)}</p></div>` : ""}
       </div>`;
     cardScroll.scrollTop = 0;
     cardFooter.style.display = "";
@@ -570,7 +572,12 @@
   $("btnBookmark").innerHTML = SVG.bookmark;
   $("btnHeart").innerHTML = SVG.heart;
   $("navNotes").addEventListener("click", openNotes);
-  $("navBookmark").addEventListener("click", () => toggleMark("save"));
+  // Bottom-nav bookmark is navigation only — it opens the Saved Screens
+  // list and never toggles save state (the card-footer bookmark does that).
+  $("navBookmark").addEventListener("click", () => {
+    state.homeTab = "saved";
+    goHome();
+  });
   $("navHome").addEventListener("click", () => {
     goHome();
     const el = $("navHome");
