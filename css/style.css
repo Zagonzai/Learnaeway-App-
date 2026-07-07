@@ -145,6 +145,8 @@ img { user-select: none; -webkit-user-drag: none; }
 /* ===================== GLASS BARS ===================== */
 
 .bar {
+  position: relative;
+  isolation: isolate;
   flex: 0 0 auto;
   margin: 6px 4% 0;
   padding: 0 14px;
@@ -153,13 +155,18 @@ img { user-select: none; -webkit-user-drag: none; }
   align-items: center;
   gap: 12px;
   border-radius: var(--radius-pill);
-  background: linear-gradient(180deg, rgba(20,32,64,.55), rgba(7,10,24,.75));
-  border: 1px solid rgba(61,223,255,.35);
-  box-shadow:
-    0 0 10px rgba(61,223,255,.18),
-    inset 0 1px 0 rgba(255,255,255,.08),
-    inset 0 0 18px rgba(61,223,255,.06);
-  backdrop-filter: blur(6px);
+}
+/* info-bar@2x.png as a 9-slice: pill caps (53px src radius) stay crisp,
+   only the flat middle stretches with bar width/height. */
+.bar::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border: 22px solid transparent;
+  border-left-width: 24px;
+  border-right-width: 24px;
+  border-image: url("../assets/bars/info-bar@2x.png") 48 53 fill / 22px 24px stretch;
 }
 
 .bar-icon {
@@ -224,28 +231,28 @@ img { user-select: none; -webkit-user-drag: none; }
 
 .card-outer {
   position: relative;
+  isolation: isolate;
   flex: 1 1 auto;
   min-height: 0;
   margin: 10px 3.5% 8px;
   border-radius: var(--radius-card);
-  padding: 1.5px;                          /* gradient border thickness */
-  background: linear-gradient(135deg, var(--cyan) 0%, var(--grad-mid) 48%, var(--magenta) 100%);
-  box-shadow:
-    -6px -6px 22px -6px rgba(61,223,255,.45),
-     6px  6px 22px -6px rgba(255,61,154,.45);
+}
+/* app-background-card@2x.png as a 9-slice: glowing corners (100px src) stay
+   crisp, the grid-texture center stretches with card size. */
+.card-outer::before,
+.auth-card-outer::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border: 40px solid transparent;
+  border-image: url("../assets/backgrounds/app-background-card@2x.png") 100 fill / 40px stretch;
 }
 
 .card {
   position: relative;
   height: 100%;
   border-radius: calc(var(--radius-card) - 1.5px);
-  /* clean glass interior: corner glows + faint perspective grid floor */
-  background:
-    radial-gradient(120% 70% at 0% 0%, rgba(61,223,255,.10), transparent 55%),
-    radial-gradient(120% 70% at 100% 100%, rgba(255,61,154,.12), transparent 55%),
-    repeating-linear-gradient(90deg, rgba(61,223,255,.045) 0 1px, transparent 1px 44px),
-    repeating-linear-gradient(0deg, rgba(61,223,255,.035) 0 1px, transparent 1px 44px),
-    linear-gradient(180deg, #0A0F22 0%, var(--card) 45%, #0A0A1E 100%);
   overflow: hidden;
   display: flex;
   flex-direction: column;
@@ -750,6 +757,134 @@ img { user-select: none; -webkit-user-drag: none; }
 }
 .note-item .note-where { color: var(--cyan); font-size: 11.5px; font-weight: 700; margin-bottom: 4px; }
 .note-item .note-text { color: #D9EAFB; line-height: 1.5; white-space: pre-wrap; }
+
+/* ===================== AUTH SCREEN (pre-login entry) ===================== */
+
+.auth-screen {
+  position: absolute;
+  inset: 0;
+  z-index: 90;
+  background: var(--bg);
+  display: flex;
+  flex-direction: column;
+  overflow-y: auto;
+  padding-top: env(safe-area-inset-top);
+}
+.auth-screen.hidden { display: none; }
+
+.auth-wave {
+  flex: 0 0 auto;
+  height: clamp(120px, 18vh, 190px);
+  background: url("../assets/backgrounds/wave-header@2x.png") center 35% / cover no-repeat;
+}
+
+.auth-card-outer {
+  position: relative;
+  isolation: isolate;
+  flex: 1 0 auto;
+  margin: 14px 5% calc(18px + env(safe-area-inset-bottom));
+  border-radius: var(--radius-card);
+}
+
+.auth-card {
+  min-height: 100%;
+  padding: 34px 26px 40px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+}
+
+.auth-logo {
+  width: min(58%, 240px);
+  margin: 8px auto 2px;
+  filter: drop-shadow(0 0 18px rgba(61,223,255,.35));
+}
+.auth-wordmark {
+  width: min(74%, 320px);
+  margin: 6px auto 30px;
+  filter: drop-shadow(0 0 12px rgba(61,223,255,.3));
+}
+
+/* shared thin-gradient-border pill (tabs, inputs, submit) */
+.g-pill {
+  border: 1.5px solid transparent;
+  border-radius: 999px;
+  background:
+    linear-gradient(180deg, rgba(13,20,42,.92), rgba(7,10,24,.92)) padding-box,
+    linear-gradient(90deg, var(--cyan), var(--grad-mid) 55%, var(--magenta)) border-box;
+  box-shadow:
+    -4px 0 14px -6px rgba(61,223,255,.55),
+     4px 0 14px -6px rgba(255,61,154,.55);
+  color: #C7D9EF;
+  font-family: inherit;
+}
+
+.auth-tabs {
+  display: flex;
+  gap: 14px;
+  width: 100%;
+  margin-bottom: 26px;
+}
+.auth-tab {
+  flex: 1 1 0;
+  height: 52px;
+  font-size: 15px;
+  font-weight: 600;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  opacity: .55;
+  transition: opacity .2s ease, box-shadow .2s ease;
+}
+.auth-tab.active {
+  opacity: 1;
+  color: #EAF6FF;
+  box-shadow:
+    -5px 0 18px -5px rgba(61,223,255,.85),
+     5px 0 18px -5px rgba(255,61,154,.85),
+    inset 0 0 14px rgba(123,95,192,.25);
+}
+
+#authForm {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 18px;
+  align-items: center;
+}
+.auth-input {
+  width: 100%;
+  height: 54px;
+  padding: 0 24px;
+  font-size: 16px;               /* >=16px prevents iOS focus zoom */
+  color: var(--text);
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.auth-input::placeholder { color: #8FA3BF; letter-spacing: .06em; }
+.auth-input:focus {
+  box-shadow:
+    -5px 0 20px -5px rgba(61,223,255,.9),
+     5px 0 20px -5px rgba(255,61,154,.9);
+}
+
+.auth-submit {
+  width: 62%;
+  height: 54px;
+  margin-top: 10px;
+  font-size: 15px;
+  font-weight: 700;
+  letter-spacing: .22em;
+  text-transform: uppercase;
+  color: #EAF6FF;
+  cursor: pointer;
+  transition: box-shadow .2s ease, transform .12s ease;
+}
+.auth-submit:active { transform: scale(.97); }
+.auth-submit.pending {
+  color: var(--teal);
+  box-shadow: 0 0 18px rgba(47,230,194,.45);
+}
 
 /* ===================== TRANSITIONS ===================== */
 

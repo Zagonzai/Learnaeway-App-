@@ -96,6 +96,24 @@
     <div id="overlay" class="overlay hidden">
       <div class="overlay-panel" id="overlayPanel"></div>
     </div>
+
+    <!-- ===================== AUTH (pre-login entry, UI only) ===================== -->
+    <div id="authScreen" class="auth-screen hidden">
+      <div class="auth-wave"></div>
+      <div class="auth-card-outer">
+        <div class="auth-card">
+          <img class="auth-logo" src="assets/logo/logo-symbol@3x.png" alt="Learnæway logo">
+          <img class="auth-wordmark" src="assets/logo/logo-wordmark@3x.png" alt="Learnæway">
+          <div class="auth-tabs" role="tablist">
+            <button id="authTabLogin" class="g-pill auth-tab active" role="tab" aria-selected="true">Log In</button>
+            <button id="authTabSignup" class="g-pill auth-tab" role="tab" aria-selected="false">Sign Up</button>
+          </div>
+          <form id="authForm" autocomplete="off" novalidate>
+            <!-- fields injected by app.js based on active tab -->
+          </form>
+        </div>
+      </div>
+    </div>
   </div>
 
   <script src="data/course-data.js"></script>

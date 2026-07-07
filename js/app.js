@@ -638,6 +638,64 @@
     }
   });
 
+  /* ---------------- auth screen (UI only — Firebase wiring is a follow-up) */
+
+  const authScreen = $("authScreen");
+  const authForm = $("authForm");
+  let authMode = "login";
+
+  const AUTH_FIELDS = {
+    login: [
+      { name: "email", type: "email", placeholder: "Email" },
+      { name: "password", type: "password", placeholder: "Password" },
+    ],
+    signup: [
+      { name: "name", type: "text", placeholder: "Name" },
+      { name: "email", type: "email", placeholder: "Email" },
+      { name: "phone", type: "tel", placeholder: "Phone Number" },
+      { name: "password", type: "password", placeholder: "Password" },
+    ],
+  };
+
+  function renderAuthForm() {
+    const label = authMode === "login" ? "Log In" : "Sign Up";
+    authForm.innerHTML =
+      AUTH_FIELDS[authMode].map((f) =>
+        `<input class="g-pill auth-input" name="${f.name}" type="${f.type}" placeholder="${f.placeholder}" autocomplete="off">`
+      ).join("") +
+      `<button type="submit" class="g-pill auth-submit">${label}</button>`;
+  }
+
+  function setAuthMode(mode) {
+    authMode = mode;
+    $("authTabLogin").classList.toggle("active", mode === "login");
+    $("authTabSignup").classList.toggle("active", mode === "signup");
+    $("authTabLogin").setAttribute("aria-selected", mode === "login");
+    $("authTabSignup").setAttribute("aria-selected", mode === "signup");
+    renderAuthForm();
+  }
+
+  $("authTabLogin").addEventListener("click", () => setAuthMode("login"));
+  $("authTabSignup").addEventListener("click", () => setAuthMode("signup"));
+
+  authForm.addEventListener("submit", (e) => {
+    e.preventDefault();
+    // Placeholder until Firebase auth is connected.
+    console.log(`[auth] ${authMode} submitted — authentication coming soon (no backend yet)`);
+    const btn = authForm.querySelector(".auth-submit");
+    if (btn) { btn.textContent = "Coming Soon"; btn.classList.add("pending"); }
+    setTimeout(() => {
+      store.authSeen = true;
+      save();
+      authScreen.classList.add("hidden");
+    }, 1100);
+  });
+
+  if (!store.authSeen) {
+    renderAuthForm();
+    authScreen.classList.remove("hidden");
+  }
+
   /* ---------------- boot ---------------- */
 
   applyTextSize();
