@@ -16,32 +16,9 @@
 <body>
   <div id="app" class="app">
 
-    <!-- ===================== HEADER ZONE ===================== -->
+    <!-- ============ HEADER ZONE (wave only — action icons live in the card footer) ============ -->
     <header class="header-zone">
       <div class="wave-bg"></div>
-      <div class="header-controls">
-        <div class="header-side header-side-left">
-          <button id="btnAskAeway" class="img-btn img-btn-lg" aria-label="Ask Æway">
-            <img src="assets/buttons-icon/btn-ask-aeway@2x.png" alt="">
-          </button>
-          <button id="btnVolume" class="img-btn img-btn-sm" aria-label="Toggle sound">
-            <img id="volumeImg" src="assets/buttons-icon/btn-volume-on@2x.png" alt="">
-          </button>
-        </div>
-
-        <div class="avatar-wrap" id="avatarWrap">
-          <img id="avatarImg" class="avatar" src="assets/avatars/avatar-eyes-open@2x.png" alt="Æway avatar">
-        </div>
-
-        <div class="header-side header-side-right">
-          <button id="btnPlay" class="img-btn img-btn-lg" aria-label="Play narration">
-            <img id="playImg" src="assets/buttons-icon/btn-play@2x.png" alt="">
-          </button>
-          <button id="btnReplay" class="img-btn img-btn-sm" aria-label="Replay narration">
-            <img src="assets/buttons-icon/btn-replay@2x.png" alt="">
-          </button>
-        </div>
-      </div>
     </header>
 
     <!-- ===================== HEADER ICON ROW ===================== -->
@@ -76,9 +53,23 @@
           <!-- view content injected by app.js -->
         </div>
         <div class="card-footer" id="cardFooter">
-          <button id="btnBookmark" class="footer-icon" aria-label="Bookmark this screen"></button>
           <img class="wordmark" src="assets/logo/logo-wordmark@3x.png" alt="Learnæway">
-          <button id="btnHeart" class="footer-icon" aria-label="Like this screen"></button>
+          <div class="footer-row">
+            <button id="btnBookmark" class="footer-icon" aria-label="Bookmark this screen"></button>
+            <button id="btnAskAeway" class="action-btn" aria-label="Ask Æway">
+              <img src="assets/buttons-icon/btn-ask-aeway-v2@2x.png" alt="">
+            </button>
+            <button id="btnVolume" class="action-btn" aria-label="Toggle sound">
+              <img id="volumeImg" src="assets/buttons-icon/btn-volume-on@2x.png" alt="">
+            </button>
+            <button id="btnPlay" class="action-btn" aria-label="Play narration">
+              <img id="playImg" src="assets/buttons-icon/btn-play@2x.png" alt="">
+            </button>
+            <button id="btnReplay" class="action-btn" aria-label="Replay narration">
+              <img src="assets/buttons-icon/btn-replay@2x.png" alt="">
+            </button>
+            <button id="btnHeart" class="footer-icon" aria-label="Like this screen"></button>
+          </div>
         </div>
       </div>
     </main>
@@ -102,7 +93,7 @@
       <div class="auth-wave"></div>
       <div class="auth-card-outer">
         <div class="auth-card">
-          <img class="auth-logo" src="assets/logo/logo-symbol@3x.png" alt="Learnæway logo">
+          <img class="auth-logo" src="assets/logo/logo-symbol-v2@3x.png" alt="Learnæway logo">
           <img class="auth-wordmark" src="assets/logo/logo-wordmark@3x.png" alt="Learnæway">
           <div class="auth-tabs" role="tablist">
             <button id="authTabLogin" class="g-pill auth-tab active" role="tab" aria-selected="true">Log In</button>

@@ -54,10 +54,11 @@ sw.js                   cache-first service worker
 - **Home/outline** — stacked-card deck per section with peeking layers; tap to expand
   into the subsection list; % badges per section/subsection. Tabs: **All Sections**
   (with a module switcher), **Liked**, and **Saved** (bookmark got its own tab).
-- **Avatar states** — ring pulses on learning screens; smile flashes on like/bookmark,
-  saved note, and subsection completion; mouth-open is shown while “playing”
-  (structural only — narration audio is a v2 hook, `<!-- AUDIO: … -->` placeholders
-  are emitted per screen).
+- **Action icons** — Ask Æway mic, volume, play/pause, and replay sit as a row in
+  the card footer between the bookmark and heart (v2 target layout); the header is
+  wave-only. Narration audio is a v2 hook — `<!-- AUDIO: … -->` placeholders are
+  emitted per screen. The avatar assets remain in `assets/avatars/` but are not
+  currently rendered (removed from the header per the v2 mockups).
 - **Persistence** — visited screens, likes, bookmarks, notes, and settings in
   `localStorage` under `learnaeway.v1`.
 
@@ -65,10 +66,10 @@ sw.js                   cache-first service worker
 
 - `icon-notes`, `icon-bookmark`, `icon-heart` were **not** in the delivery zip —
   substituted with inline SVGs matched to the screenshots (swap when exported).
-- `avatar-eyes-closed` was not in the zip — `eyes-open` doubles as idle for now.
-- `app-background-card-expanded@2x.png` is a full UI mockup, not a tileable
-  background, so the card interior is a CSS recreation (corner glows + grid floor).
-  The file is kept in `assets/backgrounds/` for reference.
+- v2 asset batch: `logo-symbol-v2`, `app-background-card-v2`, `btn-ask-aeway-v2`,
+  `button-pill-standard` (login pills), and `login-screen-background` replace the
+  originals; superseded files were removed. Bars and the main card render their
+  PNG assets via border-image 9-slice so corners stay crisp at any size.
 - Source assets were delivered on 5100×3300 canvases; everything in `assets/` is
   alpha-trimmed and downscaled for web delivery.
 - Diagrams: candlestick anatomy + candlestick-run are inline SVGs in `js/app.js`

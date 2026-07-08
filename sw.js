@@ -3,7 +3,7 @@
  * deploys show up immediately; only falls back to cache when offline.
  * Heavy binary assets (images) are cache-first since they rarely change.
  */
-const CACHE = "learnaeway-v3";
+const CACHE = "learnaeway-v4";
 
 const SHELL = [
   "./",
@@ -12,15 +12,14 @@ const SHELL = [
   "./js/app.js",
   "./data/course-data.js",
   "./manifest.webmanifest",
-  "./assets/logo/logo-symbol@3x.png",
+  "./assets/logo/logo-symbol-v2@3x.png",
   "./assets/logo/logo-wordmark@3x.png",
-  "./assets/avatars/avatar-eyes-open@2x.png",
-  "./assets/avatars/avatar-eyes-open-mouth-open@2x.png",
-  "./assets/avatars/avatar-eyes-open-mouth-smile@2x.png",
   "./assets/backgrounds/wave-header@2x.png",
-  "./assets/backgrounds/app-background-card@2x.png",
+  "./assets/backgrounds/app-background-card-v2@2x.png",
+  "./assets/backgrounds/login-screen-background@2x.png",
   "./assets/bars/info-bar@2x.png",
-  "./assets/buttons-icon/btn-ask-aeway@2x.png",
+  "./assets/buttons-pill/button-pill-standard@2x.png",
+  "./assets/buttons-icon/btn-ask-aeway-v2@2x.png",
   "./assets/buttons-icon/btn-play@2x.png",
   "./assets/buttons-icon/btn-pause@2x.png",
   "./assets/buttons-icon/btn-volume-on@2x.png",

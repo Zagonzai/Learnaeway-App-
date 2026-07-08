@@ -67,14 +67,6 @@
   const progressLabel = $("progressLabel");
   const overlay = $("overlay");
   const overlayPanel = $("overlayPanel");
-  const avatarWrap = $("avatarWrap");
-  const avatarImg = $("avatarImg");
-
-  const AVATARS = {
-    idle: "assets/avatars/avatar-eyes-open@2x.png",          // eyes-closed not exported yet
-    speak: "assets/avatars/avatar-eyes-open-mouth-open@2x.png", // v2: jaw sync with audio
-    smile: "assets/avatars/avatar-eyes-open-mouth-smile@2x.png",
-  };
 
   /* ---------------- inline SVG icons (notes / bookmark / heart / close)
      icon-notes, icon-bookmark, icon-heart were not exported in the asset
@@ -103,14 +95,6 @@
     return { done, total, pct: total ? Math.round((100 * done) / total) : 0 };
   }
 
-  /* ---------------- avatar states ---------------- */
-
-  let smileTimer = null;
-  function avatarSmile() {
-    if (smileTimer) clearTimeout(smileTimer);
-    avatarImg.src = AVATARS.smile;
-    smileTimer = setTimeout(() => { avatarImg.src = AVATARS.idle; smileTimer = null; }, 1600);
-  }
 
   /* ---------------- rendering: learning screen ---------------- */
 
@@ -196,7 +180,6 @@
       store.lastScreen = scr.id;
       save();
       const after = subProgress(sub);
-      if (after.done === after.total && before === after.total - 1) avatarSmile();
     } else {
       store.lastScreen = scr.id;
       save();
@@ -211,7 +194,7 @@
     cardScroll.innerHTML = `
       <div class="${anim}">
         <!-- AUDIO: ${scr.audio} -->
-        <img class="card-logo" src="assets/logo/logo-symbol@3x.png" alt="">
+        <img class="card-logo" src="assets/logo/logo-symbol-v2@3x.png" alt="">
         <h1 class="screen-headline">${esc(scr.headline)}</h1>
         ${scr.subhead ? `<h2 class="screen-subhead">${esc(scr.subhead)}</h2>` : ""}
         ${diagramFor(entry)}
@@ -222,7 +205,6 @@
     cardScroll.scrollTop = 0;
     cardFooter.style.display = "";
     syncMarks();
-    avatarWrap.classList.add("pulsing");
   }
 
   function syncMarks() {
@@ -244,7 +226,6 @@
     barTitle.textContent = "Learnæway's Path to Trading Course";
     progressLabel.textContent = `${ov.pct}%`;
     progressFill.style.width = `${ov.pct}%`;
-    avatarWrap.classList.remove("pulsing");
 
     let body = "";
     if (state.homeTab === "sections") {
@@ -262,7 +243,7 @@
         if (expanded) {
           row += `
           <div class="subsection-panel">
-            <img class="panel-logo" src="assets/logo/logo-symbol@3x.png" alt="">
+            <img class="panel-logo" src="assets/logo/logo-symbol-v2@3x.png" alt="">
             ${sec.subsections.map((sub) => {
               const sp = subProgress(sub);
               return `
@@ -304,7 +285,7 @@
 
     cardScroll.innerHTML = `
       <div class="home-head">
-        <img class="home-logo" src="assets/logo/logo-symbol@3x.png" alt="">
+        <img class="home-logo" src="assets/logo/logo-symbol-v2@3x.png" alt="">
         <div class="home-module-title">Sections · Module ${mod.num} of ${DATA.modules.length}</div>
         <div class="home-module-tagline">${esc(mod.tagline)}</div>
       </div>
@@ -532,7 +513,7 @@
     const id = screens[state.current].scr.id;
     const bag = kind === "like" ? store.liked : store.saved;
     if (bag[id]) delete bag[id];
-    else { bag[id] = true; avatarSmile(); }
+    else bag[id] = true;
     save();
     syncMarks();
   }
@@ -543,8 +524,6 @@
   $("btnPlay").addEventListener("click", () => {
     playing = !playing;
     $("playImg").src = playing ? "assets/buttons-icon/btn-pause@2x.png" : "assets/buttons-icon/btn-play@2x.png";
-    avatarImg.src = playing ? AVATARS.speak : AVATARS.idle;   // v2: sync with real narration
-    avatarWrap.classList.toggle("pulsing", playing || state.view === "screen");
   });
   $("btnReplay").addEventListener("click", () => { /* v2: restart narration */ });
   $("btnVolume").addEventListener("click", () => {
@@ -618,7 +597,6 @@
       if (txt && state.view === "screen") {
         store.notes[screens[state.current].scr.id] = txt.value;
         save();
-        avatarSmile();
       }
       closeOverlay();
     }
