@@ -224,6 +224,21 @@ def main():
             sub["screens"].append(entry)
             total += 1
 
+    # Merge short intro subsections into a single screen (no swipe-to-continue)
+    # and attach real narration audio where a track exists.
+    MERGE_SUBSECTIONS = {
+        "welcome-to-learnaeway--overview-0": {"audioSrc": "assets/audio/Welcome_to_Learnaeway.mp3"},
+    }
+    for m in modules:
+        for sec in m["sections"]:
+            for sub in sec["subsections"]:
+                if sub["id"] in MERGE_SUBSECTIONS and len(sub["screens"]) > 1:
+                    merged = dict(sub["screens"][0])
+                    merged["body"] = [p for scr in sub["screens"] for p in scr["body"]]
+                    merged.update(MERGE_SUBSECTIONS[sub["id"]])
+                    total -= len(sub["screens"]) - 1
+                    sub["screens"] = [merged]
+
     data = {
         "courseTitle": "Learnæway's Path to Trading Course",
         "byline": "By Æway",

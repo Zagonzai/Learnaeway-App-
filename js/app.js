@@ -169,6 +169,7 @@
   </svg></div>`;
 
   function renderScreen() {
+    stopAudio();
     const entry = screens[state.current];
     const { scr, sub, sec } = entry;
     const p = subProgress(sub);
@@ -214,7 +215,6 @@
     const liked = id && !!store.liked[id];
     $("btnBookmark").classList.toggle("on-cyan", saved);
     $("btnHeart").classList.toggle("on-magenta", liked);
-    $("navBookmark").classList.toggle("glow-magenta", saved);
   }
 
   /* ---------------- rendering: home / outline ---------------- */
@@ -304,6 +304,7 @@
   }
 
   function render() {
+    $("cardOuter").classList.toggle("outline-bg", state.view === "home");
     if (state.view === "home") renderHome();
     else renderScreen();
   }
@@ -330,6 +331,7 @@
   }
 
   function goHome() {
+    stopAudio();
     state.view = "home";
     state.slideDir = 0;
     closeOverlay();
@@ -387,7 +389,8 @@
           return `<button class="menu-item ${cur ? "current" : ""}" data-menu-sec="${sec.id}" data-mod-idx="${DATA.modules.indexOf(mod)}">
             ${esc(sec.title)}<span class="mi-pct">${p.pct}%</span></button>`;
         }).join("")}
-      </div>`).join("");
+      </div>`).join("") +
+      `<button class="menu-logout" data-logout>Log Out</button>`;
     openOverlay(html);
   }
 
@@ -483,18 +486,36 @@
     openOverlay(html);
   }
 
-  /* notes — per-screen, saved to local storage (backend sync in v2) */
+  /* notes — per-screen editor on learning screens, browsable list elsewhere.
+     Saves are keyed to the screen id captured at open time, so a note can
+     never be dropped because the view state changed underneath the modal. */
   function openNotes() {
-    if (state.view !== "screen") { openProfile(); return; }
+    if (state.view !== "screen") { openNotesList(); return; }
     const entry = screens[state.current];
     const existing = store.notes[entry.scr.id] || "";
     const html = panelHead("Notes") + `
       <div class="set-label">${esc(entry.sec.title)} · Screen ${entry.ki + 1} of ${entry.sub.screens.length}</div>
       <textarea class="notes-area" id="noteText" placeholder="Write a note for this screen…">${esc(existing)}</textarea>
       <div class="notes-hint">Notes are stored on this device and are also visible from your profile.</div>
-      <button class="btn-primary" data-save-note>Save note</button>`;
+      <button class="btn-primary" data-save-note="${entry.scr.id}">Save note</button>
+      <button class="btn-secondary" data-notes-list>All notes</button>`;
     openOverlay(html);
     setTimeout(() => { const t = $("noteText"); if (t) t.focus(); }, 60);
+  }
+
+  function openNotesList() {
+    const ids = Object.keys(store.notes)
+      .filter((k) => store.notes[k] && store.notes[k].trim() && screenIndex[k] !== undefined);
+    const items = ids.map((k) => {
+      const e = screens[screenIndex[k]];
+      return `<button class="menu-item" data-screen="${k}">
+        <span>${esc(e.sec.title)} · Screen ${e.ki + 1}
+          <span class="liked-sub">${esc(store.notes[k].slice(0, 90))}</span>
+        </span></button>`;
+    }).join("");
+    const html = panelHead("Your Notes") + (items ||
+      `<div class="liked-empty">No notes yet.<br>Open any learning screen and tap the notes icon in the top bar to write one.</div>`);
+    openOverlay(html);
   }
 
   /* ask Æway — placeholder conversation entry point (v2) */
@@ -518,14 +539,51 @@
     syncMarks();
   }
 
-  /* ---------------- header zone buttons (audio structural only in v1) --- */
+  /* ---------------- narration audio (real playback where a track exists) --- */
 
+  let audioEl = null;
   let playing = false;
+  function setPlayIcon(on) {
+    $("playImg").src = on ? "assets/buttons-icon/btn-pause@2x.png" : "assets/buttons-icon/btn-play@2x.png";
+  }
+  function currentAudioSrc() {
+    return state.view === "screen" ? screens[state.current].scr.audioSrc || null : null;
+  }
+  function ensureAudio(src) {
+    if (!audioEl || audioEl.dataset_src !== src) {
+      if (audioEl) audioEl.pause();
+      audioEl = new Audio(src);
+      audioEl.dataset_src = src;
+      audioEl.muted = !store.settings.sound;
+      audioEl.addEventListener("ended", () => { playing = false; setPlayIcon(false); });
+    }
+    return audioEl;
+  }
+  function stopAudio() {
+    if (audioEl) { audioEl.pause(); audioEl = null; }
+    playing = false;
+    setPlayIcon(false);
+  }
   $("btnPlay").addEventListener("click", () => {
-    playing = !playing;
-    $("playImg").src = playing ? "assets/buttons-icon/btn-pause@2x.png" : "assets/buttons-icon/btn-play@2x.png";
+    const src = currentAudioSrc();
+    if (src) {
+      const a = ensureAudio(src);
+      if (playing) { a.pause(); playing = false; }
+      else { a.play().catch(() => {}); playing = true; }
+    } else {
+      playing = !playing;    // no narration on this screen yet — visual toggle only
+    }
+    setPlayIcon(playing);
   });
-  $("btnReplay").addEventListener("click", () => { /* v2: restart narration */ });
+  $("btnReplay").addEventListener("click", () => {
+    const src = currentAudioSrc();
+    if (!src) return;
+    const a = ensureAudio(src);
+    a.currentTime = 0;
+    a.play().catch(() => {});
+    playing = true;
+    setPlayIcon(true);
+  });
   $("btnVolume").addEventListener("click", () => {
     store.settings.sound = !store.settings.sound;
     save();
@@ -535,6 +593,7 @@
     $("volumeImg").src = store.settings.sound
       ? "assets/buttons-icon/btn-volume-on@2x.png"
       : "assets/buttons-icon/btn-volume-off@2x.png";
+    if (audioEl) audioEl.muted = !store.settings.sound;
   }
   $("btnAskAeway").addEventListener("click", openAsk);
 
@@ -546,17 +605,26 @@
   $("btnLayers").addEventListener("click", () => openLayers("screens"));
   $("btnBookmark").addEventListener("click", () => toggleMark("save"));
   $("btnHeart").addEventListener("click", () => toggleMark("like"));
-  $("navNotes").innerHTML = SVG.notes;
-  $("navBookmark").innerHTML = SVG.bookmark;
+  $("btnNotes").innerHTML = SVG.notes;
   $("btnBookmark").innerHTML = SVG.bookmark;
   $("btnHeart").innerHTML = SVG.heart;
-  $("navNotes").addEventListener("click", openNotes);
-  // Bottom-nav bookmark is navigation only — it opens the Saved Screens
-  // list and never toggles save state (the card-footer bookmark does that).
-  $("navBookmark").addEventListener("click", () => {
-    state.homeTab = "saved";
-    goHome();
-  });
+  $("btnNotes").addEventListener("click", openNotes);
+
+  function openComingSoon(kind) {
+    const meta = kind === "video"
+      ? { icon: "assets/nav-icons/icon-video-play@2x.png", title: "Video Lessons",
+          body: "Video-based learning content is coming soon. Every section will get companion video walkthroughs here." }
+      : { icon: "assets/nav-icons/icon-knowledge-test-lightning@2x.png", title: "Knowledge Test",
+          body: "Pattern-recognition quizzes and knowledge checks are coming soon. You'll be able to test yourself on every section you complete." };
+    openOverlay(panelHead(meta.title) + `
+      <div class="liked-empty">
+        <img src="${meta.icon}" alt="" style="width:88px;display:block;margin:0 auto 14px;filter:drop-shadow(0 0 12px rgba(61,223,255,.4))">
+        ${meta.body}
+      </div>
+      <button class="btn-primary" data-close>Got it</button>`);
+  }
+  $("navVideo").addEventListener("click", () => openComingSoon("video"));
+  $("navQuiz").addEventListener("click", () => openComingSoon("quiz"));
   $("navHome").addEventListener("click", () => {
     goHome();
     const el = $("navHome");
@@ -567,7 +635,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-layers-toggle],[data-set-sound],[data-set-size],[data-save-note],[data-reset-progress]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-layers-toggle],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress]");
     if (!t) return;
 
     if (t.dataset.tab) { state.homeTab = t.dataset.tab; render(); }
@@ -594,11 +662,21 @@
     else if (t.dataset.setSize) { store.settings.textSize = t.dataset.setSize; save(); applyTextSize(); openSettings(); }
     else if (t.hasAttribute("data-save-note")) {
       const txt = $("noteText");
-      if (txt && state.view === "screen") {
-        store.notes[screens[state.current].scr.id] = txt.value;
+      const id = t.getAttribute("data-save-note");
+      if (txt && id && screenIndex[id] !== undefined) {
+        store.notes[id] = txt.value;
         save();
       }
       closeOverlay();
+    }
+    else if (t.hasAttribute("data-notes-list")) openNotesList();
+    else if (t.hasAttribute("data-logout")) {
+      stopAudio();
+      store.authSeen = false;
+      save();
+      closeOverlay();
+      setAuthMode("login");
+      $("authScreen").classList.remove("hidden");
     }
     else if (t.hasAttribute("data-reset-progress")) {
       if (confirm("Reset all course progress? Likes, saves and notes are kept.")) {

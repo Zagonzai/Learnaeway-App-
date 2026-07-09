@@ -4,7 +4,7 @@ By Æway
 ## Module 1: The Pillars of Building Long-Term Wealth
 
 ### 1. Welcome to Learnæway
-- 2 screens
+- 1 screen
 
 ### 2. Why This Comes First
 - 1 screen
@@ -210,4 +210,4 @@ By Æway
 - AI Tools for Traders (1 screen)
 - Websites Every Trader Should Bookmark (1 screen)
 
-**Total: 2 modules, 34 sections, 137 subsections, 235 screens.**
+**Total: 2 modules, 34 sections, 137 subsections, 234 screens.**

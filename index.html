@@ -21,29 +21,30 @@
       <div class="wave-bg"></div>
     </header>
 
-    <!-- ===================== HEADER ICON ROW ===================== -->
-    <div class="bar header-icon-row">
-      <button id="btnMenu" class="bar-icon" aria-label="Open course menu">
-        <img src="assets/nav-icons/icon-menu@2x.png" alt="">
-      </button>
-      <div id="barTitle" class="bar-title">Learnæway's Path to Trading Course</div>
-      <button id="btnSettings" class="bar-icon" aria-label="Open settings">
-        <img src="assets/nav-icons/icon-settings@2x.png" alt="">
-      </button>
-    </div>
-
-    <!-- ===================== PROGRESS ROW ===================== -->
-    <div class="bar progress-row">
-      <button id="btnProfile" class="bar-icon" aria-label="Open profile">
-        <img src="assets/nav-icons/icon-user@2x.png" alt="">
-      </button>
-      <div class="progress-track" aria-hidden="false">
-        <div id="progressFill" class="progress-fill" style="width:0%"></div>
-        <span id="progressLabel" class="progress-label">0%</span>
+    <!-- ============ CONSOLIDATED TOP BAR (single pill, two rows inside) ============ -->
+    <div class="topbar">
+      <div class="topbar-row">
+        <button id="btnMenu" class="bar-icon" aria-label="Open course menu">
+          <img src="assets/nav-icons/icon-menu@2x.png" alt="">
+        </button>
+        <div id="barTitle" class="bar-title">Learnæway's Path to Trading Course</div>
+        <button id="btnSettings" class="bar-icon" aria-label="Open settings">
+          <img src="assets/nav-icons/icon-settings@2x.png" alt="">
+        </button>
       </div>
-      <button id="btnLayers" class="bar-icon" aria-label="Toggle screen list">
-        <img src="assets/nav-icons/icon-layer@2x.png" alt="">
-      </button>
+      <div class="topbar-row">
+        <button id="btnProfile" class="bar-icon" aria-label="Open profile">
+          <img src="assets/nav-icons/icon-user@2x.png" alt="">
+        </button>
+        <button id="btnNotes" class="bar-icon" aria-label="Notes"></button>
+        <div class="progress-track" aria-hidden="false">
+          <div id="progressFill" class="progress-fill" style="width:0%"></div>
+          <span id="progressLabel" class="progress-label">0%</span>
+        </div>
+        <button id="btnLayers" class="bar-icon" aria-label="Toggle screen list">
+          <img src="assets/nav-icons/icon-layer@2x.png" alt="">
+        </button>
+      </div>
     </div>
 
     <!-- ===================== MAIN CONTENT CARD ===================== -->
@@ -74,13 +75,17 @@
       </div>
     </main>
 
-    <!-- ===================== BOTTOM NAV ===================== -->
+    <!-- ============ BOTTOM DOCK: Home · Video (soon) · Knowledge Test (soon) ============ -->
     <nav class="bottom-nav">
-      <button id="navNotes" class="nav-pill" aria-label="Notes"></button>
-      <button id="navHome" class="nav-pill nav-pill-wide" aria-label="Home">
+      <button id="navHome" class="nav-pill" aria-label="Home">
         <img src="assets/nav-icons/icon-home@2x.png" alt="">
       </button>
-      <button id="navBookmark" class="nav-pill nav-pill-pink" aria-label="Open saved screens"></button>
+      <button id="navVideo" class="nav-pill" aria-label="Video lessons — coming soon">
+        <img src="assets/nav-icons/icon-video-play@2x.png" alt="">
+      </button>
+      <button id="navQuiz" class="nav-pill nav-pill-pink" aria-label="Knowledge test — coming soon">
+        <img src="assets/nav-icons/icon-knowledge-test-lightning@2x.png" alt="">
+      </button>
     </nav>
 
     <!-- ===================== OVERLAYS ===================== -->

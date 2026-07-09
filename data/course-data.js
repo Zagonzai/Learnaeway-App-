@@ -2,7 +2,7 @@
 window.COURSE_DATA = {
  "courseTitle": "Learnæway's Path to Trading Course",
  "byline": "By Æway",
- "totalScreens": 235,
+ "totalScreens": 234,
  "modules": [
   {
    "id": "module-1",
@@ -26,18 +26,11 @@ window.COURSE_DATA = {
          "subhead": "",
          "body": [
           "Before we talk about trading, we need to talk about wealth because trading is only one piece of a much bigger picture.",
-          "Most people jump straight into the markets hoping it will be their shortcut to financial freedom. It can be a powerful tool but only once it's built on top of a real foundation. This module lays out that foundation: the 6 pillars that make up a complete financial life."
-         ],
-         "audio": "welcome-to-learnaeway/1.mp3"
-        },
-        {
-         "id": "welcome-to-learnaeway--overview-0--2",
-         "headline": "Welcome to Learnæway",
-         "subhead": "",
-         "body": [
+          "Most people jump straight into the markets hoping it will be their shortcut to financial freedom. It can be a powerful tool but only once it's built on top of a real foundation. This module lays out that foundation: the 6 pillars that make up a complete financial life.",
           "By the end of this module, you'll understand exactly where trading fits and why building real wealth means thinking bigger than your next trade."
          ],
-         "audio": "welcome-to-learnaeway/2.mp3"
+         "audio": "welcome-to-learnaeway/1.mp3",
+         "audioSrc": "assets/audio/Welcome_to_Learnaeway.mp3"
         }
        ]
       }
