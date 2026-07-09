@@ -676,6 +676,16 @@
 
   /* ---------------- boot ---------------- */
 
+  // iOS (especially standalone/home-screen mode) can under-report dvh, leaving
+  // a dead band under the bottom nav — size the app off measured innerHeight.
+  function syncViewportHeight() {
+    document.documentElement.style.setProperty("--vhpx", window.innerHeight + "px");
+  }
+  syncViewportHeight();
+  window.addEventListener("resize", syncViewportHeight);
+  window.addEventListener("orientationchange", syncViewportHeight);
+  if (window.visualViewport) window.visualViewport.addEventListener("resize", syncViewportHeight);
+
   applyTextSize();
   syncVolume();
   render();
