@@ -394,38 +394,6 @@
     openOverlay(html);
   }
 
-  /* layers — toggle: current subsection screen list <-> full outline */
-  let layersMode = "screens";
-  function openLayers(mode) {
-    layersMode = mode;
-    if (state.view !== "screen") { openMenu(); return; }
-    const entry = screens[state.current];
-    if (mode === "screens") {
-      const html = panelHead(entry.sub.title || entry.sec.title) + `
-        ${entry.sub.screens.map((s, i) => `
-          <button class="menu-item screenlist-item ${store.visited[s.id] ? "done" : ""} ${i === entry.ki ? "current" : ""}" data-screen="${s.id}">
-            Screen ${i + 1}${s.subhead ? " — " + esc(s.subhead) : ""}
-            <span class="mi-pct">${store.visited[s.id] ? "✓" : ""}</span>
-          </button>`).join("")}
-        <button class="btn-secondary" data-layers-toggle>View full outline</button>`;
-      openOverlay(html);
-    } else {
-      const html = panelHead("Full Outline") + DATA.modules.map((mod) => `
-        <div class="menu-module">
-          <div class="menu-module-title">Module ${mod.num} — ${esc(mod.tagline)}</div>
-          ${mod.sections.map((sec) => `
-            ${sec.subsections.map((sub) => {
-              const sp = subProgress(sub);
-              const cur = entry.sub.id === sub.id;
-              return `<button class="menu-item menu-sub ${cur ? "current" : ""}" data-sub="${sub.id}">
-                ${esc(sec.title)} · ${esc(sub.title)}<span class="mi-pct">${sp.pct}%</span></button>`;
-            }).join("")}`).join("")}
-        </div>`).join("") +
-        `<button class="btn-secondary" data-layers-toggle>Back to screen list</button>`;
-      openOverlay(html);
-    }
-  }
-
   /* settings */
   function openSettings() {
     const s = store.settings;
@@ -602,7 +570,6 @@
   $("btnMenu").addEventListener("click", openMenu);
   $("btnSettings").addEventListener("click", openSettings);
   $("btnProfile").addEventListener("click", openProfile);
-  $("btnLayers").addEventListener("click", () => openLayers("screens"));
   $("btnBookmark").addEventListener("click", () => toggleMark("save"));
   $("btnHeart").addEventListener("click", () => toggleMark("like"));
   $("btnNotes").innerHTML = SVG.notes;
@@ -635,7 +602,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-layers-toggle],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress]");
     if (!t) return;
 
     if (t.dataset.tab) { state.homeTab = t.dataset.tab; render(); }
@@ -657,7 +624,6 @@
         }
       }
     }
-    else if (t.hasAttribute("data-layers-toggle")) openLayers(layersMode === "screens" ? "outline" : "screens");
     else if (t.dataset.setSound !== undefined) { store.settings.sound = t.dataset.setSound === "1"; save(); syncVolume(); openSettings(); }
     else if (t.dataset.setSize) { store.settings.textSize = t.dataset.setSize; save(); applyTextSize(); openSettings(); }
     else if (t.hasAttribute("data-save-note")) {
