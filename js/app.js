@@ -717,6 +717,7 @@
       save();
       closeOverlay();
       setAuthMode("login");
+      showAuthStep();
       $("authScreen").classList.remove("hidden");
     }
     else if (t.hasAttribute("data-reset-progress")) {
@@ -788,8 +789,56 @@
     }, 1100);
   });
 
+  /* Step 1 access gate: name/email/phone are captured on every attempt;
+     the passcode is the gatekeeper. Attempts are logged locally and, when
+     LEARNAEWAY_CONFIG.attemptsWebhookUrl is set, POSTed to that webhook
+     (e.g. Zapier -> Google Sheet). */
+  const CFG = window.LEARNAEWAY_CONFIG || {};
+  function showAuthStep() {
+    $("gateStep").classList.toggle("hidden", !!store.gatePassed);
+    $("loginStep").classList.toggle("hidden", !store.gatePassed);
+  }
+  function logGateAttempt(attempt) {
+    if (!store.gateAttempts) store.gateAttempts = [];
+    store.gateAttempts.push(attempt);
+    if (store.gateAttempts.length > 100) store.gateAttempts = store.gateAttempts.slice(-100);
+    save();
+    if (CFG.attemptsWebhookUrl) {
+      try {
+        fetch(CFG.attemptsWebhookUrl, {
+          method: "POST",
+          mode: "no-cors",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(attempt),
+        }).catch(() => {});
+      } catch (e) { /* webhook unreachable — attempt is still in localStorage */ }
+    }
+  }
+  $("gateForm").addEventListener("submit", (e) => {
+    e.preventDefault();
+    const f = new FormData(e.target);
+    const ok = (f.get("passcode") || "").trim() === String(CFG.accessPasscode || "");
+    logGateAttempt({
+      firstName: (f.get("firstName") || "").trim(),
+      lastName: (f.get("lastName") || "").trim(),
+      email: (f.get("email") || "").trim(),
+      phone: (f.get("phone") || "").trim(),
+      timestamp: new Date().toISOString(),
+      passcodeCorrect: ok,
+    });
+    if (ok) {
+      store.gatePassed = true;
+      save();
+      $("gateError").classList.add("hidden");
+      showAuthStep();
+    } else {
+      $("gateError").classList.remove("hidden");
+    }
+  });
+
   if (!store.authSeen) {
     renderAuthForm();
+    showAuthStep();
     authScreen.classList.remove("hidden");
   }
 

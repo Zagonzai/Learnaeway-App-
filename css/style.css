@@ -903,6 +903,27 @@ img { user-select: none; -webkit-user-drag: none; }
   font-family: inherit;
 }
 
+.auth-card-outer.hidden { display: none; }
+
+.gate-title {
+  font-size: calc(17px * var(--fs));
+  font-weight: 800;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  text-shadow: 0 0 14px rgba(61,223,255,.6);
+  margin: -14px 0 20px;
+}
+.gate-error {
+  width: 100%;
+  text-align: center;
+  font-size: calc(13.5px * var(--fs));
+  font-weight: 700;
+  color: #FF7DB4;
+  text-shadow: 0 0 10px rgba(255,61,154,.5);
+}
+.gate-error.hidden { display: none; }
+
 .auth-tabs {
   display: flex;
   gap: 14px;

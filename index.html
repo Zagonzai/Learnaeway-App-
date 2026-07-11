@@ -39,6 +39,7 @@
         <div id="progressFill" class="progress-fill" style="width:0%"></div>
         <span id="progressLabel" class="progress-label">0%</span>
       </div>
+      <button id="btnChecklist" class="bar-icon" aria-label="Daily trading checklist"></button>
     </div>
 
     <!-- ===================== MAIN CONTENT CARD ===================== -->
@@ -50,7 +51,6 @@
         <div class="card-footer" id="cardFooter">
           <img class="wordmark" src="assets/logo/logo-wordmark@3x.png" alt="Learnæway">
           <div class="footer-row">
-            <button id="btnChecklist" class="footer-icon" aria-label="Daily trading checklist"></button>
             <button id="btnNotes" class="footer-icon" aria-label="Notes for this screen"></button>
             <button id="btnAskAeway" class="action-btn" aria-label="Ask Æway">
               <img src="assets/buttons-icon/btn-ask-aeway-v2@2x.png" alt="">
@@ -91,7 +91,27 @@
     <!-- ===================== AUTH (pre-login entry, UI only) ===================== -->
     <div id="authScreen" class="auth-screen hidden">
       <div class="auth-wave"></div>
-      <div class="auth-card-outer">
+
+      <!-- Step 1: access gate — data capture + passcode gatekeeper -->
+      <div id="gateStep" class="auth-card-outer hidden">
+        <div class="auth-card">
+          <img class="auth-logo" src="assets/logo/logo-symbol-v2@3x.png" alt="Learnæway logo">
+          <img class="auth-wordmark" src="assets/logo/logo-wordmark@3x.png" alt="Learnæway">
+          <div class="gate-title">Beta Access</div>
+          <form id="gateForm" autocomplete="off" novalidate>
+            <input class="g-pill auth-input" name="firstName" type="text" placeholder="First Name">
+            <input class="g-pill auth-input" name="lastName" type="text" placeholder="Last Name">
+            <input class="g-pill auth-input" name="email" type="email" placeholder="Email">
+            <input class="g-pill auth-input" name="phone" type="tel" placeholder="Phone Number">
+            <input class="g-pill auth-input" name="passcode" type="password" placeholder="Passcode">
+            <div id="gateError" class="gate-error hidden">Invalid passcode — access denied.</div>
+            <button type="submit" class="g-pill auth-submit">Enter</button>
+          </form>
+        </div>
+      </div>
+
+      <!-- Step 2: login (existing screen, unchanged) -->
+      <div id="loginStep" class="auth-card-outer">
         <div class="auth-card">
           <img class="auth-logo" src="assets/logo/logo-symbol-v2@3x.png" alt="Learnæway logo">
           <img class="auth-wordmark" src="assets/logo/logo-wordmark@3x.png" alt="Learnæway">
@@ -107,6 +127,7 @@
     </div>
   </div>
 
+  <script src="js/config.js"></script>
   <script src="data/course-data.js"></script>
   <script src="js/app.js"></script>
 </body>
