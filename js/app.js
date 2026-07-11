@@ -28,6 +28,7 @@
 
   const KEY = "learnaeway.v1";
   const store = load();
+  if (!store.checklist) store.checklist = {};   // daily trading checklist ticks
   function load() {
     try {
       const raw = localStorage.getItem(KEY);
@@ -76,7 +77,24 @@
     bookmark: '<svg viewBox="0 0 24 24"><path class="ico" d="M6 3h12a1 1 0 0 1 1 1v17l-7-4.5L5 21V4a1 1 0 0 1 1-1z"/></svg>',
     heart: '<svg viewBox="0 0 24 24"><path class="ico" d="M12 21s-7.5-4.7-9.7-9.2C.8 8.6 2.7 5 6.2 5c2.2 0 3.6 1.2 4.4 2.5l1.4 2 1.4-2C14.2 6.2 15.6 5 17.8 5c3.5 0 5.4 3.6 3.9 6.8C19.5 16.3 12 21 12 21z"/></svg>',
     notes: '<svg viewBox="0 0 24 24"><rect class="ico" x="5" y="4" width="14" height="17" rx="2.5"/><path class="ico" d="M9 2.5v3M15 2.5v3M8.5 10h7M8.5 13.5h7M8.5 17h4.5"/></svg>',
+    checklist: '<svg viewBox="0 0 24 24"><rect class="ico" x="5" y="4" width="14" height="17" rx="2.5"/><path class="ico" d="M9 2.5v3M15 2.5v3M8.2 10.6l1.6 1.6 3.2-3.2M8.2 16.4l1.6 1.6 3.2-3.2M15.2 11.4h1.4M15.2 17.2h1.4"/></svg>',
   };
+
+  /* Daily trading checklist — a static discipline tool checked off before a
+     trade. Completely separate from course progress. Rules distilled from
+     the course's Daily Trading Checklist and Trading Psychology sections. */
+  const CHECKLIST_ITEMS = [
+    "I am well-rested, calm, and emotionally ready to trade",
+    "I have checked the economic calendar for news and reports",
+    "I know which market sessions and opening times are in play",
+    "I have marked higher-timeframe support and resistance levels",
+    "I have identified the trend and set my directional bias",
+    "My setup matches my strategy — I am not forcing a trade",
+    "My stop loss, position size, and max daily loss are defined",
+    "The reward-to-risk ratio justifies taking this trade",
+    "I am not trading out of boredom, FOMO, or revenge",
+    "I accept that this trade can lose, and I am okay with that",
+  ];
 
   /* ---------------- progress helpers ---------------- */
 
@@ -211,10 +229,7 @@
   function syncMarks() {
     const entry = state.view === "screen" ? screens[state.current] : null;
     const id = entry ? entry.scr.id : null;
-    const saved = id && !!store.saved[id];
-    const liked = id && !!store.liked[id];
-    $("btnBookmark").classList.toggle("on-cyan", saved);
-    $("btnHeart").classList.toggle("on-magenta", liked);
+    $("btnHeart").classList.toggle("on-magenta", id && !!store.liked[id]);
   }
 
   /* ---------------- rendering: home / outline ---------------- */
@@ -256,29 +271,46 @@
         }
         return row;
       }).join("");
-    } else {
-      const marks = state.homeTab === "liked" ? store.liked : store.saved;
-      const verb = state.homeTab === "liked" ? "liked" : "saved";
+    } else if (state.homeTab === "liked") {
       const groups = {};
       screens.forEach((e) => {
-        if (marks[e.scr.id]) (groups[e.sec.id] = groups[e.sec.id] || { sec: e.sec, items: [] }).items.push(e);
+        if (store.liked[e.scr.id]) (groups[e.sec.id] = groups[e.sec.id] || { sec: e.sec, items: [] }).items.push(e);
       });
       const keys = Object.keys(groups);
       if (!keys.length) {
-        body = `<div class="liked-empty">No ${verb} screens yet.<br>
-          Tap the ${state.homeTab === "liked" ? "heart" : "bookmark"} on any learning screen to ${state.homeTab === "liked" ? "like" : "save"} it.</div>`;
+        body = `<div class="liked-empty">No liked screens yet.<br>
+          Tap the heart on any learning screen to like it.</div>`;
       } else {
         body = keys.map((k) => {
           const g = groups[k];
           return `
-            <div class="liked-group-title">${esc(g.sec.title)} (${g.items.length} ${verb})</div>
+            <div class="liked-group-title">${esc(g.sec.title)} (${g.items.length} liked)</div>
             ${g.items.map((e) => `
               <button class="liked-row" data-screen="${e.scr.id}">
                 <span class="liked-label">${esc(e.scr.subhead || e.sub.title)}
                   <span class="liked-sub">Screen ${e.ki + 1} of ${e.sub.screens.length}</span>
                 </span>
-                ${state.homeTab === "liked" ? SVG.heart.replace('class="ico"', 'class="ico" style="fill:#FF3D9A;stroke:#FF3D9A"') : SVG.bookmark.replace('class="ico"', 'class="ico" style="fill:#3DDFFF;stroke:#3DDFFF"')}
+                ${SVG.heart.replace('class="ico"', 'class="ico" style="fill:#FF3D9A;stroke:#FF3D9A"')}
               </button>`).join("")}`;
+        }).join("");
+      }
+    } else {
+      // Notes tab: every note across the course, tap to jump to its page
+      const ids = Object.keys(store.notes)
+        .filter((k) => store.notes[k] && store.notes[k].trim() && screenIndex[k] !== undefined);
+      if (!ids.length) {
+        body = `<div class="liked-empty">No notes yet.<br>
+          Open any lesson and tap the notes icon in the footer to write one.</div>`;
+      } else {
+        body = ids.map((k) => {
+          const e = screens[screenIndex[k]];
+          return `
+            <button class="liked-row" data-screen="${k}">
+              <span class="liked-label">${esc(e.sec.title)} · Screen ${e.ki + 1} of ${e.sub.screens.length}
+                <span class="liked-sub">${esc(store.notes[k].slice(0, 90))}</span>
+              </span>
+              ${SVG.notes.replace('class="ico"', 'class="ico" style="stroke:#2FE6C2"')}
+            </button>`;
         }).join("");
       }
     }
@@ -292,15 +324,30 @@
       <div class="home-tabs">
         <button class="home-tab ${state.homeTab === "sections" ? "active" : ""}" data-tab="sections">All Sections</button>
         <button class="home-tab ${state.homeTab === "liked" ? "active" : ""}" data-tab="liked">Liked</button>
-        <button class="home-tab ${state.homeTab === "saved" ? "active" : ""}" data-tab="saved">Saved</button>
+        <button class="home-tab ${state.homeTab === "notes" ? "active" : ""}" data-tab="notes">Notes</button>
       </div>
       ${state.homeTab === "sections" ? `
       <div class="home-tabs">
         ${DATA.modules.map((m, i) => `<button class="home-tab ${i === state.homeModule ? "active" : ""}" data-mod="${i}">Module ${m.num}</button>`).join("")}
-      </div>` : ""}
+      </div>
+      ${continueHTML()}` : ""}
       ${body}`;
     cardFooter.style.display = "none";
     syncMarks();
+  }
+
+  // progress saves automatically (store.lastScreen updates on every screen
+  // view) — Continue reopens the course at the last page reached.
+  function continueHTML() {
+    const id = store.lastScreen;
+    if (!id || screenIndex[id] === undefined) return "";
+    const e = screens[screenIndex[id]];
+    return `
+      <button class="continue-row" data-screen="${id}">
+        <span class="cont-label">Continue</span>
+        <span class="cont-where">${esc(e.sec.title)} · Screen ${e.ki + 1} of ${e.sub.screens.length}</span>
+        <span class="cont-arrow">›</span>
+      </button>`;
   }
 
   function render() {
@@ -497,14 +544,29 @@
 
   /* ---------------- marks: bookmark & heart ---------------- */
 
-  function toggleMark(kind) {
+  function toggleLike() {
     if (state.view !== "screen") return;
     const id = screens[state.current].scr.id;
-    const bag = kind === "like" ? store.liked : store.saved;
-    if (bag[id]) delete bag[id];
-    else bag[id] = true;
+    if (store.liked[id]) delete store.liked[id];
+    else store.liked[id] = true;
     save();
     syncMarks();
+  }
+
+  /* daily trading checklist overlay */
+  function openChecklist() {
+    const done = CHECKLIST_ITEMS.filter((_, i) => store.checklist[i]).length;
+    const html = panelHead("Daily Trading Checklist") + `
+      <div class="notes-hint" style="margin:0 0 12px">Run through this before entering any trade.
+        Checked ${done} of ${CHECKLIST_ITEMS.length}. This is a discipline tool — it does not affect course progress.</div>
+      ${CHECKLIST_ITEMS.map((item, i) => `
+        <button class="check-row ${store.checklist[i] ? "done" : ""}" data-check="${i}">
+          <span class="check-box">${store.checklist[i] ? "✓" : ""}</span>
+          <span class="check-label">${esc(item)}</span>
+        </button>`).join("")}
+      <button class="btn-secondary" data-check-reset>Reset checklist</button>
+      <button class="btn-primary" data-close>Done</button>`;
+    openOverlay(html);
   }
 
   /* ---------------- narration audio (real playback where a track exists) --- */
@@ -570,11 +632,11 @@
   $("btnMenu").addEventListener("click", openMenu);
   $("btnSettings").addEventListener("click", openSettings);
   $("btnProfile").addEventListener("click", openProfile);
-  $("btnBookmark").addEventListener("click", () => toggleMark("save"));
-  $("btnHeart").addEventListener("click", () => toggleMark("like"));
+  $("btnHeart").addEventListener("click", toggleLike);
+  $("btnChecklist").innerHTML = SVG.checklist;
   $("btnNotes").innerHTML = SVG.notes;
-  $("btnBookmark").innerHTML = SVG.bookmark;
   $("btnHeart").innerHTML = SVG.heart;
+  $("btnChecklist").addEventListener("click", openChecklist);
   $("btnNotes").addEventListener("click", openNotes);
 
   function openComingSoon(kind) {
@@ -593,6 +655,7 @@
   $("navVideo").addEventListener("click", () => openComingSoon("video"));
   $("navQuiz").addEventListener("click", () => openComingSoon("quiz"));
   $("navHome").addEventListener("click", () => {
+    state.homeTab = "sections";   // Home always lands on the outline + Continue
     goHome();
     const el = $("navHome");
     el.classList.add("glow-cyan");
@@ -602,7 +665,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-check],[data-check-reset],[data-reset-progress]");
     if (!t) return;
 
     if (t.dataset.tab) { state.homeTab = t.dataset.tab; render(); }
@@ -636,6 +699,18 @@
       closeOverlay();
     }
     else if (t.hasAttribute("data-notes-list")) openNotesList();
+    else if (t.dataset.check !== undefined) {
+      const i = +t.dataset.check;
+      if (store.checklist[i]) delete store.checklist[i];
+      else store.checklist[i] = true;
+      save();
+      openChecklist();
+    }
+    else if (t.hasAttribute("data-check-reset")) {
+      store.checklist = {};
+      save();
+      openChecklist();
+    }
     else if (t.hasAttribute("data-logout")) {
       stopAudio();
       store.authSeen = false;

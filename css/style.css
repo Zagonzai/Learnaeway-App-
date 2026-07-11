@@ -415,6 +415,85 @@ img { user-select: none; -webkit-user-drag: none; }
   box-shadow: 0 0 14px rgba(61,223,255,.5);
 }
 
+/* Continue — resumes at the last auto-saved page */
+.continue-row {
+  position: relative;
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  margin: 0 0 14px;
+  padding: 12px 18px;
+  text-align: left;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  border-image: url("../assets/bars/background-bar-pill@2x.png") 54 60 fill / 22px 25px stretch;
+  background: none;
+}
+.continue-row:active { filter: brightness(1.35); }
+.continue-row .cont-label {
+  flex: 0 0 auto;
+  font-size: calc(14px * var(--fs));
+  font-weight: 800;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: var(--teal);
+  text-shadow: 0 0 10px rgba(47,230,194,.6);
+}
+.continue-row .cont-where {
+  flex: 1 1 auto;
+  font-size: calc(12.5px * var(--fs));
+  color: #B8CFE8;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+.continue-row .cont-arrow {
+  flex: 0 0 auto;
+  font-size: 22px;
+  color: var(--cyan);
+  text-shadow: 0 0 10px rgba(61,223,255,.6);
+}
+
+/* daily trading checklist rows */
+.check-row {
+  width: 100%;
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  padding: 9px 10px;
+  margin-bottom: 7px;
+  text-align: left;
+  border-radius: 12px;
+  background: rgba(14,22,44,.7);
+  border: 1px solid rgba(61,223,255,.22);
+}
+.check-row:active { filter: brightness(1.3); }
+.check-box {
+  flex: 0 0 auto;
+  width: 24px;
+  height: 24px;
+  display: grid;
+  place-items: center;
+  border-radius: 8px;
+  border: 1.5px solid rgba(61,223,255,.5);
+  color: #06131f;
+  font-size: 15px;
+  font-weight: 800;
+}
+.check-row.done .check-box {
+  background: linear-gradient(135deg, var(--cyan), var(--teal));
+  border-color: transparent;
+  box-shadow: 0 0 10px rgba(47,230,194,.55);
+}
+.check-label {
+  flex: 1 1 auto;
+  font-size: calc(13.5px * var(--fs));
+  line-height: 1.45;
+  color: #DCEBFA;
+}
+.check-row.done .check-label { color: var(--teal); }
+
 /* deck: stacked-card affordance — peeking layers behind each section row */
 .deck { position: relative; margin: 0 2px 14px; }
 .deck-peek {
