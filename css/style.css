@@ -196,8 +196,7 @@ img { user-select: none; -webkit-user-drag: none; }
   margin: 8px 3.5% 6px;
   border-radius: var(--radius-card);
 }
-/* app-background-card@2x.png as a 9-slice: glowing corners (100px src) stay
-   crisp, the grid-texture center stretches with card size. */
+/* card backgrounds as 9-slices: glowing corners stay crisp, centers stretch */
 .card-outer::before,
 .auth-card-outer::before {
   content: "";
@@ -207,9 +206,13 @@ img { user-select: none; -webkit-user-drag: none; }
   border: 36px solid transparent;
   border-image: url("../assets/backgrounds/app-background-card-v2@2x.png") 96 fill / 36px stretch;
 }
-/* outline (home) view uses the gridpattern card asset behind the section list */
-.card-outer.outline-bg::before {
+/* content/lesson screens: gridpattern texture (round-3 item 9) */
+.card-outer::before {
   border-image-source: url("../assets/backgrounds/background-card-gridpattern@2x.png");
+}
+/* section-selection (outline) view: plain version (round-3 item 10) */
+.card-outer.outline-bg::before {
+  border-image-source: url("../assets/backgrounds/background-card-plain@2x.png");
 }
 
 .card {

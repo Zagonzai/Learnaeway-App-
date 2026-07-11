@@ -170,59 +170,126 @@ def main():
     # and the progress/likes/notes keyed on them — stay stable.
     # Screens with a "list" render the numbered-list template; "listClose" is
     # an optional closing paragraph below the list.
-    AUTHORED_SCREENS = {
+    # Round-3 content update: the 60/20/20 Rule (5 pages) and Minimum
+    # Accounts to Have (6 pages) close out Pillar 1 as two subsections.
+    # Authored explicitly so every page stays one atomic swipeable screen
+    # (the paragraph chunker would split the longer ones).
+    AUTHORED_SUBSECTIONS = {
         "Pillar 1: Earned Income — Your Foundation": [
             {
-                "headline": "The 60/20/20 Rule",
-                "subhead": "",
-                "body": ["Once you begin earning income, every dollar should have a purpose. Instead of spending first and saving what's left over, flip the process."],
+                "title": "The 60/20/20 Rule",
+                "screens": [
+                    {
+                        "headline": "The 60/20/20 Rule",
+                        "body": ["Once you begin earning income, every dollar should have a purpose.",
+                                 "One of the easiest ways to build financial discipline is by giving your money structure before you spend it.",
+                                 "Instead of asking, \"What's left over after I pay my bills?\" ask yourself, \"Where should every dollar go before I spend it?\""],
+                    },
+                    {
+                        "headline": "60% — Fixed Expenses",
+                        "body": ["Use approximately 60% of your income to cover your essential monthly expenses.", "These include:"],
+                        "list": ["Housing", "Utilities", "Transportation", "Insurance", "Groceries", "Phone", "Internet", "Other recurring bills"],
+                        "listClose": ["These are the expenses that keep your life running."],
+                    },
+                    {
+                        "headline": "20% — Save & Invest for Your Future",
+                        "body": ["The next 20% should always be invested back into your future.", "This money can be used for:"],
+                        "list": ["High-yield savings accounts", "Emergency fund", "Roth IRA", "401(k)", "Brokerage accounts", "Index funds", "Real estate", "Starting or growing a business", "Trading education", "Future investments", "Large planned purchases"],
+                        "listClose": ["The goal is simple: pay your future self first.",
+                                      "Every dollar you invest today is building opportunities for tomorrow."],
+                    },
+                    {
+                        "headline": "20% — Enjoy Your Money",
+                        "body": ["The final 20% is yours.",
+                                 "You've worked hard for your money, and it's important that you enjoy it.",
+                                 "Use this money for the things that make life meaningful. Examples include:"],
+                        "list": ["Family vacations", "Weekend trips", "Saving for a new vehicle", "Concerts", "Hobbies", "Dining out", "New clothes or shoes", "Gifts", "Entertainment", "Anything that's important to you"],
+                        "listClose": ["Financial discipline doesn't mean you stop enjoying life. It means you've already planned for it.",
+                                      "When you intentionally set aside money for the things you enjoy, you eliminate guilt, reduce unnecessary spending, and avoid dipping into your savings or investment accounts."],
+                    },
+                    {
+                        "headline": "Why This Matters",
+                        "body": ["Money without structure often disappears. Money with structure creates freedom.",
+                                 "By giving every dollar a purpose, you're creating consistency — not only in your finances, but in your habits. The goal isn't to deprive yourself.",
+                                 "The goal is to build a financial system that allows you to live today while preparing for tomorrow.",
+                                 "Spend with intention. Save with purpose. Invest for the future. Enjoy the journey."],
+                    },
+                ],
             },
             {
-                "headline": "60% — Living Expenses",
-                "subhead": "Use approximately 60% of your income for necessities",
-                "body": [],
-                "list": ["Housing", "Food", "Transportation", "Insurance", "Bills", "Everyday expenses"],
-            },
-            {
-                "headline": "20% — High-Yield Savings",
-                "subhead": "Build financial stability first",
-                "body": [],
-                "list": ["Emergency Fund", "Opportunity Fund", "Future investments", "Large purchases"],
-                "listClose": "Your first goal is to build a strong cash reserve before taking unnecessary financial risks.",
-            },
-            {
-                "headline": "20% — Investing & Wealth Building",
-                "subhead": "Use the remaining 20% to invest in your future",
-                "body": [],
-                "list": ["Roth IRA", "401(k)", "Brokerage Account", "Index Funds", "Business", "Real Estate", "Trading Education", "Building additional income streams"],
-            },
-            {
-                "headline": "Why This Matters",
-                "subhead": "",
-                "body": ["A trader without savings is forced to trade. A trader with savings has the freedom to wait for high-quality opportunities. Building wealth isn't about making more money — it's about developing the discipline to manage the money you already earn. Income creates opportunity. Savings create security. Investing creates wealth."],
+                "title": "Minimum Accounts to Have",
+                "screens": [
+                    {
+                        "headline": "Minimum Accounts to Have",
+                        "body": ["These are some of the minimum financial accounts every individual should consider opening to begin building a strong financial foundation and a structured future."],
+                    },
+                    {
+                        "headline": "High-Yield Savings Account (HYSA)",
+                        "body": ["A High-Yield Savings Account is a savings account that earns a significantly higher interest rate than a traditional bank savings account. It allows your money to grow while keeping it safe, secure, and easily accessible.",
+                                 "This account is ideal for:"],
+                        "list": ["Emergency funds", "Short-term savings", "Large future purchases", "Opportunity funds"],
+                        "listClose": ["Think of this account as your financial safety net."],
+                    },
+                    {
+                        "headline": "Roth IRA",
+                        "body": ["A Roth IRA (Individual Retirement Account) is a retirement investment account that allows your money to grow tax-free for retirement.",
+                                 "Unlike some retirement accounts, you contribute after-tax money, meaning you've already paid taxes on the income before investing it. In return, your investments can grow over time, and if certain IRS requirements are met, you can withdraw your money during retirement tax-free.",
+                                 "Inside a Roth IRA, you can invest in:"],
+                        "list": ["Index Funds", "ETFs", "Mutual Funds", "Individual Stocks", "Bonds", "Other eligible investments"],
+                        "listClose": ["Annual Contribution Limit — The IRS sets a maximum amount you can contribute each year. This limit may change over time, so it's important to stay up to date with current contribution limits.",
+                                      "A Roth IRA is one of the most powerful long-term wealth-building tools available because it combines compound growth with tax-free retirement withdrawals."],
+                    },
+                    {
+                        "headline": "401(k)",
+                        "body": ["A 401(k) is an employer-sponsored retirement savings plan designed to help employees save and invest for retirement.",
+                                 "Money is automatically deducted from each paycheck and deposited into your retirement account, making it easy to invest consistently over time.",
+                                 "Many employers also offer a company match, meaning they contribute additional money to your retirement account based on how much you contribute. This is essentially free money toward your future.",
+                                 "Inside a 401(k), you can typically invest in:"],
+                        "list": ["Mutual Funds", "Index Funds", "Target-Date Funds", "Bond Funds", "Stock Funds"],
+                        "listClose": ["Annual Contribution Limit — Like the Roth IRA, the IRS sets annual contribution limits that may change from year to year.",
+                                      "If your employer offers a matching contribution, it's generally recommended to contribute at least enough to receive the full company match."],
+                    },
+                    {
+                        "headline": "Brokerage Account",
+                        "body": ["A Brokerage Account is an investment account that allows you to buy and sell financial assets whenever you choose.",
+                                 "Unlike retirement accounts, brokerage accounts generally do not have annual contribution limits or age restrictions on withdrawals.",
+                                 "You can invest in:"],
+                        "list": ["Stocks", "ETFs", "Index Funds", "Mutual Funds", "Bonds", "Options (depending on approval)", "Other investment products"],
+                        "listClose": ["Brokerage accounts offer flexibility and are commonly used to build wealth, invest for medium- and long-term goals, or actively participate in the financial markets.",
+                                      "Best For — General investing, building wealth, trading, and financial flexibility."],
+                    },
+                    {
+                        "headline": "Remember",
+                        "body": ["Each account serves a different purpose."],
+                        "list": ["High-Yield Savings Account → Protect your cash.", "Roth IRA → Build tax-free retirement wealth.", "401(k) → Take advantage of employer retirement benefits.", "Brokerage Account → Invest and grow wealth outside of retirement accounts."],
+                        "listClose": ["There isn't one account that's \"better\" than the others. They work together to create a well-rounded financial foundation — one that can help with unexpected expenses, grow your wealth, and prepare for retirement.",
+                                      "This is the end of Pillar 1 — Earned Income. Pillar 2 - Protection & Life Insurance begins next."],
+                    },
+                ],
             },
         ],
     }
 
-    for full_title, authored in AUTHORED_SCREENS.items():
+    for full_title, authored_subs in AUTHORED_SUBSECTIONS.items():
         sec = next(s for m in modules for s in m["sections"] if s["fullTitle"] == full_title)
-        sub = sec["subsections"][0]
-        base = len(sub["screens"])
-        for j, scr in enumerate(authored):
-            n = base + j + 1
-            entry = {
-                "id": f"{sub['id']}--{n}",
-                "headline": scr["headline"],
-                "subhead": scr.get("subhead", ""),
-                "body": scr.get("body", []),
-                "audio": f"{sec['id']}/{n}.mp3",  # v2 hook, no playback in v1
-            }
-            if scr.get("list"):
-                entry["list"] = scr["list"]
-            if scr.get("listClose"):
-                entry["listClose"] = scr["listClose"]
-            sub["screens"].append(entry)
-            total += 1
+        for ai, asub in enumerate(authored_subs):
+            sid = f"{sec['id']}--{slugify(asub['title'])}-a{ai}"
+            screens = []
+            for n, scr in enumerate(asub["screens"], 1):
+                entry = {
+                    "id": f"{sid}--{n}",
+                    "headline": scr["headline"],
+                    "subhead": scr.get("subhead", ""),
+                    "body": scr.get("body", []),
+                    "audio": f"{sid}/{n}.mp3",  # v2 hook, no playback in v1
+                }
+                if scr.get("list"):
+                    entry["list"] = scr["list"]
+                if scr.get("listClose"):
+                    entry["listClose"] = scr["listClose"]
+                screens.append(entry)
+                total += 1
+            sec["subsections"].append({"id": sid, "title": asub["title"], "screens": screens})
 
     # Merge short intro subsections into a single screen (no swipe-to-continue)
     # and attach real narration audio where a track exists.

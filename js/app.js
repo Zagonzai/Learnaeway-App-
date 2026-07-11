@@ -201,7 +201,7 @@
         ${diagramFor(entry)}
         <div class="screen-body">${bodyHTML(scr.body)}</div>
         ${scr.list ? `<ol class="screen-list">${scr.list.map((it) => `<li>${esc(it)}</li>`).join("")}</ol>` : ""}
-        ${scr.listClose ? `<div class="screen-body"><p>${esc(scr.listClose)}</p></div>` : ""}
+        ${scr.listClose ? `<div class="screen-body">${bodyHTML([].concat(scr.listClose))}</div>` : ""}
       </div>`;
     cardScroll.scrollTop = 0;
     cardFooter.style.display = "";

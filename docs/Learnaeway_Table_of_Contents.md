@@ -10,7 +10,9 @@ By Æway
 - 1 screen
 
 ### 3. Pillar 1 - Earned Income
-- 7 screens
+- 1 screen
+- The 60/20/20 Rule (5 screens)
+- Minimum Accounts to Have (6 screens)
 
 ### 4. Pillar 2 - Protection & Life Insurance
 - 2 screens
@@ -210,4 +212,4 @@ By Æway
 - AI Tools for Traders (1 screen)
 - Websites Every Trader Should Bookmark (1 screen)
 
-**Total: 2 modules, 34 sections, 137 subsections, 234 screens.**
+**Total: 2 modules, 34 sections, 139 subsections, 239 screens.**

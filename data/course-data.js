@@ -2,7 +2,7 @@
 window.COURSE_DATA = {
  "courseTitle": "Learnæway's Path to Trading Course",
  "byline": "By Æway",
- "totalScreens": 234,
+ "totalScreens": 239,
  "modules": [
   {
    "id": "module-1",
@@ -80,79 +80,235 @@ window.COURSE_DATA = {
           "This is the pillar most people skip past without ever stabilizing."
          ],
          "audio": "pillar-1-earned-income/1.mp3"
-        },
+        }
+       ]
+      },
+      {
+       "id": "pillar-1-earned-income--the-60-20-20-rule-a0",
+       "title": "The 60/20/20 Rule",
+       "screens": [
         {
-         "id": "pillar-1-earned-income--overview-0--2",
-         "headline": "Pillar 1 - Earned Income",
-         "subhead": "",
-         "body": [
-          "High-Yield Savings Account — A high-yield savings account is a savings account that offers a higher interest rate than a traditional bank savings account. It allows your money to grow while still keeping it safe and accessible."
-         ],
-         "audio": "pillar-1-earned-income/2.mp3"
-        },
-        {
-         "id": "pillar-1-earned-income--overview-0--3",
+         "id": "pillar-1-earned-income--the-60-20-20-rule-a0--1",
          "headline": "The 60/20/20 Rule",
          "subhead": "",
          "body": [
-          "Once you begin earning income, every dollar should have a purpose. Instead of spending first and saving what's left over, flip the process."
+          "Once you begin earning income, every dollar should have a purpose.",
+          "One of the easiest ways to build financial discipline is by giving your money structure before you spend it.",
+          "Instead of asking, \"What's left over after I pay my bills?\" ask yourself, \"Where should every dollar go before I spend it?\""
          ],
-         "audio": "pillar-1-earned-income/3.mp3"
+         "audio": "pillar-1-earned-income--the-60-20-20-rule-a0/1.mp3"
         },
         {
-         "id": "pillar-1-earned-income--overview-0--4",
-         "headline": "60% — Living Expenses",
-         "subhead": "Use approximately 60% of your income for necessities",
-         "body": [],
-         "audio": "pillar-1-earned-income/4.mp3",
+         "id": "pillar-1-earned-income--the-60-20-20-rule-a0--2",
+         "headline": "60% — Fixed Expenses",
+         "subhead": "",
+         "body": [
+          "Use approximately 60% of your income to cover your essential monthly expenses.",
+          "These include:"
+         ],
+         "audio": "pillar-1-earned-income--the-60-20-20-rule-a0/2.mp3",
          "list": [
           "Housing",
-          "Food",
+          "Utilities",
           "Transportation",
           "Insurance",
-          "Bills",
-          "Everyday expenses"
+          "Groceries",
+          "Phone",
+          "Internet",
+          "Other recurring bills"
+         ],
+         "listClose": [
+          "These are the expenses that keep your life running."
          ]
         },
         {
-         "id": "pillar-1-earned-income--overview-0--5",
-         "headline": "20% — High-Yield Savings",
-         "subhead": "Build financial stability first",
-         "body": [],
-         "audio": "pillar-1-earned-income/5.mp3",
-         "list": [
-          "Emergency Fund",
-          "Opportunity Fund",
-          "Future investments",
-          "Large purchases"
+         "id": "pillar-1-earned-income--the-60-20-20-rule-a0--3",
+         "headline": "20% — Save & Invest for Your Future",
+         "subhead": "",
+         "body": [
+          "The next 20% should always be invested back into your future.",
+          "This money can be used for:"
          ],
-         "listClose": "Your first goal is to build a strong cash reserve before taking unnecessary financial risks."
-        },
-        {
-         "id": "pillar-1-earned-income--overview-0--6",
-         "headline": "20% — Investing & Wealth Building",
-         "subhead": "Use the remaining 20% to invest in your future",
-         "body": [],
-         "audio": "pillar-1-earned-income/6.mp3",
+         "audio": "pillar-1-earned-income--the-60-20-20-rule-a0/3.mp3",
          "list": [
+          "High-yield savings accounts",
+          "Emergency fund",
           "Roth IRA",
           "401(k)",
-          "Brokerage Account",
-          "Index Funds",
-          "Business",
-          "Real Estate",
-          "Trading Education",
-          "Building additional income streams"
+          "Brokerage accounts",
+          "Index funds",
+          "Real estate",
+          "Starting or growing a business",
+          "Trading education",
+          "Future investments",
+          "Large planned purchases"
+         ],
+         "listClose": [
+          "The goal is simple: pay your future self first.",
+          "Every dollar you invest today is building opportunities for tomorrow."
          ]
         },
         {
-         "id": "pillar-1-earned-income--overview-0--7",
+         "id": "pillar-1-earned-income--the-60-20-20-rule-a0--4",
+         "headline": "20% — Enjoy Your Money",
+         "subhead": "",
+         "body": [
+          "The final 20% is yours.",
+          "You've worked hard for your money, and it's important that you enjoy it.",
+          "Use this money for the things that make life meaningful. Examples include:"
+         ],
+         "audio": "pillar-1-earned-income--the-60-20-20-rule-a0/4.mp3",
+         "list": [
+          "Family vacations",
+          "Weekend trips",
+          "Saving for a new vehicle",
+          "Concerts",
+          "Hobbies",
+          "Dining out",
+          "New clothes or shoes",
+          "Gifts",
+          "Entertainment",
+          "Anything that's important to you"
+         ],
+         "listClose": [
+          "Financial discipline doesn't mean you stop enjoying life. It means you've already planned for it.",
+          "When you intentionally set aside money for the things you enjoy, you eliminate guilt, reduce unnecessary spending, and avoid dipping into your savings or investment accounts."
+         ]
+        },
+        {
+         "id": "pillar-1-earned-income--the-60-20-20-rule-a0--5",
          "headline": "Why This Matters",
          "subhead": "",
          "body": [
-          "A trader without savings is forced to trade. A trader with savings has the freedom to wait for high-quality opportunities. Building wealth isn't about making more money — it's about developing the discipline to manage the money you already earn. Income creates opportunity. Savings create security. Investing creates wealth."
+          "Money without structure often disappears. Money with structure creates freedom.",
+          "By giving every dollar a purpose, you're creating consistency — not only in your finances, but in your habits. The goal isn't to deprive yourself.",
+          "The goal is to build a financial system that allows you to live today while preparing for tomorrow.",
+          "Spend with intention. Save with purpose. Invest for the future. Enjoy the journey."
          ],
-         "audio": "pillar-1-earned-income/7.mp3"
+         "audio": "pillar-1-earned-income--the-60-20-20-rule-a0/5.mp3"
+        }
+       ]
+      },
+      {
+       "id": "pillar-1-earned-income--minimum-accounts-to-have-a1",
+       "title": "Minimum Accounts to Have",
+       "screens": [
+        {
+         "id": "pillar-1-earned-income--minimum-accounts-to-have-a1--1",
+         "headline": "Minimum Accounts to Have",
+         "subhead": "",
+         "body": [
+          "These are some of the minimum financial accounts every individual should consider opening to begin building a strong financial foundation and a structured future."
+         ],
+         "audio": "pillar-1-earned-income--minimum-accounts-to-have-a1/1.mp3"
+        },
+        {
+         "id": "pillar-1-earned-income--minimum-accounts-to-have-a1--2",
+         "headline": "High-Yield Savings Account (HYSA)",
+         "subhead": "",
+         "body": [
+          "A High-Yield Savings Account is a savings account that earns a significantly higher interest rate than a traditional bank savings account. It allows your money to grow while keeping it safe, secure, and easily accessible.",
+          "This account is ideal for:"
+         ],
+         "audio": "pillar-1-earned-income--minimum-accounts-to-have-a1/2.mp3",
+         "list": [
+          "Emergency funds",
+          "Short-term savings",
+          "Large future purchases",
+          "Opportunity funds"
+         ],
+         "listClose": [
+          "Think of this account as your financial safety net."
+         ]
+        },
+        {
+         "id": "pillar-1-earned-income--minimum-accounts-to-have-a1--3",
+         "headline": "Roth IRA",
+         "subhead": "",
+         "body": [
+          "A Roth IRA (Individual Retirement Account) is a retirement investment account that allows your money to grow tax-free for retirement.",
+          "Unlike some retirement accounts, you contribute after-tax money, meaning you've already paid taxes on the income before investing it. In return, your investments can grow over time, and if certain IRS requirements are met, you can withdraw your money during retirement tax-free.",
+          "Inside a Roth IRA, you can invest in:"
+         ],
+         "audio": "pillar-1-earned-income--minimum-accounts-to-have-a1/3.mp3",
+         "list": [
+          "Index Funds",
+          "ETFs",
+          "Mutual Funds",
+          "Individual Stocks",
+          "Bonds",
+          "Other eligible investments"
+         ],
+         "listClose": [
+          "Annual Contribution Limit — The IRS sets a maximum amount you can contribute each year. This limit may change over time, so it's important to stay up to date with current contribution limits.",
+          "A Roth IRA is one of the most powerful long-term wealth-building tools available because it combines compound growth with tax-free retirement withdrawals."
+         ]
+        },
+        {
+         "id": "pillar-1-earned-income--minimum-accounts-to-have-a1--4",
+         "headline": "401(k)",
+         "subhead": "",
+         "body": [
+          "A 401(k) is an employer-sponsored retirement savings plan designed to help employees save and invest for retirement.",
+          "Money is automatically deducted from each paycheck and deposited into your retirement account, making it easy to invest consistently over time.",
+          "Many employers also offer a company match, meaning they contribute additional money to your retirement account based on how much you contribute. This is essentially free money toward your future.",
+          "Inside a 401(k), you can typically invest in:"
+         ],
+         "audio": "pillar-1-earned-income--minimum-accounts-to-have-a1/4.mp3",
+         "list": [
+          "Mutual Funds",
+          "Index Funds",
+          "Target-Date Funds",
+          "Bond Funds",
+          "Stock Funds"
+         ],
+         "listClose": [
+          "Annual Contribution Limit — Like the Roth IRA, the IRS sets annual contribution limits that may change from year to year.",
+          "If your employer offers a matching contribution, it's generally recommended to contribute at least enough to receive the full company match."
+         ]
+        },
+        {
+         "id": "pillar-1-earned-income--minimum-accounts-to-have-a1--5",
+         "headline": "Brokerage Account",
+         "subhead": "",
+         "body": [
+          "A Brokerage Account is an investment account that allows you to buy and sell financial assets whenever you choose.",
+          "Unlike retirement accounts, brokerage accounts generally do not have annual contribution limits or age restrictions on withdrawals.",
+          "You can invest in:"
+         ],
+         "audio": "pillar-1-earned-income--minimum-accounts-to-have-a1/5.mp3",
+         "list": [
+          "Stocks",
+          "ETFs",
+          "Index Funds",
+          "Mutual Funds",
+          "Bonds",
+          "Options (depending on approval)",
+          "Other investment products"
+         ],
+         "listClose": [
+          "Brokerage accounts offer flexibility and are commonly used to build wealth, invest for medium- and long-term goals, or actively participate in the financial markets.",
+          "Best For — General investing, building wealth, trading, and financial flexibility."
+         ]
+        },
+        {
+         "id": "pillar-1-earned-income--minimum-accounts-to-have-a1--6",
+         "headline": "Remember",
+         "subhead": "",
+         "body": [
+          "Each account serves a different purpose."
+         ],
+         "audio": "pillar-1-earned-income--minimum-accounts-to-have-a1/6.mp3",
+         "list": [
+          "High-Yield Savings Account → Protect your cash.",
+          "Roth IRA → Build tax-free retirement wealth.",
+          "401(k) → Take advantage of employer retirement benefits.",
+          "Brokerage Account → Invest and grow wealth outside of retirement accounts."
+         ],
+         "listClose": [
+          "There isn't one account that's \"better\" than the others. They work together to create a well-rounded financial foundation — one that can help with unexpected expenses, grow your wealth, and prepare for retirement.",
+          "This is the end of Pillar 1 — Earned Income. Pillar 2 - Protection & Life Insurance begins next."
+         ]
         }
        ]
       }
