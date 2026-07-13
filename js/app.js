@@ -571,7 +571,13 @@
 
   /* ---------------- narration audio (real playback where a track exists) --- */
 
+  /* Narration player. audioSrc may be a single file or a list of parts —
+     parts play back-to-back automatically as one seamless track (used by
+     Why This Comes First, recorded in two takes). */
   let audioEl = null;
+  let audioQueue = [];
+  let audioQueueKey = null;
+  let audioIndex = 0;
   let playing = false;
   function setPlayIcon(on) {
     $("playImg").src = on ? "assets/buttons-icon/btn-pause@2x.png" : "assets/buttons-icon/btn-play@2x.png";
@@ -579,18 +585,36 @@
   function currentAudioSrc() {
     return state.view === "screen" ? screens[state.current].scr.audioSrc || null : null;
   }
+  function loadTrack(i) {
+    if (audioEl) audioEl.pause();
+    audioIndex = i;
+    audioEl = new Audio(audioQueue[i]);
+    audioEl.muted = !store.settings.sound;
+    audioEl.addEventListener("ended", () => {
+      if (audioIndex + 1 < audioQueue.length) {
+        loadTrack(audioIndex + 1);          // next part auto-starts seamlessly
+        audioEl.play().catch(() => {});
+      } else {
+        playing = false;
+        setPlayIcon(false);
+      }
+    });
+  }
   function ensureAudio(src) {
-    if (!audioEl || audioEl.dataset_src !== src) {
-      if (audioEl) audioEl.pause();
-      audioEl = new Audio(src);
-      audioEl.dataset_src = src;
-      audioEl.muted = !store.settings.sound;
-      audioEl.addEventListener("ended", () => { playing = false; setPlayIcon(false); });
+    const tracks = [].concat(src);
+    const key = tracks.join("|");
+    if (audioQueueKey !== key || !audioEl) {
+      audioQueue = tracks;
+      audioQueueKey = key;
+      loadTrack(0);
     }
     return audioEl;
   }
   function stopAudio() {
     if (audioEl) { audioEl.pause(); audioEl = null; }
+    audioQueue = [];
+    audioQueueKey = null;
+    audioIndex = 0;
     playing = false;
     setPlayIcon(false);
   }
@@ -608,9 +632,10 @@
   $("btnReplay").addEventListener("click", () => {
     const src = currentAudioSrc();
     if (!src) return;
-    const a = ensureAudio(src);
-    a.currentTime = 0;
-    a.play().catch(() => {});
+    ensureAudio(src);
+    loadTrack(0);
+    audioEl.currentTime = 0;
+    audioEl.play().catch(() => {});
     playing = true;
     setPlayIcon(true);
   });

@@ -15,22 +15,22 @@ By Æway
 - Minimum Accounts to Have (6 screens)
 
 ### 4. Pillar 2 - Protection & Life Insurance
-- 2 screens
+- 1 screen
 
 ### 5. Pillar 3 - Tax-Advantaged Accounts
-- 2 screens
+- 1 screen
 
 ### 6. Pillar 4 - Business Ownership
-- 2 screens
+- 1 screen
 
 ### 7. Pillar 5 - Real Estate
-- 2 screens
+- 1 screen
 
 ### 8. Pillar 6 - Market Investing & Trading
-- 2 screens
+- 1 screen
 
 ### 9. How the Pillars Work Together
-- 2 screens
+- 1 screen
 
 ### 10. Generational Wealth Mindset
 - 1 screen
@@ -212,4 +212,4 @@ By Æway
 - AI Tools for Traders (1 screen)
 - Websites Every Trader Should Bookmark (1 screen)
 
-**Total: 2 modules, 34 sections, 139 subsections, 239 screens.**
+**Total: 2 modules, 34 sections, 139 subsections, 233 screens.**

@@ -2,7 +2,7 @@
 window.COURSE_DATA = {
  "courseTitle": "Learnæway's Path to Trading Course",
  "byline": "By Æway",
- "totalScreens": 239,
+ "totalScreens": 233,
  "modules": [
   {
    "id": "module-1",
@@ -30,7 +30,7 @@ window.COURSE_DATA = {
           "By the end of this module, you'll understand exactly where trading fits and why building real wealth means thinking bigger than your next trade."
          ],
          "audio": "welcome-to-learnaeway/1.mp3",
-         "audioSrc": "assets/audio/Welcome_to_Learnaeway.mp3"
+         "audioSrc": "assets/audio/module-1/pillar-1/01-welcome-to-learnaeway.mp3"
         }
        ]
       }
@@ -53,7 +53,11 @@ window.COURSE_DATA = {
           "Financial markets are where securities stocks, bonds, futures, options are bought and sold. Life insurance, real estate, and business ownership aren't part of that market; they're separate pillars entirely, each with their own rules, risks, and timelines.",
           "A trader who ignores the other five pillars isn't building wealth they're gambling with their foundation. This course is structured so you build in the right order: foundation first, acceleration second."
          ],
-         "audio": "why-this-comes-first/1.mp3"
+         "audio": "why-this-comes-first/1.mp3",
+         "audioSrc": [
+          "assets/audio/module-1/pillar-1/02a-why-this-comes-first-part1.mp3",
+          "assets/audio/module-1/pillar-1/02b-why-this-comes-first-part2.mp3"
+         ]
         }
        ]
       }
@@ -79,7 +83,8 @@ window.COURSE_DATA = {
           "Make sure your income covers your fixed costs with room to spare pillar-building requires surplus, not just survival.",
           "This is the pillar most people skip past without ever stabilizing."
          ],
-         "audio": "pillar-1-earned-income/1.mp3"
+         "audio": "pillar-1-earned-income/1.mp3",
+         "audioSrc": "assets/audio/module-1/pillar-1/03-pillar-1-earned-income-intro.mp3"
         }
        ]
       },
@@ -96,7 +101,8 @@ window.COURSE_DATA = {
           "One of the easiest ways to build financial discipline is by giving your money structure before you spend it.",
           "Instead of asking, \"What's left over after I pay my bills?\" ask yourself, \"Where should every dollar go before I spend it?\""
          ],
-         "audio": "pillar-1-earned-income--the-60-20-20-rule-a0/1.mp3"
+         "audio": "pillar-1-earned-income--the-60-20-20-rule-a0/1.mp3",
+         "audioSrc": "assets/audio/module-1/pillar-1/04-the-60-20-20-rule.mp3"
         },
         {
          "id": "pillar-1-earned-income--the-60-20-20-rule-a0--2",
@@ -119,7 +125,8 @@ window.COURSE_DATA = {
          ],
          "listClose": [
           "These are the expenses that keep your life running."
-         ]
+         ],
+         "audioSrc": "assets/audio/module-1/pillar-1/05-fixed-expenses.mp3"
         },
         {
          "id": "pillar-1-earned-income--the-60-20-20-rule-a0--3",
@@ -146,7 +153,8 @@ window.COURSE_DATA = {
          "listClose": [
           "The goal is simple: pay your future self first.",
           "Every dollar you invest today is building opportunities for tomorrow."
-         ]
+         ],
+         "audioSrc": "assets/audio/module-1/pillar-1/06-save-invest-for-your-future.mp3"
         },
         {
          "id": "pillar-1-earned-income--the-60-20-20-rule-a0--4",
@@ -173,7 +181,8 @@ window.COURSE_DATA = {
          "listClose": [
           "Financial discipline doesn't mean you stop enjoying life. It means you've already planned for it.",
           "When you intentionally set aside money for the things you enjoy, you eliminate guilt, reduce unnecessary spending, and avoid dipping into your savings or investment accounts."
-         ]
+         ],
+         "audioSrc": "assets/audio/module-1/pillar-1/07-enjoy-your-money.mp3"
         },
         {
          "id": "pillar-1-earned-income--the-60-20-20-rule-a0--5",
@@ -185,7 +194,8 @@ window.COURSE_DATA = {
           "The goal is to build a financial system that allows you to live today while preparing for tomorrow.",
           "Spend with intention. Save with purpose. Invest for the future. Enjoy the journey."
          ],
-         "audio": "pillar-1-earned-income--the-60-20-20-rule-a0/5.mp3"
+         "audio": "pillar-1-earned-income--the-60-20-20-rule-a0/5.mp3",
+         "audioSrc": "assets/audio/module-1/pillar-1/08-why-this-matters.mp3"
         }
        ]
       },
@@ -200,7 +210,8 @@ window.COURSE_DATA = {
          "body": [
           "These are some of the minimum financial accounts every individual should consider opening to begin building a strong financial foundation and a structured future."
          ],
-         "audio": "pillar-1-earned-income--minimum-accounts-to-have-a1/1.mp3"
+         "audio": "pillar-1-earned-income--minimum-accounts-to-have-a1/1.mp3",
+         "audioSrc": "assets/audio/module-1/pillar-1/09-minimum-accounts-to-have.mp3"
         },
         {
          "id": "pillar-1-earned-income--minimum-accounts-to-have-a1--2",
@@ -219,7 +230,8 @@ window.COURSE_DATA = {
          ],
          "listClose": [
           "Think of this account as your financial safety net."
-         ]
+         ],
+         "audioSrc": "assets/audio/module-1/pillar-1/10-high-yield-savings-account.mp3"
         },
         {
          "id": "pillar-1-earned-income--minimum-accounts-to-have-a1--3",
@@ -242,7 +254,8 @@ window.COURSE_DATA = {
          "listClose": [
           "Annual Contribution Limit — The IRS sets a maximum amount you can contribute each year. This limit may change over time, so it's important to stay up to date with current contribution limits.",
           "A Roth IRA is one of the most powerful long-term wealth-building tools available because it combines compound growth with tax-free retirement withdrawals."
-         ]
+         ],
+         "audioSrc": "assets/audio/module-1/pillar-1/11-roth-ira.mp3"
         },
         {
          "id": "pillar-1-earned-income--minimum-accounts-to-have-a1--4",
@@ -265,7 +278,8 @@ window.COURSE_DATA = {
          "listClose": [
           "Annual Contribution Limit — Like the Roth IRA, the IRS sets annual contribution limits that may change from year to year.",
           "If your employer offers a matching contribution, it's generally recommended to contribute at least enough to receive the full company match."
-         ]
+         ],
+         "audioSrc": "assets/audio/module-1/pillar-1/12-401k.mp3"
         },
         {
          "id": "pillar-1-earned-income--minimum-accounts-to-have-a1--5",
@@ -289,7 +303,8 @@ window.COURSE_DATA = {
          "listClose": [
           "Brokerage accounts offer flexibility and are commonly used to build wealth, invest for medium- and long-term goals, or actively participate in the financial markets.",
           "Best For — General investing, building wealth, trading, and financial flexibility."
-         ]
+         ],
+         "audioSrc": "assets/audio/module-1/pillar-1/13-brokerage-account.mp3"
         },
         {
          "id": "pillar-1-earned-income--minimum-accounts-to-have-a1--6",
@@ -308,7 +323,8 @@ window.COURSE_DATA = {
          "listClose": [
           "There isn't one account that's \"better\" than the others. They work together to create a well-rounded financial foundation — one that can help with unexpected expenses, grow your wealth, and prepare for retirement.",
           "This is the end of Pillar 1 — Earned Income. Pillar 2 - Protection & Life Insurance begins next."
-         ]
+         ],
+         "audioSrc": "assets/audio/module-1/pillar-1/14-remember.mp3"
         }
        ]
       }
@@ -330,19 +346,12 @@ window.COURSE_DATA = {
          "body": [
           "This is the most overlooked pillar and arguably the most important one to get right early, because it protects everything else you're about to build.",
           "Term life insurance — Lower cost, covers a fixed period, ideal for protecting income during your working/family-raising years.",
-          "Whole life insurance — Higher cost, lifelong coverage, builds cash value over time."
-         ],
-         "audio": "pillar-2-protection-life-insurance/1.mp3"
-        },
-        {
-         "id": "pillar-2-protection-life-insurance--overview-0--2",
-         "headline": "Pillar 2 - Protection & Life Insurance",
-         "subhead": "",
-         "body": [
+          "Whole life insurance — Higher cost, lifelong coverage, builds cash value over time.",
           "Disability insurance — Protects your ability to earn arguably more important than life insurance for most working-age people, since you're far more likely to become disabled than to die during your working years.",
           "The principle: protect your ability to earn and your family's stability before you put meaningful capital into anything else."
          ],
-         "audio": "pillar-2-protection-life-insurance/2.mp3"
+         "audio": "pillar-2-protection-life-insurance/1.mp3",
+         "audioSrc": "assets/audio/module-1/pillar-2/01-protection-and-life-insurance-combined.mp3"
         }
        ]
       }
@@ -365,20 +374,13 @@ window.COURSE_DATA = {
           "This pillar answers a question a lot of people skip: what kind of account should my money even sit in?",
           "401(k) / 403(b) — Employer-sponsored retirement accounts, often with a company match free money you should never leave on the table.",
           "Roth IRA — Contribute after-tax dollars, withdraw tax-free in retirement. Best when you expect to be in a higher tax bracket later.",
-          "Traditional IRA — Contribute pre-tax dollars, pay tax on withdrawal. Best when you want a deduction now."
-         ],
-         "audio": "pillar-3-tax-advantaged-accounts/1.mp3"
-        },
-        {
-         "id": "pillar-3-tax-advantaged-accounts--overview-0--2",
-         "headline": "Pillar 3 - Tax-Advantaged Accounts",
-         "subhead": "",
-         "body": [
+          "Traditional IRA — Contribute pre-tax dollars, pay tax on withdrawal. Best when you want a deduction now.",
           "HSA (Health Savings Account) — Triple tax advantage if you have a qualifying high-deductible health plan; one of the most underused accounts available.",
           "529 Plan — Tax-advantaged savings specifically for education costs.",
           "Each of these has contribution limits and rules that change over time the goal here isn't to memorize numbers, it's to understand which account serves which purpose before you decide where your money goes."
          ],
-         "audio": "pillar-3-tax-advantaged-accounts/2.mp3"
+         "audio": "pillar-3-tax-advantaged-accounts/1.mp3",
+         "audioSrc": "assets/audio/module-1/pillar-3/01-tax-advantaged-accounts-combined.mp3"
         }
        ]
       }
@@ -401,19 +403,12 @@ window.COURSE_DATA = {
           "A job pays you for your time. A business can pay you for the value you create and it opens financial tools that employees don't have access to.",
           "LLC (Limited Liability Company) formation — Separates your personal assets from business liability.",
           "S-Corp election — Can reduce self-employment tax once your business reaches a certain income level.",
-          "Business credit (via EIN) — Building credit under your business, separate from your personal credit profile."
-         ],
-         "audio": "pillar-4-business-ownership/1.mp3"
-        },
-        {
-         "id": "pillar-4-business-ownership--overview-0--2",
-         "headline": "Pillar 4 - Business Ownership",
-         "subhead": "",
-         "body": [
+          "Business credit (via EIN) — Building credit under your business, separate from your personal credit profile.",
           "SEP-IRA / Solo 401(k) — Retirement accounts designed specifically for self-employed people, often with much higher contribution limits than a standard IRA.",
           "You don't need to start a business to build wealth but understanding this pillar means you know what's available if and when you do."
          ],
-         "audio": "pillar-4-business-ownership/2.mp3"
+         "audio": "pillar-4-business-ownership/1.mp3",
+         "audioSrc": "assets/audio/module-1/pillar-4/01-business-ownership-combined.mp3"
         }
        ]
       }
@@ -436,19 +431,12 @@ window.COURSE_DATA = {
           "Real estate builds wealth two ways at once: it can appreciate in value, and it can generate income while you hold it.",
           "Primary home vs. true investment property — Your primary residence is shelter first, asset second. An investment property is judged purely on cash flow and return.",
           "Rental cash flow — Income after expenses, the core metric for whether a rental property actually works.",
-          "Depreciation & 1031 exchanges — Tax strategies that let real estate investors defer taxes and improve after-tax returns."
-         ],
-         "audio": "pillar-5-real-estate/1.mp3"
-        },
-        {
-         "id": "pillar-5-real-estate--overview-0--2",
-         "headline": "Pillar 5 - Real Estate",
-         "subhead": "",
-         "body": [
+          "Depreciation & 1031 exchanges — Tax strategies that let real estate investors defer taxes and improve after-tax returns.",
           "REITs — Real Estate Investment Trusts let you invest in real estate through the stock market, without buying property directly the most accessible entry point.",
           "House hacking — Living in part of a property while renting out the rest, reducing or eliminating your own housing cost."
          ],
-         "audio": "pillar-5-real-estate/2.mp3"
+         "audio": "pillar-5-real-estate/1.mp3",
+         "audioSrc": "assets/audio/module-1/pillar-5/01-real-estate-combined.mp3"
         }
        ]
       }
@@ -472,18 +460,11 @@ window.COURSE_DATA = {
           "Index fund investing — Broad, low-cost market exposure, the backbone of most long-term investing strategies.",
           "Dividend investing — Building a portfolio that pays you income while you hold it.",
           "Options strategies (e.g. the Wheel Strategy) — Using options to generate income or acquire stock at a discount.",
-          "Active trading — Speculating on short-term price movement what the rest of this course will teach you in depth."
-         ],
-         "audio": "pillar-6-market-investing-trading/1.mp3"
-        },
-        {
-         "id": "pillar-6-market-investing-trading--overview-0--2",
-         "headline": "Pillar 6 - Market Investing & Trading",
-         "subhead": "",
-         "body": [
+          "Active trading — Speculating on short-term price movement what the rest of this course will teach you in depth.",
           "Market investing and trading are the accelerator they work best once the other five pillars already exist. They are not a replacement for them, and they are not where you should start if those pillars aren't in place yet."
          ],
-         "audio": "pillar-6-market-investing-trading/2.mp3"
+         "audio": "pillar-6-market-investing-trading/1.mp3",
+         "audioSrc": "assets/audio/module-1/pillar-6/01-market-investing-and-trading-combined.mp3"
         }
        ]
       }
@@ -508,18 +489,11 @@ window.COURSE_DATA = {
           "Protection keeps a single bad event from collapsing what you've built.",
           "Tax-advantaged accounts make your long-term saving more efficient.",
           "Business ownership and real estate diversify where your wealth lives and how it grows.",
-          "Market investing and trading accelerate growth once the foundation can absorb the risk."
-         ],
-         "audio": "how-the-pillars-work-together/1.mp3"
-        },
-        {
-         "id": "how-the-pillars-work-together--overview-0--2",
-         "headline": "How the Pillars Work Together",
-         "subhead": "",
-         "body": [
+          "Market investing and trading accelerate growth once the foundation can absorb the risk.",
           "A person with any or all six pillars working together is building wealth on solid ground. A person trading aggressively with none of the other five in place is building on sand."
          ],
-         "audio": "how-the-pillars-work-together/2.mp3"
+         "audio": "how-the-pillars-work-together/1.mp3",
+         "audioSrc": "assets/audio/module-1/how-pillars-work-together/01-how-the-pillars-work-together.mp3"
         }
        ]
       }
@@ -543,7 +517,8 @@ window.COURSE_DATA = {
           "Each pillar you build isn't just protecting you. It's protecting your family, and it's giving the next generation a head start that you may not have had. That's the difference between making money and building wealth.",
           "This is the bare minimum basis the foundation of what it takes to build wealth that lasts."
          ],
-         "audio": "generational-wealth-mindset/1.mp3"
+         "audio": "generational-wealth-mindset/1.mp3",
+         "audioSrc": "assets/audio/module-1/generational-wealth-mindset/01-generational-wealth-mindset.mp3"
         }
        ]
       }

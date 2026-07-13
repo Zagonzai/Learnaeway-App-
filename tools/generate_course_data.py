@@ -291,20 +291,66 @@ def main():
                 total += 1
             sec["subsections"].append({"id": sid, "title": asub["title"], "screens": screens})
 
-    # Merge short intro subsections into a single screen (no swipe-to-continue)
-    # and attach real narration audio where a track exists.
-    MERGE_SUBSECTIONS = {
-        "welcome-to-learnaeway--overview-0": {"audioSrc": "assets/audio/Welcome_to_Learnaeway.mp3"},
-    }
+    # Merge multi-screen subsections into single pages where the narration was
+    # recorded as one continuous track (round-3 item 15). Pillar 1 keeps its
+    # page-per-screen structure.
+    MERGE_SUBSECTIONS = [
+        "welcome-to-learnaeway--overview-0",
+        "pillar-2-protection-life-insurance--overview-0",
+        "pillar-3-tax-advantaged-accounts--overview-0",
+        "pillar-4-business-ownership--overview-0",
+        "pillar-5-real-estate--overview-0",
+        "pillar-6-market-investing-trading--overview-0",
+        "how-the-pillars-work-together--overview-0",
+    ]
     for m in modules:
         for sec in m["sections"]:
             for sub in sec["subsections"]:
                 if sub["id"] in MERGE_SUBSECTIONS and len(sub["screens"]) > 1:
                     merged = dict(sub["screens"][0])
                     merged["body"] = [p for scr in sub["screens"] for p in scr["body"]]
-                    merged.update(MERGE_SUBSECTIONS[sub["id"]])
                     total -= len(sub["screens"]) - 1
                     sub["screens"] = [merged]
+
+    # Narration audio per page (module 1). A list means the parts play
+    # back-to-back as one seamless track (e.g. Why This Comes First).
+    A1 = "assets/audio/module-1"
+    AUDIO_ATTACH = {
+        ("welcome-to-learnaeway--overview-0", 1): f"{A1}/pillar-1/01-welcome-to-learnaeway.mp3",
+        ("why-this-comes-first--overview-0", 1): [f"{A1}/pillar-1/02a-why-this-comes-first-part1.mp3",
+                                                   f"{A1}/pillar-1/02b-why-this-comes-first-part2.mp3"],
+        ("pillar-1-earned-income--overview-0", 1): f"{A1}/pillar-1/03-pillar-1-earned-income-intro.mp3",
+        ("pillar-1-earned-income--the-60-20-20-rule-a0", 1): f"{A1}/pillar-1/04-the-60-20-20-rule.mp3",
+        ("pillar-1-earned-income--the-60-20-20-rule-a0", 2): f"{A1}/pillar-1/05-fixed-expenses.mp3",
+        ("pillar-1-earned-income--the-60-20-20-rule-a0", 3): f"{A1}/pillar-1/06-save-invest-for-your-future.mp3",
+        ("pillar-1-earned-income--the-60-20-20-rule-a0", 4): f"{A1}/pillar-1/07-enjoy-your-money.mp3",
+        ("pillar-1-earned-income--the-60-20-20-rule-a0", 5): f"{A1}/pillar-1/08-why-this-matters.mp3",
+        ("pillar-1-earned-income--minimum-accounts-to-have-a1", 1): f"{A1}/pillar-1/09-minimum-accounts-to-have.mp3",
+        ("pillar-1-earned-income--minimum-accounts-to-have-a1", 2): f"{A1}/pillar-1/10-high-yield-savings-account.mp3",
+        ("pillar-1-earned-income--minimum-accounts-to-have-a1", 3): f"{A1}/pillar-1/11-roth-ira.mp3",
+        ("pillar-1-earned-income--minimum-accounts-to-have-a1", 4): f"{A1}/pillar-1/12-401k.mp3",
+        ("pillar-1-earned-income--minimum-accounts-to-have-a1", 5): f"{A1}/pillar-1/13-brokerage-account.mp3",
+        ("pillar-1-earned-income--minimum-accounts-to-have-a1", 6): f"{A1}/pillar-1/14-remember.mp3",
+        ("pillar-2-protection-life-insurance--overview-0", 1): f"{A1}/pillar-2/01-protection-and-life-insurance-combined.mp3",
+        ("pillar-3-tax-advantaged-accounts--overview-0", 1): f"{A1}/pillar-3/01-tax-advantaged-accounts-combined.mp3",
+        ("pillar-4-business-ownership--overview-0", 1): f"{A1}/pillar-4/01-business-ownership-combined.mp3",
+        ("pillar-5-real-estate--overview-0", 1): f"{A1}/pillar-5/01-real-estate-combined.mp3",
+        ("pillar-6-market-investing-trading--overview-0", 1): f"{A1}/pillar-6/01-market-investing-and-trading-combined.mp3",
+        ("how-the-pillars-work-together--overview-0", 1): f"{A1}/how-pillars-work-together/01-how-the-pillars-work-together.mp3",
+        ("generational-wealth-mindset--overview-0", 1): f"{A1}/generational-wealth-mindset/01-generational-wealth-mindset.mp3",
+        # Financial Roadmap Outline + Transition to Module 2: not recorded yet.
+    }
+    attached = 0
+    for m in modules:
+        for sec in m["sections"]:
+            for sub in sec["subsections"]:
+                for n, scr in enumerate(sub["screens"], 1):
+                    src = AUDIO_ATTACH.get((sub["id"], n))
+                    if src:
+                        scr["audioSrc"] = src
+                        attached += 1
+    if attached != len(AUDIO_ATTACH):
+        raise ValueError(f"audio attach mismatch: {attached} of {len(AUDIO_ATTACH)} applied")
 
     data = {
         "courseTitle": "Learnæway's Path to Trading Course",
