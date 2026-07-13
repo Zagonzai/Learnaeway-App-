@@ -11,4 +11,13 @@
 window.LEARNAEWAY_CONFIG = {
   accessPasscode: "AEWAY2026",
   attemptsWebhookUrl: "",
+  firebase: {
+    apiKey: "AIzaSyCFcG423QUQ6frPvl7HMJO8vYcWzPzOD8c",
+    authDomain: "aeway-60d9a.firebaseapp.com",
+    projectId: "aeway-60d9a",
+    storageBucket: "aeway-60d9a.firebasestorage.app",
+    messagingSenderId: "40107408520",
+    appId: "1:40107408520:web:af7d563db1c7f8351f333d",
+    measurementId: "G-ZE6RMJW4ED",
+  },
 };

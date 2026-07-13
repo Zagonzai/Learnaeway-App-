@@ -45,6 +45,42 @@
   }
   function save() {
     try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) { /* quota */ }
+    pushCloudSoon();   // mirrors progress/notes to Firestore when signed in
+  }
+
+  /* ---------------- Firestore sync (per authenticated user) ---------------- */
+
+  let cloudTimer = null;
+  function cloudPayload() {
+    return {
+      profile: store.profile || { name: store.settings.name || "", email: (window.FB && FB.user() ? FB.user().email : "") || "", phone: "" },
+      lastScreen: store.lastScreen || "",
+      visited: store.visited || {},
+      liked: store.liked || {},
+      notes: store.notes || {},
+      checklist: store.checklist || {},
+      settings: store.settings || {},
+      updatedAt: new Date().toISOString(),
+    };
+  }
+  function pushCloudSoon() {
+    if (!window.FB || !FB.user()) return;
+    clearTimeout(cloudTimer);
+    cloudTimer = setTimeout(() => { FB.saveUserDoc(cloudPayload()); }, 2500);
+  }
+  async function pullCloudAndMerge() {
+    if (!window.FB || !FB.user()) return false;
+    const cloud = await FB.loadUserDoc();
+    if (!cloud) return false;
+    // union maps (local device stays authoritative for its own recent edits)
+    for (const k of ["visited", "liked", "checklist", "notes"]) {
+      store[k] = Object.assign({}, cloud[k] || {}, store[k] || {});
+    }
+    if (!store.lastScreen && cloud.lastScreen) store.lastScreen = cloud.lastScreen;
+    if (cloud.profile && !store.profile) store.profile = cloud.profile;
+    if (cloud.settings && cloud.settings.name && !store.settings.name) store.settings.name = cloud.settings.name;
+    save();
+    return true;
   }
 
   /* ---------------- state ---------------- */
@@ -738,6 +774,7 @@
     }
     else if (t.hasAttribute("data-logout")) {
       stopAudio();
+      if (window.FB) FB.signOut();
       store.authSeen = false;
       save();
       closeOverlay();
@@ -786,6 +823,7 @@
       AUTH_FIELDS[authMode].map((f) =>
         `<input class="g-pill auth-input" name="${f.name}" type="${f.type}" placeholder="${f.placeholder}" autocomplete="off">`
       ).join("") +
+      `<div id="authError" class="gate-error hidden"></div>` +
       `<button type="submit" class="g-pill auth-submit">${label}</button>`;
   }
 
@@ -801,17 +839,39 @@
   $("authTabLogin").addEventListener("click", () => setAuthMode("login"));
   $("authTabSignup").addEventListener("click", () => setAuthMode("signup"));
 
-  authForm.addEventListener("submit", (e) => {
+  authForm.addEventListener("submit", async (e) => {
     e.preventDefault();
-    // Placeholder until Firebase auth is connected.
-    console.log(`[auth] ${authMode} submitted — authentication coming soon (no backend yet)`);
+    const f = new FormData(authForm);
+    const email = (f.get("email") || "").trim();
+    const password = f.get("password") || "";
     const btn = authForm.querySelector(".auth-submit");
-    if (btn) { btn.textContent = "Coming Soon"; btn.classList.add("pending"); }
-    setTimeout(() => {
+    const err = $("authError");
+    err.classList.add("hidden");
+    btn.disabled = true;
+    btn.classList.add("pending");
+    btn.textContent = authMode === "login" ? "Signing In…" : "Creating Account…";
+    try {
+      if (authMode === "login") {
+        await FB.signIn(email, password);
+      } else {
+        await FB.signUp(email, password);
+        const name = (f.get("name") || "").trim();
+        store.profile = { name, email, phone: (f.get("phone") || "").trim() };
+        if (name) store.settings.name = name;
+      }
       store.authSeen = true;
       save();
+      await pullCloudAndMerge();   // resume progress/notes from other devices
       authScreen.classList.add("hidden");
-    }, 1100);
+      render();
+    } catch (ex) {
+      err.textContent = ex.message || "Sign-in failed — please try again.";
+      err.classList.remove("hidden");
+    } finally {
+      btn.disabled = false;
+      btn.classList.remove("pending");
+      btn.textContent = authMode === "login" ? "Log In" : "Sign Up";
+    }
   });
 
   /* Step 1 access gate: name/email/phone are captured on every attempt;
@@ -828,6 +888,7 @@
     store.gateAttempts.push(attempt);
     if (store.gateAttempts.length > 100) store.gateAttempts = store.gateAttempts.slice(-100);
     save();
+    if (window.FB) FB.logGateAttempt(attempt);
     if (CFG.attemptsWebhookUrl) {
       try {
         fetch(CFG.attemptsWebhookUrl, {
@@ -882,6 +943,10 @@
   applyTextSize();
   syncVolume();
   render();
+
+  if (window.FB && FB.user() && store.authSeen) {
+    pullCloudAndMerge().then((merged) => { if (merged && state.view === "home") render(); });
+  }
 
   if ("serviceWorker" in navigator) {
     window.addEventListener("load", () => {
