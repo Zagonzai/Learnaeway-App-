@@ -96,8 +96,39 @@ img { user-select: none; -webkit-user-drag: none; }
 .wave-bg {
   position: absolute;
   inset: 0;
-  background: url("../assets/backgrounds/wave-header@2x.png") center 40% / cover no-repeat;
   opacity: 0.95;
+  transition: filter .4s ease;
+}
+.wave-video {
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center 40%;
+  background: #050614;   /* shows briefly if the video is still buffering */
+}
+/* static fallback — hidden by default; shown if the video can't play at all
+   (see JS 'video-broken' class) or under prefers-reduced-motion below */
+.wave-still {
+  display: none;
+  background: url("../assets/backgrounds/wave-header@2x.png") center 40% / cover no-repeat;
+}
+.header-zone.video-broken .wave-video { display: none; }
+.header-zone.video-broken .wave-still { display: block; }
+
+/* Narration pulse: subtle rhythmic scale + glow while audio is playing,
+   giving the impression Æway is "speaking". Off by default. */
+.header-zone.narrating .wave-bg {
+  animation: wavePulse 1.8s ease-in-out infinite;
+}
+@keyframes wavePulse {
+  0%, 100% { transform: scale(1);     filter: brightness(1)    saturate(1); }
+  50%      { transform: scale(1.035); filter: brightness(1.22) saturate(1.25); }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .wave-video { display: none; }
+  .wave-still { display: block; }
+  .header-zone.narrating .wave-bg { animation: none; filter: brightness(1.15); }
 }
 
 /* ===================== TOP BARS (two separate pills) ===================== */

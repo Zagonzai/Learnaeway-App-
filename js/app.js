@@ -621,6 +621,10 @@
   function currentAudioSrc() {
     return state.view === "screen" ? screens[state.current].scr.audioSrc || null : null;
   }
+  // header pulse tracks real narration only — not the no-audio visual toggle
+  function setNarrating(on) {
+    $("headerZone").classList.toggle("narrating", on && !!currentAudioSrc());
+  }
   function loadTrack(i) {
     if (audioEl) audioEl.pause();
     audioIndex = i;
@@ -630,9 +634,12 @@
       if (audioIndex + 1 < audioQueue.length) {
         loadTrack(audioIndex + 1);          // next part auto-starts seamlessly
         audioEl.play().catch(() => {});
+        setPlayIcon(true);
+        setNarrating(true);                 // header keeps pulsing through the seam
       } else {
         playing = false;
         setPlayIcon(false);
+        setNarrating(false);
       }
     });
   }
@@ -653,6 +660,7 @@
     audioIndex = 0;
     playing = false;
     setPlayIcon(false);
+    setNarrating(false);
   }
   $("btnPlay").addEventListener("click", () => {
     const src = currentAudioSrc();
@@ -664,6 +672,7 @@
       playing = !playing;    // no narration on this screen yet — visual toggle only
     }
     setPlayIcon(playing);
+    setNarrating(playing);
   });
   $("btnReplay").addEventListener("click", () => {
     const src = currentAudioSrc();
@@ -674,6 +683,7 @@
     audioEl.play().catch(() => {});
     playing = true;
     setPlayIcon(true);
+    setNarrating(true);
   });
   $("btnVolume").addEventListener("click", () => {
     store.settings.sound = !store.settings.sound;
@@ -939,6 +949,12 @@
   window.addEventListener("resize", syncViewportHeight);
   window.addEventListener("orientationchange", syncViewportHeight);
   if (window.visualViewport) window.visualViewport.addEventListener("resize", syncViewportHeight);
+
+  const waveVideo = $("waveVideo");
+  if (waveVideo) {
+    waveVideo.addEventListener("error", () => $("headerZone").classList.add("video-broken"));
+    waveVideo.play().catch(() => { /* autoplay blocked — poster image shows until a user gesture */ });
+  }
 
   applyTextSize();
   syncVolume();

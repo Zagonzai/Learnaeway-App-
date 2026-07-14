@@ -16,9 +16,18 @@
 <body>
   <div id="app" class="app">
 
-    <!-- ============ HEADER ZONE (wave only — action icons live in the card footer) ============ -->
-    <header class="header-zone">
-      <div class="wave-bg"></div>
+    <!-- ============ HEADER ZONE (looping video — action icons live in the card footer) ============ -->
+    <header class="header-zone" id="headerZone">
+      <video
+        id="waveVideo"
+        class="wave-bg wave-video"
+        poster="assets/backgrounds/wave-header@2x.png"
+        autoplay muted loop playsinline webkit-playsinline preload="auto"
+      >
+        <source src="assets/video/wave-header-loop.mp4" type="video/mp4">
+        <source src="assets/video/wave-header-loop.webm" type="video/webm">
+      </video>
+      <div class="wave-bg wave-still" aria-hidden="true"></div>
     </header>
 
     <!-- ============ TOP BARS (two separate pills, per corrected round-3 spec) ============ -->
