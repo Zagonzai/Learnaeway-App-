@@ -888,9 +888,18 @@ img { user-select: none; -webkit-user-drag: none; }
   display: flex;
   flex-direction: column;
   overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
   padding-top: env(safe-area-inset-top);
 }
 .auth-screen.hidden { display: none; }
+/* While a field is focused, shrink the scroll area to the visible viewport
+   (set from visualViewport in JS) so the active input scrolls clear of the
+   keyboard and its QuickType/autofill toolbar instead of hiding behind it. */
+.auth-screen.kb-open {
+  bottom: auto;
+  height: var(--kbvh, 100%);
+}
+.auth-screen.kb-open .auth-card { padding-bottom: 96px; }
 
 .auth-wave {
   flex: 0 0 auto;
@@ -997,6 +1006,20 @@ img { user-select: none; -webkit-user-drag: none; }
 .auth-input::placeholder { color: #8FA3BF; letter-spacing: .06em; }
 .auth-input:focus {
   filter: brightness(1.3) drop-shadow(0 0 10px rgba(61,223,255,.55));
+}
+
+/* iOS/Chrome autofill: force white text + caret so autofilled email/password
+   stays readable on the dark pill (default renders black-on-dark). The long
+   background transition defeats the autofill background flash; the pill's
+   border-image already supplies the dark interior. */
+.auth-input:-webkit-autofill,
+.auth-input:-webkit-autofill:hover,
+.auth-input:-webkit-autofill:focus,
+.auth-input:-webkit-autofill:active {
+  -webkit-text-fill-color: var(--text) !important;
+  caret-color: var(--text);
+  -webkit-box-shadow: 0 0 0 1000px rgba(9, 13, 30, 0.85) inset;
+  transition: background-color 100000s ease-in-out 0s;
 }
 
 .auth-submit {

@@ -28,7 +28,12 @@
 
   const KEY = "learnaeway.v1";
   const store = load();
+  // backfill keys that may be missing on stores written by older versions
   if (!store.checklist) store.checklist = {};   // daily trading checklist ticks
+  if (!store.visited) store.visited = {};
+  if (!store.liked) store.liked = {};
+  if (!store.notes) store.notes = {};
+  if (!store.settings) store.settings = { sound: true, textSize: "M", name: "" };
   function load() {
     try {
       const raw = localStorage.getItem(KEY);
@@ -949,6 +954,38 @@
   window.addEventListener("resize", syncViewportHeight);
   window.addEventListener("orientationchange", syncViewportHeight);
   if (window.visualViewport) window.visualViewport.addEventListener("resize", syncViewportHeight);
+
+  /* Keyboard handling for the login/gate screen: iOS keeps window.innerHeight
+     full while the keyboard + QuickType bar are up, so the focused field can
+     hide behind them. Shrink the auth screen to visualViewport.height and
+     scroll the active input into view. */
+  const vv = window.visualViewport;
+  let kbFocused = null;
+  function applyKbHeight() {
+    if (!kbFocused || !vv) return;
+    authScreen.style.setProperty("--kbvh", Math.round(vv.height) + "px");
+  }
+  function scrollFocusedIntoView() {
+    if (kbFocused) kbFocused.scrollIntoView({ block: "center", behavior: "smooth" });
+  }
+  authScreen.addEventListener("focusin", (e) => {
+    if (!e.target.classList || !e.target.classList.contains("auth-input")) return;
+    kbFocused = e.target;
+    authScreen.classList.add("kb-open");
+    applyKbHeight();
+    // wait for the keyboard + toolbar to finish animating in, then reveal
+    setTimeout(() => { applyKbHeight(); scrollFocusedIntoView(); }, 320);
+  });
+  authScreen.addEventListener("focusout", (e) => {
+    if (!e.target.classList || !e.target.classList.contains("auth-input")) return;
+    setTimeout(() => {
+      if (authScreen.contains(document.activeElement) &&
+          document.activeElement.classList.contains("auth-input")) return;
+      kbFocused = null;
+      authScreen.classList.remove("kb-open");
+    }, 60);
+  });
+  if (vv) vv.addEventListener("resize", () => { applyKbHeight(); scrollFocusedIntoView(); });
 
   const waveVideo = $("waveVideo");
   if (waveVideo) {
