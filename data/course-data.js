@@ -945,7 +945,8 @@ window.COURSE_DATA = {
          "body": [
           "This course provides all the essential tools and knowledge needed for anyone interested in understanding the financial markets and actively trading them. Whether you're a beginner or a seasoned trader, this course serves as a comprehensive guide and reference."
          ],
-         "audio": "introduction-your-path-to-becoming-a-trader/1.mp3"
+         "audio": "introduction-your-path-to-becoming-a-trader/1.mp3",
+         "audioSrc": "assets/audio/module-2/introduction-path-to-becoming-a-trader/01-introduction.mp3"
         },
         {
          "id": "introduction-your-path-to-becoming-a-trader--overview-0--2",
@@ -955,7 +956,11 @@ window.COURSE_DATA = {
           "You can expect clear, simplified, and concise information on what the financial market is, along with a detailed breakdown of how to approach trading, master technical analysis, and navigate the psychological challenges that come with pursuing consistency and profitability.",
           "Additionally, this course will walk you through the essentials, what type of accounts to open, which markets to trade, how to manage risk effectively, and most importantly, how to pay yourself from the market."
          ],
-         "audio": "introduction-your-path-to-becoming-a-trader/2.mp3"
+         "audio": "introduction-your-path-to-becoming-a-trader/2.mp3",
+         "audioSrc": [
+          "assets/audio/module-2/introduction-path-to-becoming-a-trader/02a-page2-part1.mp3",
+          "assets/audio/module-2/introduction-path-to-becoming-a-trader/02b-page2-part2.mp3"
+         ]
         },
         {
          "id": "introduction-your-path-to-becoming-a-trader--overview-0--3",
@@ -964,7 +969,8 @@ window.COURSE_DATA = {
          "body": [
           "However, this course is not the final step in your journey to becoming a consistently profitable trader. Instead, it should be used as a guide, a resource, and a tool to help you challenge and hold yourself accountable. In trading, it's always you versus you."
          ],
-         "audio": "introduction-your-path-to-becoming-a-trader/3.mp3"
+         "audio": "introduction-your-path-to-becoming-a-trader/3.mp3",
+         "audioSrc": "assets/audio/module-2/introduction-path-to-becoming-a-trader/03-page3.mp3"
         },
         {
          "id": "introduction-your-path-to-becoming-a-trader--overview-0--4",
@@ -973,7 +979,8 @@ window.COURSE_DATA = {
          "body": [
           "By the end of this course, you'll have a clear understanding of how the financial markets operate and the necessary skills to approach trading with confidence. Success in trading doesn't come overnight; it requires patience, discipline, and continuous learning. This course is your starting point, but your growth as a trader will depend on your commitment to applying what you've learned and refining your skills over time. The journey begins now."
          ],
-         "audio": "introduction-your-path-to-becoming-a-trader/4.mp3"
+         "audio": "introduction-your-path-to-becoming-a-trader/4.mp3",
+         "audioSrc": "assets/audio/module-2/introduction-path-to-becoming-a-trader/04-page4.mp3"
         }
        ]
       }
@@ -995,7 +1002,8 @@ window.COURSE_DATA = {
          "body": [
           "Trading will be one of the hardest things you ever pursue, and in the process, you will learn more about yourself than you ever expected. You will experience a wide range of emotions excitement, frustration, fear, and even euphoria. It is crucial to understand that while trading can be a way to generate income, this is not just a way to make money it is a job, a career, and a way of life."
          ],
-         "audio": "the-reality-of-trading/1.mp3"
+         "audio": "the-reality-of-trading/1.mp3",
+         "audioSrc": "assets/audio/module-2/the-reality-of-trading/01-the-reality-of-trading.mp3"
         }
        ]
       },
@@ -1010,7 +1018,8 @@ window.COURSE_DATA = {
          "body": [
           "Just like a traditional 9-to-5 job has rules, responsibilities, and expectations, trading must be approached with the same level of discipline. If you do not treat it professionally, the market will expose your weaknesses. Structure, routine, and continuous learning are essential to long-term success."
          ],
-         "audio": "the-reality-of-trading/1.mp3"
+         "audio": "the-reality-of-trading/1.mp3",
+         "audioSrc": "assets/audio/module-2/the-reality-of-trading/02-treat-trading-like-a-profession.mp3"
         }
        ]
       },
@@ -1025,7 +1034,8 @@ window.COURSE_DATA = {
          "body": [
           "One of the biggest mistakes new traders make is viewing trading as their primary or only source of income before they are consistently profitable. I strongly recommend that anyone starting their trading journey has a stable source of income. The pressure of needing to make money from trading can lead to poor decision-making, emotional trading, and ultimately, failure."
          ],
-         "audio": "the-reality-of-trading/1.mp3"
+         "audio": "the-reality-of-trading/1.mp3",
+         "audioSrc": "assets/audio/module-2/the-reality-of-trading/03-importance-of-financial-stability.mp3"
         }
        ]
       },
@@ -1040,20 +1050,13 @@ window.COURSE_DATA = {
          "body": [
           "If you have a significant other, a family, or close friends, their support and positive encouragement can be invaluable. This journey will test your patience, resilience, and emotional strength. Your mental, emotional, and physical well-being play a crucial role in your trading success.",
           "To maintain balance and stability, consider incorporating:",
-          "Fitness & Exercise - Whether it's weightlifting, running, swimming, or yoga, physical activity helps clear your mind and manage stress."
-         ],
-         "audio": "the-reality-of-trading/1.mp3"
-        },
-        {
-         "id": "the-reality-of-trading--the-role-of-support-and-a-healthy-lifestyle-3--2",
-         "headline": "The Reality of Trading",
-         "subhead": "The Role of Support and a Healthy Lifestyle",
-         "body": [
+          "Fitness & Exercise - Whether it's weightlifting, running, swimming, or yoga, physical activity helps clear your mind and manage stress.",
           "Meditation & Mindfulness - Controlling your emotions and staying present can be game-changers in trading.",
           "Healthy Eating & Proper Rest - A well-fueled body leads to a sharp mind.",
           "Hobbies Outside of Trading - Finding an outlet that isn't market-related prevents burnout and keeps your mind fresh."
          ],
-         "audio": "the-reality-of-trading/2.mp3"
+         "audio": "the-reality-of-trading/1.mp3",
+         "audioSrc": "assets/audio/module-2/the-reality-of-trading/04-role-of-support-and-healthy-lifestyle-combined.mp3"
         }
        ]
       },
@@ -1068,19 +1071,12 @@ window.COURSE_DATA = {
          "body": [
           "Trading can be an incredibly isolating journey, but it doesn't have to be. Having a trading buddy or being part of a community can make a huge difference in your growth and resilience.",
           "A trading buddy provides accountability, encouragement, and a second perspective on your trades.",
-          "Being part of a community allows you to learn from others, share experiences, and stay motivated when challenges arise."
-         ],
-         "audio": "the-reality-of-trading/1.mp3"
-        },
-        {
-         "id": "the-reality-of-trading--find-a-trading-buddy-or-community-4--2",
-         "headline": "The Reality of Trading",
-         "subhead": "Find a Trading Buddy or Community",
-         "body": [
+          "Being part of a community allows you to learn from others, share experiences, and stay motivated when challenges arise.",
           "Discussing market conditions, strategies, and emotional challenges with someone who understands the journey can help you stay on track and continuously improve.",
           "While trading is an individual pursuit, surrounding yourself with like-minded individuals can accelerate your learning and help you navigate the ups and downs more effectively."
          ],
-         "audio": "the-reality-of-trading/2.mp3"
+         "audio": "the-reality-of-trading/1.mp3",
+         "audioSrc": "assets/audio/module-2/the-reality-of-trading/05-trading-buddy-or-community-combined.mp3"
         }
        ]
       },
@@ -1093,18 +1089,11 @@ window.COURSE_DATA = {
          "headline": "The Reality of Trading",
          "subhead": "The Long Game: Trading is a Marathon, Not a Sprint",
          "body": [
-          "Too many people come into trading thinking they will get rich overnight. The truth is, consistency is what separates successful traders from those who quit. Slow and steady progress will allow you to win the race. Developing good habits early on such as risk management, patience, and discipline will build the foundation for long-term success."
-         ],
-         "audio": "the-reality-of-trading/1.mp3"
-        },
-        {
-         "id": "the-reality-of-trading--the-long-game-trading-is-a-marathon-not-a-sprint-5--2",
-         "headline": "The Reality of Trading",
-         "subhead": "The Long Game: Trading is a Marathon, Not a Sprint",
-         "body": [
+          "Too many people come into trading thinking they will get rich overnight. The truth is, consistency is what separates successful traders from those who quit. Slow and steady progress will allow you to win the race. Developing good habits early on such as risk management, patience, and discipline will build the foundation for long-term success.",
           "Every trader, no matter how skilled, will experience the emotional roller coaster that comes with trading. This is unavoidable. However, the most important thing to remember is:"
          ],
-         "audio": "the-reality-of-trading/2.mp3"
+         "audio": "the-reality-of-trading/1.mp3",
+         "audioSrc": "assets/audio/module-2/the-reality-of-trading/06-the-long-game-combined.mp3"
         }
        ]
       },
@@ -1120,7 +1109,11 @@ window.COURSE_DATA = {
           "At the end of the day, you are the only one in control of your actions. The market is neutral it does not care whether you win or lose. Your success will come down to how well you manage yourself. If you can master your emotions, develop a strong mindset, and approach trading with patience and discipline, you will put yourself in the best position to succeed.",
           "This journey will challenge you, but for those who are truly committed, the rewards both financial and personal can be life-changing."
          ],
-         "audio": "the-reality-of-trading/1.mp3"
+         "audio": "the-reality-of-trading/1.mp3",
+         "audioSrc": [
+          "assets/audio/module-2/the-reality-of-trading/07a-market-not-out-to-get-you-part1.mp3",
+          "assets/audio/module-2/the-reality-of-trading/07b-market-not-out-to-get-you-part2.mp3"
+         ]
         }
        ]
       }
