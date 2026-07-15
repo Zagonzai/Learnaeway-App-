@@ -740,25 +740,6 @@ img { user-select: none; -webkit-user-drag: none; }
 
 .screenlist-item.done .mi-pct { color: var(--teal); }
 
-/* logout entry (menu drawer, main navigation) */
-.menu-logout {
-  width: 100%;
-  margin-top: 16px;
-  padding: 12px;
-  text-align: center;
-  border-radius: 999px;
-  border: 2px solid transparent;
-  border-image: url("../assets/buttons-pill/button-gradient-long@2x.png") 44% fill / 22px stretch;
-  background: none;
-  font-size: calc(14.5px * var(--fs));
-  font-weight: 800;
-  letter-spacing: .08em;
-  text-transform: uppercase;
-  color: #F2A9CD;
-  text-shadow: 0 0 8px rgba(255,61,154,.45);
-}
-.menu-logout:active { filter: brightness(1.35); }
-
 /* settings */
 .set-group { margin-bottom: 18px; }
 .set-label {

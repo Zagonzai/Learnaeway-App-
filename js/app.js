@@ -477,8 +477,7 @@
           return `<button class="menu-item ${cur ? "current" : ""}" data-menu-sec="${sec.id}" data-mod-idx="${DATA.modules.indexOf(mod)}">
             ${esc(sec.title)}<span class="mi-pct">${p.pct}%</span></button>`;
         }).join("")}
-      </div>`).join("") +
-      `<button class="menu-logout" data-logout>Log Out</button>`;
+      </div>`).join("");
     openOverlay(html);
   }
 
@@ -504,7 +503,8 @@
         <input class="set-input" id="setName" placeholder="Your name" value="${esc(s.name || "")}" maxlength="40">
       </div>
       <button class="btn-primary" data-close>Done</button>
-      <button class="btn-secondary" data-reset-progress>Reset course progress</button>`;
+      <button class="btn-secondary" data-reset-progress>Reset course progress</button>
+      <button class="btn-secondary" data-logout>Log Out</button>`;
     openOverlay(html);
   }
 
