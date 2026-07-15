@@ -1090,7 +1090,7 @@ window.COURSE_DATA = {
          "subhead": "The Long Game: Trading is a Marathon, Not a Sprint",
          "body": [
           "Too many people come into trading thinking they will get rich overnight. The truth is, consistency is what separates successful traders from those who quit. Slow and steady progress will allow you to win the race. Developing good habits early on such as risk management, patience, and discipline will build the foundation for long-term success.",
-          "Every trader, no matter how skilled, will experience the emotional roller coaster that comes with trading. This is unavoidable. However, the most important thing to remember is:"
+          "Every trader, no matter how skilled, will experience the emotional roller coaster that comes with trading. This is unavoidable. However, the most important thing to remember is: to recognize your emotions and manage them effectively."
          ],
          "audio": "the-reality-of-trading/1.mp3",
          "audioSrc": "assets/audio/module-2/the-reality-of-trading/06-the-long-game-combined.mp3"
