@@ -894,9 +894,14 @@
      LEARNAEWAY_CONFIG.attemptsWebhookUrl is set, POSTed to that webhook
      (e.g. Zapier -> Google Sheet). */
   const CFG = window.LEARNAEWAY_CONFIG || {};
+  /* three steps: access gate -> intake questionnaire -> login */
   function showAuthStep() {
-    $("gateStep").classList.toggle("hidden", !!store.gatePassed);
-    $("loginStep").classList.toggle("hidden", !store.gatePassed);
+    const onGate = !store.gatePassed;
+    const onSurvey = !onGate && !store.surveyDone;
+    if (onSurvey && !surveyRendered) renderSurvey();
+    $("gateStep").classList.toggle("hidden", !onGate);
+    $("surveyStep").classList.toggle("hidden", !onSurvey);
+    $("loginStep").classList.toggle("hidden", onGate || onSurvey);
   }
   function logGateAttempt(attempt) {
     if (!store.gateAttempts) store.gateAttempts = [];
@@ -919,22 +924,186 @@
     e.preventDefault();
     const f = new FormData(e.target);
     const ok = (f.get("passcode") || "").trim() === String(CFG.accessPasscode || "");
-    logGateAttempt({
+    const identity = {
       firstName: (f.get("firstName") || "").trim(),
       lastName: (f.get("lastName") || "").trim(),
       email: (f.get("email") || "").trim(),
       phone: (f.get("phone") || "").trim(),
+    };
+    logGateAttempt(Object.assign({}, identity, {
       timestamp: new Date().toISOString(),
       passcodeCorrect: ok,
-    });
+    }));
     if (ok) {
       store.gatePassed = true;
+      store.gateIdentity = identity;   // join key for the questionnaire below
       save();
       $("gateError").classList.add("hidden");
+      // open the lead record the questionnaire answers will merge onto
+      if (window.FB && identity.email) {
+        FB.saveLead(identity.email, Object.assign({}, identity, {
+          gatePassedAt: new Date().toISOString(),
+        }));
+      }
       showAuthStep();
     } else {
       $("gateError").classList.remove("hidden");
     }
+  });
+
+  /* ---------------- step 1.5: beta intake questionnaire ----------------
+     Replaces the standalone Google Form. Answers are stored locally and
+     merged onto leads/{emailSlug} in Firestore, the same record the access
+     gate above created — joined on the email entered at the gate. */
+
+  const SURVEY = [
+    { id: "location", type: "text", q: "Location", placeholder: "City, State" },
+    { id: "knowledge", type: "single", q: "Current financial knowledge", other: true,
+      options: [
+        "No knowledge of markets/investing",
+        "Know the basics, need structure",
+        "Understand markets, trade occasionally",
+        "Active trader wanting community & accountability",
+      ] },
+    { id: "goals", type: "multi", q: "Primary financial goal", other: true,
+      options: [
+        "Build long-term wealth",
+        "Learn to trade",
+        "Create a second income stream",
+        "Replace current job income",
+        "Protect family with insurance & savings",
+        "Start or grow a business",
+        "Invest in real estate",
+        "Understand money management better",
+      ] },
+    { id: "pillars", type: "multi", q: "Which of the Six Pillars are you working on", other: true,
+      options: [
+        "Pillar 1 - Earned Income",
+        "Pillar 2 - Protection",
+        "Pillar 3 - Tax-Advantaged Accounts",
+        "Pillar 4 - Business Ownership",
+        "Pillar 5 - Real Estate",
+        "Pillar 6 - Market Investing & Trading",
+        "None yet, just starting",
+      ] },
+    { id: "priceMonthly", type: "single", q: "What would you pay per month for a guided step-by-step app", other: true,
+      options: ["Free only", "$5-10", "$10-25", "$25-50", "$50+", "One-time fee instead"] },
+    { id: "retention", type: "multi", q: "What makes you actually use an app consistently", other: true,
+      options: [
+        "Short lessons under 60 sec",
+        "A personal AI guide",
+        "Progress tracking",
+        "Community",
+        "Real applicable strategies",
+        "Live market updates",
+      ] },
+    { id: "experience", type: "multi", q: "Experience with", other: true,
+      options: ["Stocks", "Options", "Futures", "Forex", "Crypto", "None of the above"] },
+    { id: "riskUnderstanding", type: "single", q: "Do you understand the risks of trading",
+      options: [
+        "Yes, understand and prepared",
+        "General understanding, want clarity",
+        "No, don't fully understand yet",
+      ] },
+    { id: "dailyTime", type: "single", q: "Time you can dedicate daily",
+      options: ["15-30 min", "30-60 min", "1-2 hrs", "2+ hrs"] },
+    { id: "readiness", type: "single", q: "When are you ready to start",
+      options: ["Right now", "Within 30 days", "Within 3 months", "Just exploring"] },
+    { id: "targetStartDate", type: "date", q: "Target start date" },
+    { id: "contact", type: "multi", q: "How can we connect with you",
+      options: [
+        "Follow @aeway.co on Instagram",
+        "Email updates",
+        "Text updates",
+        "Notify me at launch",
+      ] },
+  ];
+
+  const surveyForm = $("surveyForm");
+  let surveyRendered = false;
+
+  function renderSurvey() {
+    surveyForm.innerHTML = SURVEY.map((q, i) => {
+      const label = `<div class="sv-label"><span class="sv-num">${i + 1}</span><span>${esc(q.q)}` +
+        (q.type === "multi" ? `<span class="sv-multi">select all that apply</span>` : "") +
+        `</span></div>`;
+      if (q.type === "text" || q.type === "date") {
+        const ph = q.placeholder ? ` placeholder="${esc(q.placeholder)}"` : "";
+        const cls = q.type === "date" ? "sv-input sv-date" : "sv-input";
+        return `<div class="sv-q" data-q="${q.id}" data-qtype="${q.type}">${label}
+          <input class="g-pill auth-input ${cls}" name="${q.id}" type="${q.type === "date" ? "date" : "text"}"${ph} autocomplete="off"></div>`;
+      }
+      const chips = q.options.map((o) =>
+        `<button type="button" class="sv-opt" data-sv-opt data-val="${esc(o)}">${esc(o)}</button>`).join("");
+      const otherChip = q.other
+        ? `<button type="button" class="sv-opt" data-sv-opt data-other="1" data-val="Other">Other</button>` : "";
+      const otherInput = q.other
+        ? `<input class="auth-input sv-other hidden" name="${q.id}__other" type="text" placeholder="Tell us more" autocomplete="off">` : "";
+      return `<div class="sv-q" data-q="${q.id}" data-qtype="${q.type}">${label}
+        <div class="sv-opts">${chips}${otherChip}</div>${otherInput}</div>`;
+    }).join("") +
+      `<div id="surveyError" class="gate-error hidden"></div>
+       <button type="submit" class="g-pill auth-submit">Continue</button>`;
+    surveyRendered = true;
+  }
+
+  surveyForm.addEventListener("click", (e) => {
+    const btn = e.target.closest("[data-sv-opt]");
+    if (!btn) return;
+    const wrap = btn.closest(".sv-q");
+    if (wrap.dataset.qtype === "single") {
+      wrap.querySelectorAll("[data-sv-opt]").forEach((b) => b.classList.toggle("on", b === btn));
+    } else {
+      btn.classList.toggle("on");
+    }
+    const otherBtn = wrap.querySelector('[data-other="1"]');
+    const otherInput = wrap.querySelector(".sv-other");
+    if (otherInput) {
+      const show = !!otherBtn && otherBtn.classList.contains("on");
+      otherInput.classList.toggle("hidden", !show);
+      if (show) otherInput.focus();
+    }
+  });
+
+  function collectSurvey() {
+    const out = {};
+    SURVEY.forEach((q) => {
+      const wrap = surveyForm.querySelector(`.sv-q[data-q="${q.id}"]`);
+      if (q.type === "text" || q.type === "date") {
+        out[q.id] = (wrap.querySelector(`[name="${q.id}"]`).value || "").trim();
+        return;
+      }
+      const otherInput = wrap.querySelector(".sv-other");
+      const otherTxt = otherInput && !otherInput.classList.contains("hidden")
+        ? otherInput.value.trim() : "";
+      const picked = Array.from(wrap.querySelectorAll("[data-sv-opt].on"))
+        .map((b) => (b.hasAttribute("data-other") && otherTxt ? `Other: ${otherTxt}` : b.dataset.val));
+      out[q.id] = q.type === "multi" ? picked : (picked[0] || "");
+    });
+    return out;
+  }
+
+  surveyForm.addEventListener("submit", async (e) => {
+    e.preventDefault();
+    const btn = surveyForm.querySelector(".auth-submit");
+    const answers = collectSurvey();
+    const identity = store.gateIdentity || {};
+    store.survey = Object.assign({}, answers, { submittedAt: new Date().toISOString() });
+    store.surveyDone = true;
+    save();
+    btn.disabled = true;
+    btn.classList.add("pending");
+    btn.textContent = "Saving…";
+    if (window.FB && identity.email) {
+      await FB.saveLead(identity.email, {
+        survey: answers,
+        surveyCompletedAt: store.survey.submittedAt,
+      });
+    }
+    btn.disabled = false;
+    btn.classList.remove("pending");
+    btn.textContent = "Continue";
+    showAuthStep();
   });
 
   if (!store.authSeen) {

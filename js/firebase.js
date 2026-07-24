@@ -8,6 +8,8 @@
  *   signOut()
  *   user()                   -> {uid, email} | null
  *   logGateAttempt(obj)      -> fire-and-forget write to access-attempts
+ *   leadKey(email)           -> email slug used as the lead document id
+ *   saveLead(email, obj)     -> merge fields onto leads/{emailSlug}
  *   loadUserDoc()            -> plain object | null   (users/{uid})
  *   saveUserDoc(obj)         -> PATCH users/{uid}
  */
@@ -133,6 +135,17 @@
     return fields;
   }
 
+  /* Lead records are one document per person, keyed by a slug of the email so
+   * the access-gate identity and the onboarding questionnaire land on the same
+   * record (join key = email). "zag@gmail.com" -> "zag_gmail_com". */
+  function leadKey(email) {
+    const slug = String(email || "").trim().toLowerCase()
+      .replace(/[^a-z0-9]+/g, "_")
+      .replace(/^_+|_+$/g, "")
+      .slice(0, 200);
+    return slug || "unknown";
+  }
+
   window.FB = {
     user() {
       return session ? { uid: session.uid, email: session.email } : null;
@@ -160,6 +173,28 @@
           body: JSON.stringify({ fields: toFields(attempt) }),
         }).catch(() => {});
       } catch (e) { /* offline — attempt is still in localStorage */ }
+    },
+
+    leadKey,
+
+    /* Merge fields onto leads/{emailSlug}. updateMask keeps this a merge, so
+     * the questionnaire PATCH never clobbers the gate identity written first,
+     * and a re-submission only overwrites the fields it sends. Resolves false
+     * rather than throwing — answers are already saved to localStorage. */
+    async saveLead(email, obj) {
+      const keys = Object.keys(obj);
+      if (!keys.length) return false;
+      const mask = keys.map((k) => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
+      try {
+        const res = await fetch(`${FS_BASE}/leads/${leadKey(email)}?key=${KEY}&${mask}`, {
+          method: "PATCH",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({ fields: toFields(obj) }),
+        });
+        return res.ok;
+      } catch (e) {
+        return false;   // offline — the answers stay in localStorage
+      }
     },
 
     async loadUserDoc() {

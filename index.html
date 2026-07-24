@@ -119,6 +119,18 @@
         </div>
       </div>
 
+      <!-- Step 1.5: beta intake questionnaire — replaces the standalone Google
+           Form. Answers merge onto the same Firestore lead record the access
+           gate created, keyed by email. -->
+      <div id="surveyStep" class="auth-card-outer hidden">
+        <div class="auth-card">
+          <img class="auth-wordmark" src="assets/logo/logo-wordmark@3x.png" alt="Learnæway">
+          <div class="gate-title">A Few Questions</div>
+          <div class="sv-intro">This helps us build the right app for you — it takes about a minute.</div>
+          <form id="surveyForm" autocomplete="off" novalidate></form>
+        </div>
+      </div>
+
       <!-- Step 2: login (existing screen, unchanged) -->
       <div id="loginStep" class="auth-card-outer">
         <div class="auth-card">

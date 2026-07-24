@@ -1021,6 +1021,97 @@ img { user-select: none; -webkit-user-drag: none; }
   filter: brightness(1.3) drop-shadow(0 0 10px rgba(47,230,194,.5));
 }
 
+/* ---- step 1.5: beta intake questionnaire ---- */
+
+#surveyStep .auth-card { padding: 26px 20px 34px; }
+#surveyStep .auth-wordmark { width: min(62%, 260px); margin: 2px auto 22px; }
+
+.sv-intro {
+  font-size: calc(13px * var(--fs));
+  line-height: 1.5;
+  color: #9FC0E0;
+  text-align: center;
+  margin: -10px 0 24px;
+}
+
+#surveyForm {
+  width: 100%;
+  display: flex;
+  flex-direction: column;
+  gap: 24px;
+}
+
+.sv-q { display: flex; flex-direction: column; gap: 11px; }
+
+.sv-label {
+  display: flex;
+  gap: 9px;
+  align-items: baseline;
+  font-size: calc(14px * var(--fs));
+  font-weight: 700;
+  line-height: 1.4;
+  color: #DDEFFF;
+}
+.sv-num {
+  flex: 0 0 auto;
+  width: 21px;
+  height: 21px;
+  display: inline-grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid rgba(61,223,255,.45);
+  font-size: 11.5px;
+  font-weight: 800;
+  color: var(--cyan);
+  text-shadow: 0 0 8px rgba(61,223,255,.6);
+}
+.sv-multi {
+  display: block;
+  margin-top: 3px;
+  font-size: 11px;
+  font-weight: 600;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: #8FB4D8;
+}
+
+.sv-opts { display: flex; flex-wrap: wrap; gap: 8px; padding-left: 30px; }
+.sv-opt {
+  padding: 9px 15px;
+  border-radius: 999px;
+  border: 1px solid rgba(61,223,255,.26);
+  background: rgba(10,16,34,.72);
+  color: #C7D9EF;
+  font-size: calc(12.5px * var(--fs));
+  line-height: 1.3;
+  text-align: left;
+  transition: transform .12s ease, box-shadow .2s ease, background-color .2s ease;
+}
+.sv-opt:active { transform: scale(.96); }
+.sv-opt.on {
+  border-color: var(--cyan);
+  background: rgba(61,223,255,.15);
+  color: #EAF6FF;
+  font-weight: 600;
+  box-shadow: 0 0 12px rgba(61,223,255,.35);
+}
+
+.sv-input { width: 100%; }
+/* native date picker renders dark to match the card */
+.sv-date { color-scheme: dark; }
+.sv-date::-webkit-date-and-time-value { text-align: left; }
+
+.sv-other {
+  width: calc(100% - 30px);
+  height: 48px;
+  margin: 10px 0 0 30px;
+  padding: 0 18px;
+  border: 1px solid rgba(61,223,255,.3);
+  border-radius: 999px;
+  background: rgba(10,16,34,.72);
+}
+.sv-other.hidden { display: none; }
+
 /* ===================== TRANSITIONS ===================== */
 
 .slide-in-left  { animation: slideInLeft .28s ease both; }
