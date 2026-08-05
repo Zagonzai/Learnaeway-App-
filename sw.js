@@ -3,7 +3,7 @@
  * deploys show up immediately; only falls back to cache when offline.
  * Heavy binary assets (images) are cache-first since they rarely change.
  */
-const CACHE = "learnaeway-v16";
+const CACHE = "learnaeway-v17";
 
 const SHELL = [
   "./",
@@ -13,6 +13,7 @@ const SHELL = [
   "./js/config.js",
   "./js/firebase.js",
   "./data/course-data.js",
+  "./data/videos.json",
   "./manifest.webmanifest",
   "./assets/logo/logo-symbol-v2@3x.png",
   "./assets/logo/logo-wordmark@3x.png",

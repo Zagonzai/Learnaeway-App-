@@ -10,6 +10,7 @@
  *   logGateAttempt(obj)      -> fire-and-forget write to access-attempts
  *   leadKey(email)           -> email slug used as the lead document id
  *   saveLead(email, obj)     -> merge fields onto leads/{emailSlug}
+ *   listVideos()             -> [{id,title,youtubeId,category,order}] | null
  *   loadUserDoc()            -> plain object | null   (users/{uid})
  *   saveUserDoc(obj)         -> PATCH users/{uid}
  */
@@ -194,6 +195,26 @@
         return res.ok;
       } catch (e) {
         return false;   // offline — the answers stay in localStorage
+      }
+    },
+
+    /* Video library — public read of the `videos` collection. Returns null
+     * when the collection is unreachable or empty so the caller can fall back
+     * to the bundled data/videos.json catalog. */
+    async listVideos() {
+      try {
+        const res = await fetch(`${FS_BASE}/videos?key=${KEY}&pageSize=300`);
+        if (!res.ok) return null;
+        const data = await res.json();
+        const docs = data.documents || [];
+        if (!docs.length) return null;
+        return docs.map((d) => {
+          const v = dec({ mapValue: { fields: d.fields || {} } }) || {};
+          v.id = d.name.split("/").pop();
+          return v;
+        });
+      } catch (e) {
+        return null;   // offline — bundled catalog is used instead
       }
     },
 

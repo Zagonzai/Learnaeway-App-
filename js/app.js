@@ -34,6 +34,7 @@
   if (!store.liked) store.liked = {};
   if (!store.notes) store.notes = {};
   if (!store.settings) store.settings = { sound: true, textSize: "M", name: "" };
+  if (!store.videosWatched) store.videosWatched = {};   // videoId -> true
   function load() {
     try {
       const raw = localStorage.getItem(KEY);
@@ -64,6 +65,7 @@
       liked: store.liked || {},
       notes: store.notes || {},
       checklist: store.checklist || {},
+      videosWatched: store.videosWatched || {},
       settings: store.settings || {},
       updatedAt: new Date().toISOString(),
     };
@@ -78,7 +80,7 @@
     const cloud = await FB.loadUserDoc();
     if (!cloud) return false;
     // union maps (local device stays authoritative for its own recent edits)
-    for (const k of ["visited", "liked", "checklist", "notes"]) {
+    for (const k of ["visited", "liked", "checklist", "notes", "videosWatched"]) {
       store[k] = Object.assign({}, cloud[k] || {}, store[k] || {});
     }
     if (!store.lastScreen && cloud.lastScreen) store.lastScreen = cloud.lastScreen;
@@ -91,12 +93,15 @@
   /* ---------------- state ---------------- */
 
   const state = {
-    view: "home",            // 'home' | 'screen'
+    view: "home",            // 'home' | 'screen' | 'videos' | 'player'
     homeTab: "sections",     // 'sections' | 'liked' | 'saved'
     homeModule: 0,           // module index shown on home
     expanded: null,          // section id expanded into subsection deck
     current: 0,              // index into screens[] for learning view
     slideDir: 0,             // -1 back, +1 forward (animation)
+    videoCat: null,          // video category expanded in the library
+    videoId: null,           // video playing in the in-app player
+    videoScroll: 0,          // library scroll position, restored on back
   };
 
   /* ---------------- els ---------------- */
@@ -391,9 +396,182 @@
       </button>`;
   }
 
+  /* ---------------- rendering: video library ----------------
+     Metadata lives in the Firestore `videos` collection (title, youtubeId,
+     category, order), with data/videos.json as the offline fallback and seed
+     source. Categories render as collapsible sections, matching the section
+     deck on Home; Welcome is always pinned first. */
+
+  const CATEGORY_FIRST = "Welcome";
+  const thumbUrl = (yid) => `https://i.ytimg.com/vi/${yid}/mqdefault.jpg`;
+
+  let videoCatalog = null;      // sorted [{id,title,youtubeId,category,order}]
+  let videoLoading = false;
+
+  async function loadVideos() {
+    if (videoCatalog || videoLoading) return videoCatalog;
+    videoLoading = true;
+    let list = window.FB ? await FB.listVideos() : null;
+    if (!list || !list.length) {
+      try {
+        const res = await fetch("data/videos.json", { cache: "no-cache" });
+        list = ((await res.json()) || {}).videos || [];
+      } catch (e) {
+        list = [];
+      }
+    }
+    videoCatalog = list
+      .filter((v) => v && v.youtubeId && v.title)
+      .sort((a, b) => (a.order || 0) - (b.order || 0));
+    videoLoading = false;
+    return videoCatalog;
+  }
+
+  /* group into categories, ordered by their lowest `order` value */
+  function videoCategories() {
+    const groups = new Map();
+    (videoCatalog || []).forEach((v) => {
+      const name = v.category || "Other";
+      if (!groups.has(name)) groups.set(name, { name, items: [], min: Infinity });
+      const g = groups.get(name);
+      g.items.push(v);
+      g.min = Math.min(g.min, v.order === undefined ? Infinity : v.order);
+    });
+    return Array.from(groups.values()).sort((a, b) => {
+      if (a.name === CATEGORY_FIRST) return -1;
+      if (b.name === CATEGORY_FIRST) return 1;
+      return a.min - b.min;
+    });
+  }
+
+  function videoById(id) {
+    return (videoCatalog || []).find((v) => v.id === id) || null;
+  }
+
+  function videoCardHTML(v) {
+    const watched = !!store.videosWatched[v.id];
+    return `
+      <button class="video-row${watched ? " watched" : ""}" data-vid="${esc(v.id)}">
+        <span class="v-thumb">
+          <img src="${thumbUrl(v.youtubeId)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
+          <span class="v-play"></span>
+        </span>
+        <span class="v-meta">
+          <span class="v-title">${esc(v.title)}</span>
+          <span class="v-tag">${esc(v.category || "Other")}${watched ? " · Watched" : ""}</span>
+        </span>
+      </button>`;
+  }
+
+  function renderVideos() {
+    barTitle.textContent = "Æway Video Library";
+
+    if (!videoCatalog) {
+      progressLabel.textContent = "…";
+      progressFill.style.width = "0%";
+      cardScroll.innerHTML = `
+        <div class="home-head">
+          <img class="home-logo" src="assets/logo/logo-symbol-v2@3x.png" alt="">
+          <div class="home-module-title">Videos</div>
+        </div>
+        <div class="liked-empty">Loading videos…</div>`;
+      cardFooter.style.display = "none";
+      return;
+    }
+
+    const cats = videoCategories();
+    const total = videoCatalog.length;
+    const seen = videoCatalog.filter((v) => store.videosWatched[v.id]).length;
+    progressLabel.textContent = `${seen} of ${total} watched`;
+    progressFill.style.width = `${total ? Math.round((100 * seen) / total) : 0}%`;
+
+    const body = total
+      ? cats.map((g) => {
+          const expanded = state.videoCat === g.name;
+          const gSeen = g.items.filter((v) => store.videosWatched[v.id]).length;
+          return `
+            <div class="deck">
+              <div class="deck-peek p3"></div><div class="deck-peek p2"></div><div class="deck-peek p1"></div>
+              <button class="section-row" data-vcat="${esc(g.name)}">
+                <span class="sec-title">${esc(g.name)}</span>
+                <span class="pct-badge ${gSeen === g.items.length ? "done" : ""}" style="--pct:${Math.round((100 * gSeen) / g.items.length)}">${g.items.length}</span>
+              </button>
+            </div>
+            ${expanded ? `<div class="subsection-panel video-panel">
+              ${g.items.map(videoCardHTML).join("")}
+            </div>` : ""}`;
+        }).join("")
+      : `<div class="liked-empty">No videos yet.<br>Add documents to the Firestore <b>videos</b> collection to populate this library.</div>`;
+
+    cardScroll.innerHTML = `
+      <div class="home-head">
+        <img class="home-logo" src="assets/logo/logo-symbol-v2@3x.png" alt="">
+        <div class="home-module-title">Videos · ${cats.length} categories</div>
+        <div class="home-module-tagline">Watch, learn, and come back to the lessons any time.</div>
+      </div>
+      ${body}`;
+    cardScroll.scrollTop = state.videoScroll || 0;
+    cardFooter.style.display = "none";
+  }
+
+  /* in-app player — the iframe is created only while this view is mounted, so
+     leaving the view tears the player down and stops playback */
+  function renderPlayer() {
+    const v = videoById(state.videoId);
+    if (!v) { openVideos(); return; }
+
+    barTitle.textContent = v.category || "Video";
+    const total = videoCatalog.length;
+    const seen = videoCatalog.filter((x) => store.videosWatched[x.id]).length;
+    progressLabel.textContent = `${seen} of ${total} watched`;
+    progressFill.style.width = `${total ? Math.round((100 * seen) / total) : 0}%`;
+
+    const more = (videoCatalog || []).filter((x) => x.category === v.category && x.id !== v.id);
+    cardScroll.innerHTML = `
+      <button class="video-back" data-vback>‹ All videos</button>
+      <div class="video-embed">
+        <iframe
+          src="https://www.youtube.com/embed/${encodeURIComponent(v.youtubeId)}"
+          title="${esc(v.title)}"
+          frameborder="0"
+          allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+          allowfullscreen></iframe>
+      </div>
+      <h1 class="video-title">${esc(v.title)}</h1>
+      <div class="v-tag video-title-tag">${esc(v.category || "Other")}</div>
+      ${more.length ? `
+        <div class="liked-group-title">More in ${esc(v.category)}</div>
+        <div class="video-panel">${more.map(videoCardHTML).join("")}</div>` : ""}`;
+    cardScroll.scrollTop = 0;
+    cardFooter.style.display = "none";
+  }
+
+  function openVideos() {
+    stopAudio();
+    state.view = "videos";
+    state.videoId = null;
+    state.slideDir = 0;
+    closeOverlay();
+    render();
+    if (!videoCatalog) {
+      loadVideos().then(() => { if (state.view === "videos") render(); });
+    }
+  }
+
+  function playVideo(id) {
+    state.videoScroll = cardScroll.scrollTop;
+    state.videoId = id;
+    state.view = "player";
+    if (!store.videosWatched[id]) { store.videosWatched[id] = true; save(); }
+    render();
+  }
+
   function render() {
-    $("cardOuter").classList.toggle("outline-bg", state.view === "home");
+    const listy = state.view === "home" || state.view === "videos";
+    $("cardOuter").classList.toggle("outline-bg", listy);
     if (state.view === "home") renderHome();
+    else if (state.view === "videos") renderVideos();
+    else if (state.view === "player") renderPlayer();
     else renderScreen();
   }
 
@@ -715,21 +893,21 @@
   $("btnChecklist").addEventListener("click", openChecklist);
   $("btnNotes").addEventListener("click", openNotes);
 
-  function openComingSoon(kind) {
-    const meta = kind === "video"
-      ? { icon: "assets/nav-icons/icon-video-play@2x.png", title: "Video Lessons",
-          body: "Video-based learning content is coming soon. Every section will get companion video walkthroughs here." }
-      : { icon: "assets/nav-icons/icon-knowledge-test-lightning@2x.png", title: "Knowledge Test",
-          body: "Pattern-recognition quizzes and knowledge checks are coming soon. You'll be able to test yourself on every section you complete." };
-    openOverlay(panelHead(meta.title) + `
+  function openComingSoon() {
+    openOverlay(panelHead("Knowledge Test") + `
       <div class="liked-empty">
-        <img src="${meta.icon}" alt="" style="width:88px;display:block;margin:0 auto 14px;filter:drop-shadow(0 0 12px rgba(61,223,255,.4))">
-        ${meta.body}
+        <img src="assets/nav-icons/icon-knowledge-test-lightning@2x.png" alt="" style="width:88px;display:block;margin:0 auto 14px;filter:drop-shadow(0 0 12px rgba(61,223,255,.4))">
+        Pattern-recognition quizzes and knowledge checks are coming soon. You'll be able to test yourself on every section you complete.
       </div>
       <button class="btn-primary" data-close>Got it</button>`);
   }
-  $("navVideo").addEventListener("click", () => openComingSoon("video"));
-  $("navQuiz").addEventListener("click", () => openComingSoon("quiz"));
+  $("navVideo").addEventListener("click", () => {
+    openVideos();
+    const el = $("navVideo");
+    el.classList.add("glow-cyan");
+    setTimeout(() => el.classList.remove("glow-cyan"), 600);
+  });
+  $("navQuiz").addEventListener("click", openComingSoon);
   $("navHome").addEventListener("click", () => {
     state.homeTab = "sections";   // Home always lands on the outline + Continue
     goHome();
@@ -741,10 +919,13 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-check],[data-check-reset],[data-reset-progress]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-check],[data-check-reset],[data-reset-progress],[data-vcat],[data-vid],[data-vback]");
     if (!t) return;
 
-    if (t.dataset.tab) { state.homeTab = t.dataset.tab; render(); }
+    if (t.dataset.vcat) { state.videoCat = state.videoCat === t.dataset.vcat ? null : t.dataset.vcat; render(); }
+    else if (t.dataset.vid) playVideo(t.dataset.vid);
+    else if (t.hasAttribute("data-vback")) openVideos();
+    else if (t.dataset.tab) { state.homeTab = t.dataset.tab; render(); }
     else if (t.dataset.mod !== undefined) { state.homeModule = +t.dataset.mod; state.expanded = null; render(); }
     else if (t.dataset.sec) { state.expanded = state.expanded === t.dataset.sec ? null : t.dataset.sec; render(); }
     else if (t.dataset.sub) {
