@@ -539,20 +539,23 @@
 
     playerEl.innerHTML = `
       <div class="vp-bar">
-        <button class="vp-close" data-vback aria-label="Back to the video library">‹</button>
+        <button class="vp-close" data-vback aria-label="Back to the video library"><span>‹</span></button>
         <span class="vp-heading">
           <span class="vp-cat">${esc(v.category || "Video")}</span>
           <span class="vp-name">${esc(v.title)}</span>
         </span>
       </div>
       <div class="vp-stage">
-        <iframe
-          class="vp-frame"
-          src="https://www.youtube.com/embed/${encodeURIComponent(v.youtubeId)}"
-          title="${esc(v.title)}"
-          frameborder="0"
-          allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
-          allowfullscreen></iframe>
+        <div class="vp-video">
+          <iframe
+            class="vp-frame"
+            src="https://www.youtube.com/embed/${encodeURIComponent(v.youtubeId)}?playsinline=1&enablejsapi=1"
+            title="${esc(v.title)}"
+            frameborder="0"
+            allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allowfullscreen></iframe>
+          <div class="vp-swipe"></div>
+        </div>
       </div>
       ${more.length ? `
         <div class="vp-more">
@@ -566,7 +569,52 @@
     playerEl.classList.add("hidden");
     playerEl.innerHTML = "";   // removing the iframe stops playback
     state.videoId = null;
+    vpPaused = false;
   }
+
+  /* Swipe right anywhere on the player to exit, same path as the back button.
+     Touch events raised inside the YouTube iframe never reach us — it's
+     cross-origin — so .vp-swipe is a transparent capture layer over the
+     video. It deliberately stops short of the bottom control strip, leaving
+     YouTube's scrub bar, timeline and buttons directly touchable, so a swipe
+     can't turn into a seek. Taps that land on the capture layer are forwarded
+     to the player as play/pause over the iframe postMessage API. */
+
+  const SWIPE_MIN = 60;      // horizontal travel needed to count as a swipe
+  const SWIPE_RATIO = 1.4;   // ...and how much more horizontal than vertical
+  const TAP_SLOP = 12;       // movement below this is a tap, not a drag
+  let vpTouch = null;
+  let vpPaused = false;
+
+  function vpCommand(func) {
+    const f = playerEl.querySelector(".vp-frame");
+    if (!f || !f.contentWindow) return;
+    try {
+      f.contentWindow.postMessage(JSON.stringify({ event: "command", func, args: [] }), "*");
+    } catch (e) { /* player not ready — bottom control strip still works */ }
+  }
+
+  playerEl.addEventListener("touchstart", (e) => {
+    // the shelf scrolls horizontally; its own gestures are not exit gestures
+    if (e.target.closest(".vp-shelf")) { vpTouch = null; return; }
+    const t = e.touches[0];
+    vpTouch = { x: t.clientX, y: t.clientY, overlay: !!e.target.closest(".vp-swipe") };
+  }, { passive: true });
+
+  playerEl.addEventListener("touchend", (e) => {
+    const s = vpTouch;
+    vpTouch = null;
+    if (!s) return;
+    const t = e.changedTouches[0];
+    const dx = t.clientX - s.x;
+    const dy = t.clientY - s.y;
+    if (dx > SWIPE_MIN && Math.abs(dx) > Math.abs(dy) * SWIPE_RATIO) { closePlayer(); return; }
+    // a tap on the capture layer would otherwise be swallowed — pass it on
+    if (s.overlay && Math.abs(dx) < TAP_SLOP && Math.abs(dy) < TAP_SLOP) {
+      vpPaused = !vpPaused;
+      vpCommand(vpPaused ? "pauseVideo" : "playVideo");
+    }
+  }, { passive: true });
 
   function closePlayer() {
     tearDownPlayer();

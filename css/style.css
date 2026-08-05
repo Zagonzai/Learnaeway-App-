@@ -1204,6 +1204,9 @@ img { user-select: none; -webkit-user-drag: none; }
   display: flex;
   flex-direction: column;
   background: radial-gradient(130% 75% at 50% 0%, #0c1533 0%, #05070f 62%);
+  /* the layer fills .app's padding box, so it reaches under the notch —
+     clear it here the same way .app and .auth-screen do */
+  padding-top: env(safe-area-inset-top);
   padding-bottom: calc(4px + env(safe-area-inset-bottom));
 }
 .vplayer.hidden { display: none; }
@@ -1212,22 +1215,33 @@ img { user-select: none; -webkit-user-drag: none; }
   flex: 0 0 auto;
   display: flex;
   align-items: center;
-  gap: 11px;
-  padding: 10px 14px 8px;
+  gap: 8px;
+  padding: 14px 10px 8px;      /* sits clear of the status bar / dynamic island */
 }
+/* 52x52 touch target with a 40px visible ring drawn inside it, so the button
+   is comfortably hittable without the circle looking oversized */
 .vp-close {
+  position: relative;
   flex: 0 0 auto;
-  width: 38px;
-  height: 38px;
+  width: 52px;
+  height: 52px;
+  display: grid;
+  place-items: center;
+  color: #EAF6FF;
+  font-size: 25px;
+  line-height: 1;
+}
+.vp-close::before {
+  content: "";
+  position: absolute;
+  inset: 6px;
   border-radius: 50%;
   border: 1px solid rgba(61,223,255,.4);
   background: rgba(10,16,34,.75);
-  color: #EAF6FF;
-  font-size: 24px;
-  line-height: 1;
-  padding-bottom: 3px;
+  transition: border-color .15s ease, transform .12s ease;
 }
-.vp-close:active { border-color: var(--cyan); transform: scale(.94); }
+.vp-close:active::before { border-color: var(--cyan); transform: scale(.92); }
+.vp-close span { position: relative; padding-bottom: 3px; }
 .vp-heading { min-width: 0; display: flex; flex-direction: column; }
 .vp-cat {
   font-size: 10.5px;
@@ -1258,15 +1272,36 @@ img { user-select: none; -webkit-user-drag: none; }
   justify-content: center;
   padding: 0 12px;
 }
-.vp-frame {
+/* sizing lives on the wrapper; the iframe and the gesture layer fill it */
+.vp-video {
+  position: relative;
   height: 100%;
   width: auto;
   max-width: 100%;
   aspect-ratio: 9 / 16;
-  border: 1px solid rgba(61,223,255,.35);
   border-radius: 18px;
   background: #000;
+  border: 1px solid rgba(61,223,255,.35);
   box-shadow: 0 0 26px -6px rgba(61,223,255,.5);
+}
+.vp-frame {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  border: 0;
+  border-radius: 18px;
+}
+/* transparent swipe-capture layer. Cross-origin iframes swallow touch events,
+   so this is the only way to read a gesture over the video. It stops 64px
+   short of the bottom so YouTube's control bar and scrubber stay directly
+   touchable and a swipe can never become a seek. */
+.vp-swipe {
+  position: absolute;
+  inset: 0 0 64px 0;
+  z-index: 2;
+  background: transparent;
+  touch-action: pan-y;
 }
 
 /* "More in {category}" — a horizontal shelf of smaller 9:16 cards */
