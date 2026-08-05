@@ -93,14 +93,14 @@
   /* ---------------- state ---------------- */
 
   const state = {
-    view: "home",            // 'home' | 'screen' | 'videos' | 'player'
+    view: "home",            // 'home' | 'screen' | 'videos'
     homeTab: "sections",     // 'sections' | 'liked' | 'saved'
     homeModule: 0,           // module index shown on home
     expanded: null,          // section id expanded into subsection deck
     current: 0,              // index into screens[] for learning view
     slideDir: 0,             // -1 back, +1 forward (animation)
     videoCat: null,          // video category expanded in the library
-    videoId: null,           // video playing in the in-app player
+    videoId: null,           // video in the full-screen player (null = closed)
     videoScroll: 0,          // library scroll position, restored on back
   };
 
@@ -514,42 +514,69 @@
     cardFooter.style.display = "none";
   }
 
-  /* in-app player — the iframe is created only while this view is mounted, so
-     leaving the view tears the player down and stops playback */
-  function renderPlayer() {
+  /* Full-screen vertical player. The library stays mounted in the card
+     underneath, so closing the player is instant and lands back on the same
+     category, at the same scroll position. The iframe only exists while the
+     layer is open — tearing it out is what stops playback. */
+
+  const playerEl = $("videoPlayer");
+
+  function shelfCardHTML(v) {
+    return `
+      <button class="vp-card${store.videosWatched[v.id] ? " watched" : ""}" data-vid="${esc(v.id)}">
+        <span class="v-thumb">
+          <img src="${thumbUrl(v.youtubeId)}" alt="" loading="lazy" onerror="this.style.visibility='hidden'">
+          <span class="v-play"></span>
+        </span>
+        <span class="v-title">${esc(v.title)}</span>
+      </button>`;
+  }
+
+  function renderPlayerLayer() {
     const v = videoById(state.videoId);
-    if (!v) { openVideos(); return; }
-
-    barTitle.textContent = v.category || "Video";
-    const total = videoCatalog.length;
-    const seen = videoCatalog.filter((x) => store.videosWatched[x.id]).length;
-    progressLabel.textContent = `${seen} of ${total} watched`;
-    progressFill.style.width = `${total ? Math.round((100 * seen) / total) : 0}%`;
-
+    if (!v) { closePlayer(); return; }
     const more = (videoCatalog || []).filter((x) => x.category === v.category && x.id !== v.id);
-    cardScroll.innerHTML = `
-      <button class="video-back" data-vback>‹ All videos</button>
-      <div class="video-embed">
+
+    playerEl.innerHTML = `
+      <div class="vp-bar">
+        <button class="vp-close" data-vback aria-label="Back to the video library">‹</button>
+        <span class="vp-heading">
+          <span class="vp-cat">${esc(v.category || "Video")}</span>
+          <span class="vp-name">${esc(v.title)}</span>
+        </span>
+      </div>
+      <div class="vp-stage">
         <iframe
+          class="vp-frame"
           src="https://www.youtube.com/embed/${encodeURIComponent(v.youtubeId)}"
           title="${esc(v.title)}"
           frameborder="0"
           allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
           allowfullscreen></iframe>
       </div>
-      <h1 class="video-title">${esc(v.title)}</h1>
-      <div class="v-tag video-title-tag">${esc(v.category || "Other")}</div>
       ${more.length ? `
-        <div class="liked-group-title">More in ${esc(v.category)}</div>
-        <div class="video-panel">${more.map(videoCardHTML).join("")}</div>` : ""}`;
-    cardScroll.scrollTop = 0;
-    cardFooter.style.display = "none";
+        <div class="vp-more">
+          <div class="vp-more-title">More in ${esc(v.category)}</div>
+          <div class="vp-shelf">${more.map(shelfCardHTML).join("")}</div>
+        </div>` : ""}`;
+    playerEl.classList.remove("hidden");
+  }
+
+  function tearDownPlayer() {
+    playerEl.classList.add("hidden");
+    playerEl.innerHTML = "";   // removing the iframe stops playback
+    state.videoId = null;
+  }
+
+  function closePlayer() {
+    tearDownPlayer();
+    renderVideos();                              // pick up newly-watched marks
+    cardScroll.scrollTop = state.videoScroll || 0;
   }
 
   function openVideos() {
     stopAudio();
     state.view = "videos";
-    state.videoId = null;
     state.slideDir = 0;
     closeOverlay();
     render();
@@ -559,19 +586,19 @@
   }
 
   function playVideo(id) {
-    state.videoScroll = cardScroll.scrollTop;
+    if (!state.videoId) state.videoScroll = cardScroll.scrollTop;   // opening, not switching
     state.videoId = id;
-    state.view = "player";
     if (!store.videosWatched[id]) { store.videosWatched[id] = true; save(); }
-    render();
+    renderPlayerLayer();
   }
 
   function render() {
+    // navigating anywhere other than the library closes the player
+    if (state.videoId && state.view !== "videos") tearDownPlayer();
     const listy = state.view === "home" || state.view === "videos";
     $("cardOuter").classList.toggle("outline-bg", listy);
     if (state.view === "home") renderHome();
     else if (state.view === "videos") renderVideos();
-    else if (state.view === "player") renderPlayer();
     else renderScreen();
   }
 
@@ -924,7 +951,7 @@
 
     if (t.dataset.vcat) { state.videoCat = state.videoCat === t.dataset.vcat ? null : t.dataset.vcat; render(); }
     else if (t.dataset.vid) playVideo(t.dataset.vid);
-    else if (t.hasAttribute("data-vback")) openVideos();
+    else if (t.hasAttribute("data-vback")) closePlayer();
     else if (t.dataset.tab) { state.homeTab = t.dataset.tab; render(); }
     else if (t.dataset.mod !== undefined) { state.homeModule = +t.dataset.mod; state.expanded = null; render(); }
     else if (t.dataset.sec) { state.expanded = state.expanded === t.dataset.sec ? null : t.dataset.sec; render(); }
