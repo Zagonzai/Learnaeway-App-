@@ -544,17 +544,23 @@
           <span class="vp-cat">${esc(v.category || "Video")}</span>
           <span class="vp-name">${esc(v.title)}</span>
         </span>
+        ${CAN_FULLSCREEN
+          ? `<button class="vp-expand" data-vfull aria-label="Expand to fullscreen"><span></span></button>`
+          : ""}
       </div>
       <div class="vp-stage">
         <div class="vp-video">
           <iframe
             class="vp-frame"
-            src="https://www.youtube.com/embed/${encodeURIComponent(v.youtubeId)}?playsinline=1&enablejsapi=1"
+            src="https://www.youtube.com/embed/${encodeURIComponent(v.youtubeId)}?playsinline=1&fs=1"
             title="${esc(v.title)}"
             frameborder="0"
-            allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share"
+            allow="accelerometer; clipboard-write; encrypted-media; gyroscope; picture-in-picture; web-share; fullscreen"
             allowfullscreen></iframe>
           <div class="vp-swipe"></div>
+          ${CAN_FULLSCREEN
+            ? `<button class="vp-fsexit" data-vfull aria-label="Exit fullscreen"><span>✕</span></button>`
+            : ""}
         </div>
       </div>
       ${more.length ? `
@@ -566,10 +572,11 @@
   }
 
   function tearDownPlayer() {
+    if (document.fullscreenElement) { try { document.exitFullscreen(); } catch (e) { /* already out */ } }
+    clearTimeout(vpYieldTimer);
     playerEl.classList.add("hidden");
     playerEl.innerHTML = "";   // removing the iframe stops playback
     state.videoId = null;
-    vpPaused = false;
   }
 
   /* Swipe right anywhere on the player to exit, same path as the back button.
@@ -583,15 +590,40 @@
   const SWIPE_MIN = 60;      // horizontal travel needed to count as a swipe
   const SWIPE_RATIO = 1.4;   // ...and how much more horizontal than vertical
   const TAP_SLOP = 12;       // movement below this is a tap, not a drag
+  const YIELD_MS = 6000;     // how long the capture layer stands down after a tap
   let vpTouch = null;
-  let vpPaused = false;
+  let vpYieldTimer = null;
 
-  function vpCommand(func) {
-    const f = playerEl.querySelector(".vp-frame");
-    if (!f || !f.contentWindow) return;
-    try {
-      f.contentWindow.postMessage(JSON.stringify({ event: "command", func, args: [] }), "*");
-    } catch (e) { /* player not ready — bottom control strip still works */ }
+  /* The Fullscreen API only exists on some platforms — notably NOT iPhone
+     Safari, which refuses it on anything but a <video>. Where it's missing we
+     hide our own expand button and rely on YouTube's, inside the iframe. */
+  const CAN_FULLSCREEN = !!(document.fullscreenEnabled || document.webkitFullscreenEnabled);
+
+  function vpToggleFullscreen() {
+    const box = playerEl.querySelector(".vp-video");
+    if (!box) return;
+    if (document.fullscreenElement || document.webkitFullscreenElement) {
+      (document.exitFullscreen || document.webkitExitFullscreen).call(document);
+      return;
+    }
+    const req = box.requestFullscreen || box.webkitRequestFullscreen;
+    if (req) { try { Promise.resolve(req.call(box)).catch(() => {}); } catch (e) { /* refused */ } }
+  }
+
+  /* Hand the video's touches back to YouTube for a few seconds. The capture
+     layer has to sit over the iframe for swipe-anywhere to work at all, but
+     that same coverage hides YouTube's own controls — including its
+     fullscreen button, which on iPhone is the only way into fullscreen. So a
+     tap stands the layer down; it re-arms once the user stops interacting. */
+  function vpYield() {
+    const layer = playerEl.querySelector(".vp-swipe");
+    if (!layer) return;
+    layer.classList.add("yielded");
+    clearTimeout(vpYieldTimer);
+    vpYieldTimer = setTimeout(() => {
+      const l = playerEl.querySelector(".vp-swipe");
+      if (l) l.classList.remove("yielded");
+    }, YIELD_MS);
   }
 
   playerEl.addEventListener("touchstart", (e) => {
@@ -609,11 +641,9 @@
     const dx = t.clientX - s.x;
     const dy = t.clientY - s.y;
     if (dx > SWIPE_MIN && Math.abs(dx) > Math.abs(dy) * SWIPE_RATIO) { closePlayer(); return; }
-    // a tap on the capture layer would otherwise be swallowed — pass it on
-    if (s.overlay && Math.abs(dx) < TAP_SLOP && Math.abs(dy) < TAP_SLOP) {
-      vpPaused = !vpPaused;
-      vpCommand(vpPaused ? "pauseVideo" : "playVideo");
-    }
+    // a tap means the user wants the player itself — stand down so the next
+    // touch reaches YouTube's controls (play/pause, scrub, fullscreen)
+    if (s.overlay && Math.abs(dx) < TAP_SLOP && Math.abs(dy) < TAP_SLOP) vpYield();
   }, { passive: true });
 
   function closePlayer() {
@@ -994,12 +1024,13 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-check],[data-check-reset],[data-reset-progress],[data-vcat],[data-vid],[data-vback]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-check],[data-check-reset],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull]");
     if (!t) return;
 
     if (t.dataset.vcat) { state.videoCat = state.videoCat === t.dataset.vcat ? null : t.dataset.vcat; render(); }
     else if (t.dataset.vid) playVideo(t.dataset.vid);
     else if (t.hasAttribute("data-vback")) closePlayer();
+    else if (t.hasAttribute("data-vfull")) vpToggleFullscreen();
     else if (t.dataset.tab) { state.homeTab = t.dataset.tab; render(); }
     else if (t.dataset.mod !== undefined) { state.homeModule = +t.dataset.mod; state.expanded = null; render(); }
     else if (t.dataset.sec) { state.expanded = state.expanded === t.dataset.sec ? null : t.dataset.sec; render(); }

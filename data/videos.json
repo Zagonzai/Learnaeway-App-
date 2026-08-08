@@ -30,88 +30,95 @@
       "order": 4
     },
     {
+      "id": "trading-paths-explained",
+      "title": "Trading Paths Explained",
+      "youtubeId": "hHDjikTi0gs",
+      "category": "Trading Fundamentals",
+      "order": 5
+    },
+    {
       "id": "candle-strength",
       "title": "Candle Strength",
       "youtubeId": "1hZ2ZrmdTwg",
       "category": "Chart Reading & Candles",
-      "order": 5
+      "order": 6
     },
     {
       "id": "buyers-price-action-inside-a-candle",
       "title": "Buyer's Price Action Inside a Candle",
       "youtubeId": "6kERdDGKe2U",
       "category": "Chart Reading & Candles",
-      "order": 6
+      "order": 7
     },
     {
       "id": "what-are-imbalances",
       "title": "What Are Imbalances",
       "youtubeId": "gkD1KXsMn9U",
       "category": "Chart Reading & Candles",
-      "order": 7
+      "order": 8
     },
     {
       "id": "candles-reaction-challenge-ep1-nq",
       "title": "Candles Reaction Challenge Episode 1 NQ",
       "youtubeId": "uQpXWeP2Czk",
       "category": "Chart Reading & Candles",
-      "order": 8
+      "order": 9
     },
     {
       "id": "can-you-read-charts-candle-closures",
       "title": "Can You Read Charts? React to Candle Closures",
       "youtubeId": "BX2XvfgPwIk",
       "category": "Chart Reading & Candles",
-      "order": 9
+      "order": 10
     },
     {
       "id": "the-reality-of-trading",
       "title": "The Reality of Trading",
       "youtubeId": "e-mGTjLc8Mw",
       "category": "Trader Psychology",
-      "order": 10
+      "order": 11
     },
     {
       "id": "traders-emotional-checklist",
       "title": "Trader's Emotional Checklist",
       "youtubeId": "17ts7pePhLU",
       "category": "Trader Psychology",
-      "order": 11
+      "order": 12
     },
     {
       "id": "nobody-ever-showed-you-how",
       "title": "Nobody Ever Showed You How",
       "youtubeId": "gPPXDXqSUzI",
       "category": "Trader Psychology",
-      "order": 12
+      "order": 13
     },
     {
       "id": "dont-predict-the-market-react",
       "title": "Don't Predict the Market, React",
       "youtubeId": "fnxIT4cWgCQ",
       "category": "Trader Psychology",
-      "order": 13
+      "order": 14
     },
     {
       "id": "nasdaq-trade-breakdown-jul-24-2026-ny",
       "title": "NASDAQ Trade Breakdown — July 24th 2026 NY Session",
       "youtubeId": "-wvVktE-Eg0",
       "category": "Trade Breakdowns",
-      "order": 14
+      "order": 15
     },
     {
       "id": "a-trend-breakout",
       "title": "A Trend Breakout",
       "youtubeId": "eaH42NJb96A",
       "category": "Trade Breakdowns",
-      "order": 15
+      "order": 16
     },
     {
       "id": "add-to-home-screen-ios",
       "title": "Add Learnæway to Home Screen — iOS",
       "youtubeId": "8EEJr3TaQmk",
       "category": "App Help",
-      "order": 16
+      "order": 17
     }
   ]
 }
