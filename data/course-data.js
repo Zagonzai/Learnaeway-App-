@@ -1299,17 +1299,24 @@ window.COURSE_DATA = {
          "headline": "The Financial Markets",
          "subhead": "What Are Financial Markets?",
          "body": [
-          "The financial market is a broad marketplace where individuals, institutions, and governments trade financial assets. It facilitates the exchange of capital, enabling businesses to raise funds, investors to buy and sell assets, and economies to function efficiently.",
-          "The financial market is composed of various segments, each serving a unique function in facilitating trade, investment, and risk management. The market is segmented into: the Stock Market, Forex, Futures, Options, Bond, Crypto, Commodity, Money Market, Derivatives, Prediction Market, and Binary Option market.",
-          "To participate in the financial market, individuals and institutions can buy, sell, or invest in various financial instruments such as stocks, bonds, currencies, commodities, and derivatives. This can be done through trading platforms, brokerage accounts, or financial institutions. Investors may take a long-term approach by holding assets for growth, while traders seek short-term profits through market fluctuations. Other ways to engage include speculation, hedging risks, and passive income strategies like dividends or staking in crypto. Understanding market trends, technical analysis, and risk management is essential for successful participation.",
-          "The financial market consists of various participants, each with different approaches and objectives. These participants include gamblers, day traders, swing traders, and long-term investors, as well as retail traders, financial institutions, and hedge funds. Each plays a distinct role in market activity, contributing to its overall movement, liquidity, and efficiency."
+          "The financial market is a broad marketplace where individuals, institutions, and governments trade financial assets. It facilitates the exchange of capital, enabling businesses to raise funds, investors to buy and sell assets, and economies to function efficiently."
          ],
-         "audioSrc": [
-          "assets/audio/module-2/the-financial-markets/01a-what-are-financial-markets.mp3",
-          "assets/audio/module-2/the-financial-markets/01b-what-makes-up-the-financial-markets.mp3",
-          "assets/audio/module-2/the-financial-markets/01c-how-do-you-participate.mp3",
-          "assets/audio/module-2/the-financial-markets/01d-who-are-the-participants.mp3"
-         ]
+         "audioSrc": "assets/audio/module-2/the-financial-markets/01a-what-are-financial-markets.mp3"
+        }
+       ]
+      },
+      {
+       "id": "the-financial-markets--what-makes-up-the-financial-market",
+       "title": "What Makes Up the Financial Market?",
+       "screens": [
+        {
+         "id": "the-financial-markets--what-makes-up-the-financial-market--1",
+         "headline": "The Financial Markets",
+         "subhead": "What Makes Up the Financial Market?",
+         "body": [
+          "The financial market is composed of various segments, each serving a unique function in facilitating trade, investment, and risk management. The market is segmented into: the Stock Market, Forex, Futures, Options, Bond, Crypto, Commodity, Money Market, Derivatives, Prediction Market, and Binary Option market."
+         ],
+         "audioSrc": "assets/audio/module-2/the-financial-markets/01b-what-makes-up-the-financial-markets.mp3"
         }
        ]
       },
@@ -1435,15 +1442,45 @@ window.COURSE_DATA = {
        ]
       },
       {
+       "id": "the-financial-markets--how-do-you-participate",
+       "title": "How Do You Participate in the Financial Market?",
+       "screens": [
+        {
+         "id": "the-financial-markets--how-do-you-participate--1",
+         "headline": "The Financial Markets",
+         "subhead": "How Do You Participate in the Financial Market?",
+         "body": [
+          "To participate in the financial market, individuals and institutions can buy, sell, or invest in various financial instruments such as stocks, bonds, currencies, commodities, and derivatives. This can be done through trading platforms, brokerage accounts, or financial institutions. Investors may take a long-term approach by holding assets for growth, while traders seek short-term profits through market fluctuations. Other ways to engage include speculation, hedging risks, and passive income strategies like dividends or staking in crypto. Understanding market trends, technical analysis, and risk management is essential for successful participation."
+         ],
+         "audioSrc": "assets/audio/module-2/the-financial-markets/01c-how-do-you-participate.mp3"
+        }
+       ]
+      },
+      {
+       "id": "the-financial-markets--who-are-the-participants",
+       "title": "Who Are the Different Participants in the Financial Market?",
+       "screens": [
+        {
+         "id": "the-financial-markets--who-are-the-participants--1",
+         "headline": "The Financial Markets",
+         "subhead": "Who Are the Different Participants in the Financial Market?",
+         "body": [
+          "The financial market consists of various participants, each with different approaches and objectives. These participants include gamblers, day traders, swing traders, and long-term investors, as well as retail traders, financial institutions, and hedge funds. Each plays a distinct role in market activity, contributing to its overall movement, liquidity, and efficiency."
+         ],
+         "audioSrc": "assets/audio/module-2/the-financial-markets/01d-who-are-the-participants.mp3"
+        }
+       ]
+      },
+      {
        "id": "the-financial-markets--intro-participants",
-       "title": "Intro to Participants: How They Function",
+       "title": "Intro to Participants",
        "screens": [
         {
          "id": "the-financial-markets--intro-participants--1",
          "headline": "The Financial Markets",
-         "subhead": "Intro to Participants: How They Function",
+         "subhead": "Intro to Participants",
          "body": [
-          "The financial market consists of various participants, each with different approaches and objectives. These participants include gamblers, day traders, swing traders, and long-term investors, as well as retail traders, financial institutions, and hedge funds. Each plays a distinct role in market activity, contributing to its overall movement, liquidity, and efficiency."
+          "Every participant steps into the market with a different goal, timeframe and appetite for risk. The pages that follow break down who they are and how each one actually functions."
          ],
          "audioSrc": "assets/audio/module-2/the-financial-markets/04-intro-to-participants.mp3"
         }
