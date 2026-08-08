@@ -1341,7 +1341,6 @@ window.COURSE_DATA = {
          "headline": "The Financial Markets",
          "subhead": "Individual Financial Markets",
          "body": [],
-         "gridLabel": "Tap a market to read about it and hear the breakdown.",
          "grid": [
           {
            "id": "the-financial-markets-grid-stock-market",
@@ -1369,7 +1368,7 @@ window.COURSE_DATA = {
           },
           {
            "id": "the-financial-markets-grid-options-market",
-           "name": "Options Market",
+           "name": "Option Market",
            "body": [
             "A market where traders buy and sell contracts that grant the right (but not the obligation) to buy or sell an asset at a specified price before a set expiration date. Options provide leverage and hedging opportunities."
            ],
@@ -1401,7 +1400,7 @@ window.COURSE_DATA = {
           },
           {
            "id": "the-financial-markets-grid-money-market",
-           "name": "Money Market",
+           "name": "Money Markets",
            "body": [
             "A short-term financial market where institutions trade highly liquid assets such as Treasury bills, certificates of deposit (CDs), and commercial paper. It helps businesses and governments manage short-term funding needs."
            ],
@@ -1459,63 +1458,70 @@ window.COURSE_DATA = {
          "headline": "The Financial Markets",
          "subhead": "Individual Financial Participants",
          "body": [],
-         "gridLabel": "Tap a participant to read how they function.",
          "grid": [
           {
            "id": "the-financial-markets-grid-gamblers",
            "name": "Gamblers",
            "body": [
             "Uninformed traders who often act impulsively, chasing quick profits without a clear strategy or risk management plan. Their approach is speculative, and their decisions are typically driven by emotions or luck rather than market analysis."
-           ]
+           ],
+           "audioSrc": "assets/audio/module-2/the-financial-markets/participants/01-gamblers.mp3"
           },
           {
            "id": "the-financial-markets-grid-day-traders",
            "name": "Day Traders",
            "body": [
             "Active traders who execute multiple trades within a single trading day. Day traders focus on short-term price movements, relying heavily on technical analysis and market trends to capitalize on intraday volatility."
-           ]
+           ],
+           "audioSrc": "assets/audio/module-2/the-financial-markets/participants/02-day-traders.mp3"
           },
           {
            "id": "the-financial-markets-grid-swing-traders",
            "name": "Swing Traders",
            "body": [
             "Traders who hold positions for several days to weeks, aiming to capture medium-term price swings. They use both technical and fundamental analysis to identify and profit from market trends."
-           ]
+           ],
+           "audioSrc": "assets/audio/module-2/the-financial-markets/participants/03-swing-traders.mp3"
           },
           {
            "id": "the-financial-markets-grid-long-term-investors",
            "name": "Long-Term Investors",
            "body": [
             "Investors who buy and hold assets for extended periods, seeking gradual growth through dividends and compounding returns. Their strategy is based on the long-term performance of the assets rather than short-term market fluctuations."
-           ]
+           ],
+           "audioSrc": "assets/audio/module-2/the-financial-markets/participants/04-long-term-investors.mp3"
           },
           {
            "id": "the-financial-markets-grid-retail-traders",
            "name": "Retail Traders",
            "body": [
             "Individual investors who trade for personal gain, typically using online brokers or trading platforms. Retail traders can be a mix of gamblers, day traders, swing traders, or long-term investors. Collectively, they add liquidity to the market, though individual retail traders usually have a smaller impact compared to institutional players."
-           ]
+           ],
+           "audioSrc": "assets/audio/module-2/the-financial-markets/participants/05-retail-traders.mp3"
           },
           {
            "id": "the-financial-markets-grid-financial-institutions",
            "name": "Financial Institutions",
            "body": [
             "Large entities, such as banks, insurance companies, and investment firms, that engage in a wide range of activities, from lending and market-making to asset management and proprietary trading. They facilitate transactions and offer investment products, often driving significant market movements."
-           ]
+           ],
+           "audioSrc": "assets/audio/module-2/the-financial-markets/participants/06-financial-institutions.mp3"
           },
           {
            "id": "the-financial-markets-grid-hedge-funds",
            "name": "Hedge Funds",
            "body": [
             "Private investment funds that employ complex strategies to maximize returns, often using leverage, derivatives, and arbitrage. Hedge funds are highly active and can have a significant impact on markets due to their size and capital."
-           ]
+           ],
+           "audioSrc": "assets/audio/module-2/the-financial-markets/participants/07-hedge-funds.mp3"
           },
           {
            "id": "the-financial-markets-grid-proprietary-traders",
            "name": "Proprietary Traders",
            "body": [
             "Traders employed by financial firms who use the firm's capital to engage in various trading strategies. Proprietary traders aim to generate profits for their firm, often using high-frequency trading, arbitrage, and other sophisticated techniques."
-           ]
+           ],
+           "audioSrc": "assets/audio/module-2/the-financial-markets/participants/08-proprietary-traders.mp3"
           }
          ]
         }
@@ -1534,7 +1540,8 @@ window.COURSE_DATA = {
           "Each market whether it's stocks, futures, options, forex, or crypto serves a unique purpose, allowing participants to invest, speculate, hedge risks, and manage capital efficiently. Without these markets, economies would struggle to function, innovation would slow, and global trade would become unstable.",
           "Understanding how these markets operate gives you the power to navigate them wisely. Whether you're looking to trade, invest, or simply expand your financial knowledge, recognizing the role of these markets is the first step in leveraging them to your advantage.",
           "In the end, financial markets don't just move money they drive progress, create opportunities, and shape the future of the world economy."
-         ]
+         ],
+         "audioSrc": "assets/audio/module-2/the-financial-markets/06-conclusion-lifeblood.mp3"
         }
        ]
       }

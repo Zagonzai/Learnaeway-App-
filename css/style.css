@@ -1117,18 +1117,15 @@ img { user-select: none; -webkit-user-drag: none; }
 /* Individual Financial Markets / Participants: tappable names down the
    centre, each opening a centred detail view with its own narration. */
 
-.grid-label {
-  text-align: center;
-  font-size: calc(13px * var(--fs));
-  line-height: 1.5;
-  color: #9FC0E0;
-  margin: 2px 0 20px;
-}
-.grid-list { display: flex; flex-direction: column; gap: 12px; }
+.grid-list { display: flex; flex-direction: column; gap: 8px; }
+/* Height stays at the 44px tap minimum. The reference render fits all 11
+   without scrolling, which would need ~26px pills — too small to hit
+   reliably — so the list scrolls instead. */
 .grid-pill {
   margin-top: 0;
-  padding: 13px 16px;
-  font-size: calc(14.5px * var(--fs));
+  min-height: 44px;
+  padding: 11px 16px;
+  font-size: calc(14px * var(--fs));
   font-weight: 700;
   letter-spacing: .04em;
   text-transform: none;

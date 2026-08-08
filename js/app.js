@@ -255,7 +255,6 @@
           : `<div class="grid-soon">Narration for this one is coming soon.</div>`}`;
     }
     return `
-      ${scr.gridLabel ? `<div class="grid-label">${esc(scr.gridLabel)}</div>` : ""}
       <div class="grid-list">
         ${scr.grid.map((g) =>
           `<button class="btn-primary grid-pill" data-grid="${esc(g.id)}">${esc(g.name)}</button>`).join("")}
