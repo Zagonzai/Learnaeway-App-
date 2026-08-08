@@ -1329,13 +1329,18 @@ window.COURSE_DATA = {
          "headline": "The Financial Markets",
          "subhead": "Intro to Individual Financial Markets",
          "body": [
-          "The financial market is not one single place — it is a set of distinct markets, each with its own participants, instruments and rhythm. The pages that follow break down the key markets one at a time.",
+          "The financial market is not one single place — it is a set of distinct markets, each with its own participants, instruments and rhythm. The pages that follow break down the key markets one at a time."
+         ],
+         "audioSrc": "assets/audio/module-2/the-financial-markets/02a-intro-key-markets.mp3"
+        },
+        {
+         "id": "the-financial-markets--intro-individual-markets--2",
+         "headline": "The Financial Markets",
+         "subhead": "Intro to Individual Financial Markets",
+         "body": [
           "Each of these markets plays a vital role in the global financial system, allowing participants to invest, speculate, hedge risk, and manage capital efficiently."
          ],
-         "audioSrc": [
-          "assets/audio/module-2/the-financial-markets/02a-intro-key-markets.mp3",
-          "assets/audio/module-2/the-financial-markets/02b-each-market-vital-role.mp3"
-         ]
+         "audioSrc": "assets/audio/module-2/the-financial-markets/02b-each-market-vital-role.mp3"
         }
        ]
       },
