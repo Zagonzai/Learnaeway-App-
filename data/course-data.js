@@ -1291,218 +1291,250 @@ window.COURSE_DATA = {
      "fullTitle": "The Financial Markets",
      "subsections": [
       {
-       "id": "the-financial-markets--what-are-financial-markets-0",
+       "id": "the-financial-markets--what-are-financial-markets",
        "title": "What Are Financial Markets?",
        "screens": [
         {
-         "id": "the-financial-markets--what-are-financial-markets-0--1",
+         "id": "the-financial-markets--what-are-financial-markets--1",
          "headline": "The Financial Markets",
          "subhead": "What Are Financial Markets?",
          "body": [
-          "The financial market is a broad marketplace where individuals, institutions, and governments trade financial assets. It facilitates the exchange of capital, enabling businesses to raise funds, investors to buy and sell assets, and economies to function efficiently."
+          "The financial market is a broad marketplace where individuals, institutions, and governments trade financial assets. It facilitates the exchange of capital, enabling businesses to raise funds, investors to buy and sell assets, and economies to function efficiently.",
+          "The financial market is composed of various segments, each serving a unique function in facilitating trade, investment, and risk management. The market is segmented into: the Stock Market, Forex, Futures, Options, Bond, Crypto, Commodity, Money Market, Derivatives, Prediction Market, and Binary Option market.",
+          "To participate in the financial market, individuals and institutions can buy, sell, or invest in various financial instruments such as stocks, bonds, currencies, commodities, and derivatives. This can be done through trading platforms, brokerage accounts, or financial institutions. Investors may take a long-term approach by holding assets for growth, while traders seek short-term profits through market fluctuations. Other ways to engage include speculation, hedging risks, and passive income strategies like dividends or staking in crypto. Understanding market trends, technical analysis, and risk management is essential for successful participation.",
+          "The financial market consists of various participants, each with different approaches and objectives. These participants include gamblers, day traders, swing traders, and long-term investors, as well as retail traders, financial institutions, and hedge funds. Each plays a distinct role in market activity, contributing to its overall movement, liquidity, and efficiency."
          ],
-         "audio": "the-financial-markets/1.mp3"
+         "audioSrc": [
+          "assets/audio/module-2/the-financial-markets/01a-what-are-financial-markets.mp3",
+          "assets/audio/module-2/the-financial-markets/01b-what-makes-up-the-financial-markets.mp3",
+          "assets/audio/module-2/the-financial-markets/01c-how-do-you-participate.mp3",
+          "assets/audio/module-2/the-financial-markets/01d-who-are-the-participants.mp3"
+         ]
         }
        ]
       },
       {
-       "id": "the-financial-markets--what-makes-up-the-financial-market-1",
-       "title": "What Makes Up the Financial Market?",
+       "id": "the-financial-markets--intro-individual-markets",
+       "title": "Intro to Individual Financial Markets",
        "screens": [
         {
-         "id": "the-financial-markets--what-makes-up-the-financial-market-1--1",
+         "id": "the-financial-markets--intro-individual-markets--1",
          "headline": "The Financial Markets",
-         "subhead": "What Makes Up the Financial Market?",
+         "subhead": "Intro to Individual Financial Markets",
          "body": [
-          "The financial market is composed of various segments, each serving a unique function in facilitating trade, investment, and risk management. The market is segmented into: the Stock Market, Forex, Futures, Options, Bond, Crypto, Commodity, Money Market, Derivatives, Prediction Market, and Binary Option market."
+          "The financial market is not one single place — it is a set of distinct markets, each with its own participants, instruments and rhythm. The pages that follow break down the key markets one at a time.",
+          "Each of these markets plays a vital role in the global financial system, allowing participants to invest, speculate, hedge risk, and manage capital efficiently."
          ],
-         "audio": "the-financial-markets/1.mp3"
+         "audioSrc": [
+          "assets/audio/module-2/the-financial-markets/02a-intro-key-markets.mp3",
+          "assets/audio/module-2/the-financial-markets/02b-each-market-vital-role.mp3"
+         ]
         }
        ]
       },
       {
-       "id": "the-financial-markets--conclusion-the-lifeblood-of-the-global-economy-2",
+       "id": "the-financial-markets--individual-markets",
+       "title": "Individual Financial Markets",
+       "screens": [
+        {
+         "id": "the-financial-markets--individual-markets--1",
+         "headline": "The Financial Markets",
+         "subhead": "Individual Financial Markets",
+         "body": [],
+         "gridLabel": "Tap a market to read about it and hear the breakdown.",
+         "grid": [
+          {
+           "id": "the-financial-markets-grid-stock-market",
+           "name": "Stock Market",
+           "body": [
+            "A marketplace where shares of publicly traded companies are bought and sold. Investors participate in stock markets to invest in companies and potentially earn profits through capital appreciation and dividends. Major stock exchanges include the New York Stock Exchange (NYSE) and NASDAQ."
+           ],
+           "audioSrc": "assets/audio/module-2/the-financial-markets/markets/01-stock-market.mp3"
+          },
+          {
+           "id": "the-financial-markets-grid-forex-market",
+           "name": "Forex Market",
+           "body": [
+            "The global decentralized market for trading currencies. It operates 24/5 and is the most liquid financial market, where traders exchange currency pairs (e.g., EUR/USD, GBP/JPY) based on exchange rate fluctuations."
+           ],
+           "audioSrc": "assets/audio/module-2/the-financial-markets/markets/02-forex-market.mp3"
+          },
+          {
+           "id": "the-financial-markets-grid-futures-market",
+           "name": "Futures Market",
+           "body": [
+            "A market where traders buy and sell standardized contracts to purchase or sell an asset (commodities, currencies, indices, etc.) at a predetermined price on a future date. Futures are commonly used for hedging and speculation."
+           ],
+           "audioSrc": "assets/audio/module-2/the-financial-markets/markets/03-futures-market.mp3"
+          },
+          {
+           "id": "the-financial-markets-grid-options-market",
+           "name": "Options Market",
+           "body": [
+            "A market where traders buy and sell contracts that grant the right (but not the obligation) to buy or sell an asset at a specified price before a set expiration date. Options provide leverage and hedging opportunities."
+           ],
+           "audioSrc": "assets/audio/module-2/the-financial-markets/markets/04-option-market.mp3"
+          },
+          {
+           "id": "the-financial-markets-grid-bond-market",
+           "name": "Bond Market",
+           "body": [
+            "Also known as the fixed-income market, this is where governments, corporations, and municipalities issue debt securities (bonds) to raise capital. Investors earn interest payments and get repaid at maturity."
+           ],
+           "audioSrc": "assets/audio/module-2/the-financial-markets/markets/05-bond-market.mp3"
+          },
+          {
+           "id": "the-financial-markets-grid-cryptocurrency-market",
+           "name": "Cryptocurrency Market",
+           "body": [
+            "A digital asset market where cryptocurrencies such as Bitcoin (BTC), Ethereum (ETH), and Solana (SOL) are traded. This market operates 24/7 and is known for high volatility and decentralized finance (DeFi) applications."
+           ],
+           "audioSrc": "assets/audio/module-2/the-financial-markets/markets/06-cryptocurrency-market.mp3"
+          },
+          {
+           "id": "the-financial-markets-grid-commodity-market",
+           "name": "Commodity Market",
+           "body": [
+            "A marketplace for trading raw materials and primary goods such as oil, gold, natural gas, wheat, and coffee. Commodities can be traded through spot markets or derivatives like futures and options."
+           ],
+           "audioSrc": "assets/audio/module-2/the-financial-markets/markets/07-commodity-market.mp3"
+          },
+          {
+           "id": "the-financial-markets-grid-money-market",
+           "name": "Money Market",
+           "body": [
+            "A short-term financial market where institutions trade highly liquid assets such as Treasury bills, certificates of deposit (CDs), and commercial paper. It helps businesses and governments manage short-term funding needs."
+           ],
+           "audioSrc": "assets/audio/module-2/the-financial-markets/markets/08-money-markets.mp3"
+          },
+          {
+           "id": "the-financial-markets-grid-derivatives-market",
+           "name": "Derivatives Market",
+           "body": [
+            "A financial market where contracts derive their value from underlying assets such as stocks, bonds, commodities, or interest rates. Examples include futures, options, swaps, and CFDs (contracts for difference). Derivatives are used for hedging and speculation."
+           ],
+           "audioSrc": "assets/audio/module-2/the-financial-markets/markets/09-derivatives-market.mp3"
+          },
+          {
+           "id": "the-financial-markets-grid-prediction-market",
+           "name": "Prediction Market",
+           "body": [
+            "A speculative market where participants trade contracts based on the outcomes of future events, such as elections, economic indicators, or sports events. These markets use crowd intelligence to forecast probabilities."
+           ],
+           "audioSrc": "assets/audio/module-2/the-financial-markets/markets/10-prediction-market.mp3"
+          },
+          {
+           "id": "the-financial-markets-grid-binary-options-market",
+           "name": "Binary Options Market",
+           "body": [
+            "A high-risk financial market where traders bet on whether an asset's price will be higher or lower than a specified price at a predetermined expiration time. Due to concerns about fraud and manipulation, binary options are banned or restricted in many countries."
+           ],
+           "audioSrc": "assets/audio/module-2/the-financial-markets/markets/11-binary-options-market.mp3"
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "the-financial-markets--intro-participants",
+       "title": "Intro to Participants: How They Function",
+       "screens": [
+        {
+         "id": "the-financial-markets--intro-participants--1",
+         "headline": "The Financial Markets",
+         "subhead": "Intro to Participants: How They Function",
+         "body": [
+          "The financial market consists of various participants, each with different approaches and objectives. These participants include gamblers, day traders, swing traders, and long-term investors, as well as retail traders, financial institutions, and hedge funds. Each plays a distinct role in market activity, contributing to its overall movement, liquidity, and efficiency."
+         ],
+         "audioSrc": "assets/audio/module-2/the-financial-markets/04-intro-to-participants.mp3"
+        }
+       ]
+      },
+      {
+       "id": "the-financial-markets--individual-participants",
+       "title": "Individual Financial Participants",
+       "screens": [
+        {
+         "id": "the-financial-markets--individual-participants--1",
+         "headline": "The Financial Markets",
+         "subhead": "Individual Financial Participants",
+         "body": [],
+         "gridLabel": "Tap a participant to read how they function.",
+         "grid": [
+          {
+           "id": "the-financial-markets-grid-gamblers",
+           "name": "Gamblers",
+           "body": [
+            "Uninformed traders who often act impulsively, chasing quick profits without a clear strategy or risk management plan. Their approach is speculative, and their decisions are typically driven by emotions or luck rather than market analysis."
+           ]
+          },
+          {
+           "id": "the-financial-markets-grid-day-traders",
+           "name": "Day Traders",
+           "body": [
+            "Active traders who execute multiple trades within a single trading day. Day traders focus on short-term price movements, relying heavily on technical analysis and market trends to capitalize on intraday volatility."
+           ]
+          },
+          {
+           "id": "the-financial-markets-grid-swing-traders",
+           "name": "Swing Traders",
+           "body": [
+            "Traders who hold positions for several days to weeks, aiming to capture medium-term price swings. They use both technical and fundamental analysis to identify and profit from market trends."
+           ]
+          },
+          {
+           "id": "the-financial-markets-grid-long-term-investors",
+           "name": "Long-Term Investors",
+           "body": [
+            "Investors who buy and hold assets for extended periods, seeking gradual growth through dividends and compounding returns. Their strategy is based on the long-term performance of the assets rather than short-term market fluctuations."
+           ]
+          },
+          {
+           "id": "the-financial-markets-grid-retail-traders",
+           "name": "Retail Traders",
+           "body": [
+            "Individual investors who trade for personal gain, typically using online brokers or trading platforms. Retail traders can be a mix of gamblers, day traders, swing traders, or long-term investors. Collectively, they add liquidity to the market, though individual retail traders usually have a smaller impact compared to institutional players."
+           ]
+          },
+          {
+           "id": "the-financial-markets-grid-financial-institutions",
+           "name": "Financial Institutions",
+           "body": [
+            "Large entities, such as banks, insurance companies, and investment firms, that engage in a wide range of activities, from lending and market-making to asset management and proprietary trading. They facilitate transactions and offer investment products, often driving significant market movements."
+           ]
+          },
+          {
+           "id": "the-financial-markets-grid-hedge-funds",
+           "name": "Hedge Funds",
+           "body": [
+            "Private investment funds that employ complex strategies to maximize returns, often using leverage, derivatives, and arbitrage. Hedge funds are highly active and can have a significant impact on markets due to their size and capital."
+           ]
+          },
+          {
+           "id": "the-financial-markets-grid-proprietary-traders",
+           "name": "Proprietary Traders",
+           "body": [
+            "Traders employed by financial firms who use the firm's capital to engage in various trading strategies. Proprietary traders aim to generate profits for their firm, often using high-frequency trading, arbitrage, and other sophisticated techniques."
+           ]
+          }
+         ]
+        }
+       ]
+      },
+      {
+       "id": "the-financial-markets--conclusion",
        "title": "Conclusion: The Lifeblood of the Global Economy",
        "screens": [
         {
-         "id": "the-financial-markets--conclusion-the-lifeblood-of-the-global-economy-2--1",
+         "id": "the-financial-markets--conclusion--1",
          "headline": "The Financial Markets",
          "subhead": "Conclusion: The Lifeblood of the Global Economy",
          "body": [
           "Financial markets are more than just numbers on a screen they are the backbone of the global economy. They provide opportunities for businesses to grow, governments to fund projects, and individuals to build wealth.",
-          "Each market whether it's stocks, futures, options, forex, or crypto serves a unique purpose, allowing participants to invest, speculate, hedge risks, and manage capital efficiently. Without these markets, economies would struggle to function, innovation would slow, and global trade would become unstable."
-         ],
-         "audio": "the-financial-markets/1.mp3"
-        },
-        {
-         "id": "the-financial-markets--conclusion-the-lifeblood-of-the-global-economy-2--2",
-         "headline": "The Financial Markets",
-         "subhead": "Conclusion: The Lifeblood of the Global Economy",
-         "body": [
+          "Each market whether it's stocks, futures, options, forex, or crypto serves a unique purpose, allowing participants to invest, speculate, hedge risks, and manage capital efficiently. Without these markets, economies would struggle to function, innovation would slow, and global trade would become unstable.",
           "Understanding how these markets operate gives you the power to navigate them wisely. Whether you're looking to trade, invest, or simply expand your financial knowledge, recognizing the role of these markets is the first step in leveraging them to your advantage.",
           "In the end, financial markets don't just move money they drive progress, create opportunities, and shape the future of the world economy."
-         ],
-         "audio": "the-financial-markets/2.mp3"
-        }
-       ]
-      },
-      {
-       "id": "the-financial-markets--breakdown-of-key-markets-3",
-       "title": "Breakdown of Key Markets",
-       "screens": [
-        {
-         "id": "the-financial-markets--breakdown-of-key-markets-3--1",
-         "headline": "The Financial Markets",
-         "subhead": "Breakdown of Key Markets",
-         "body": [
-          "1. Stock Market — A marketplace where shares of publicly traded companies are bought and sold. Investors participate in stock markets to invest in companies and potentially earn profits through capital appreciation and dividends. Major stock exchanges include the New York Stock Exchange (NYSE) and NASDAQ."
-         ],
-         "audio": "the-financial-markets/1.mp3"
-        },
-        {
-         "id": "the-financial-markets--breakdown-of-key-markets-3--2",
-         "headline": "The Financial Markets",
-         "subhead": "Breakdown of Key Markets",
-         "body": [
-          "2. Forex (Foreign Exchange Market) — The global decentralized market for trading currencies. It operates 24/5 and is the most liquid financial market, where traders exchange currency pairs (e.g., EUR/USD, GBP/JPY) based on exchange rate fluctuations.",
-          "3. Futures Market — A market where traders buy and sell standardized contracts to purchase or sell an asset (commodities, currencies, indices, etc.) at a predetermined price on a future date. Futures are commonly used for hedging and speculation."
-         ],
-         "audio": "the-financial-markets/2.mp3"
-        },
-        {
-         "id": "the-financial-markets--breakdown-of-key-markets-3--3",
-         "headline": "The Financial Markets",
-         "subhead": "Breakdown of Key Markets",
-         "body": [
-          "4. Options Market — A market where traders buy and sell contracts that grant the right (but not the obligation) to buy or sell an asset at a specified price before a set expiration date. Options provide leverage and hedging opportunities.",
-          "5. Bond Market — Also known as the fixed-income market, this is where governments, corporations, and municipalities issue debt securities (bonds) to raise capital. Investors earn interest payments and get repaid at maturity."
-         ],
-         "audio": "the-financial-markets/3.mp3"
-        },
-        {
-         "id": "the-financial-markets--breakdown-of-key-markets-3--4",
-         "headline": "The Financial Markets",
-         "subhead": "Breakdown of Key Markets",
-         "body": [
-          "6. Cryptocurrency Market — A digital asset market where cryptocurrencies such as Bitcoin (BTC), Ethereum (ETH), and Solana (SOL) are traded. This market operates 24/7 and is known for high volatility and decentralized finance (DeFi) applications.",
-          "7. Commodity Market — A marketplace for trading raw materials and primary goods such as oil, gold, natural gas, wheat, and coffee. Commodities can be traded through spot markets or derivatives like futures and options."
-         ],
-         "audio": "the-financial-markets/4.mp3"
-        },
-        {
-         "id": "the-financial-markets--breakdown-of-key-markets-3--5",
-         "headline": "The Financial Markets",
-         "subhead": "Breakdown of Key Markets",
-         "body": [
-          "8. Money Market — A short-term financial market where institutions trade highly liquid assets such as Treasury bills, certificates of deposit (CDs), and commercial paper. It helps businesses and governments manage short-term funding needs."
-         ],
-         "audio": "the-financial-markets/5.mp3"
-        },
-        {
-         "id": "the-financial-markets--breakdown-of-key-markets-3--6",
-         "headline": "The Financial Markets",
-         "subhead": "Breakdown of Key Markets",
-         "body": [
-          "9. Derivatives Market — A financial market where contracts derive their value from underlying assets such as stocks, bonds, commodities, or interest rates. Examples include futures, options, swaps, and CFDs (contracts for difference). Derivatives are used for hedging and speculation."
-         ],
-         "audio": "the-financial-markets/6.mp3"
-        },
-        {
-         "id": "the-financial-markets--breakdown-of-key-markets-3--7",
-         "headline": "The Financial Markets",
-         "subhead": "Breakdown of Key Markets",
-         "body": [
-          "10. Prediction Market — A speculative market where participants trade contracts based on the outcomes of future events, such as elections, economic indicators, or sports events. These markets use crowd intelligence to forecast probabilities."
-         ],
-         "audio": "the-financial-markets/7.mp3"
-        },
-        {
-         "id": "the-financial-markets--breakdown-of-key-markets-3--8",
-         "headline": "The Financial Markets",
-         "subhead": "Breakdown of Key Markets",
-         "body": [
-          "11. Binary Options Market (Controversial Market) — A high-risk financial market where traders bet on whether an asset's price will be higher or lower than a specified price at a predetermined expiration time. Due to concerns about fraud and manipulation, binary options are banned or restricted in many countries.",
-          "Each of these markets plays a vital role in the global financial system, allowing participants to invest, speculate, hedge risk, and manage capital efficiently."
-         ],
-         "audio": "the-financial-markets/8.mp3"
-        }
-       ]
-      },
-      {
-       "id": "the-financial-markets--how-do-you-participate-in-the-financial-market-4",
-       "title": "How Do You Participate in the Financial Market?",
-       "screens": [
-        {
-         "id": "the-financial-markets--how-do-you-participate-in-the-financial-market-4--1",
-         "headline": "The Financial Markets",
-         "subhead": "How Do You Participate in the Financial Market?",
-         "body": [
-          "To participate in the financial market, individuals and institutions can buy, sell, or invest in various financial instruments such as stocks, bonds, currencies, commodities, and derivatives. This can be done through trading platforms, brokerage accounts, or financial institutions. Investors may take a long-term approach by holding assets for growth, while traders seek short-term profits through market fluctuations. Other ways to engage include speculation, hedging risks, and passive income strategies like dividends or staking in crypto. Understanding market trends, technical analysis, and risk management is essential for successful participation."
-         ],
-         "audio": "the-financial-markets/1.mp3"
-        }
-       ]
-      },
-      {
-       "id": "the-financial-markets--who-are-the-different-participants-in-the-financ-5",
-       "title": "Who Are the Different Participants in the Financial Market?",
-       "screens": [
-        {
-         "id": "the-financial-markets--who-are-the-different-participants-in-the-financ-5--1",
-         "headline": "The Financial Markets",
-         "subhead": "Who Are the Different Participants in the Financial Market?",
-         "body": [
-          "The financial market consists of various participants, each with different approaches and objectives. These participants include gamblers, day traders, swing traders, and long-term investors, as well as retail traders, financial institutions, and hedge funds. Each plays a distinct role in market activity, contributing to its overall movement, liquidity, and efficiency."
-         ],
-         "audio": "the-financial-markets/1.mp3"
-        },
-        {
-         "id": "the-financial-markets--who-are-the-different-participants-in-the-financ-5--2",
-         "headline": "The Financial Markets",
-         "subhead": "Who Are the Different Participants in the Financial Market?",
-         "body": [
-          "Gamblers — Uninformed traders who often act impulsively, chasing quick profits without a clear strategy or risk management plan. Their approach is speculative, and their decisions are typically driven by emotions or luck rather than market analysis.",
-          "Day Traders — Active traders who execute multiple trades within a single trading day. Day traders focus on short-term price movements, relying heavily on technical analysis and market trends to capitalize on intraday volatility."
-         ],
-         "audio": "the-financial-markets/2.mp3"
-        },
-        {
-         "id": "the-financial-markets--who-are-the-different-participants-in-the-financ-5--3",
-         "headline": "The Financial Markets",
-         "subhead": "Who Are the Different Participants in the Financial Market?",
-         "body": [
-          "Swing Traders — Traders who hold positions for several days to weeks, aiming to capture medium-term price swings. They use both technical and fundamental analysis to identify and profit from market trends.",
-          "Long-Term Investors — Investors who buy and hold assets for extended periods, seeking gradual growth through dividends and compounding returns. Their strategy is based on the long-term performance of the assets rather than short-term market fluctuations."
-         ],
-         "audio": "the-financial-markets/3.mp3"
-        },
-        {
-         "id": "the-financial-markets--who-are-the-different-participants-in-the-financ-5--4",
-         "headline": "The Financial Markets",
-         "subhead": "Who Are the Different Participants in the Financial Market?",
-         "body": [
-          "Retail Traders — Individual investors who trade for personal gain, typically using online brokers or trading platforms. Retail traders can be a mix of gamblers, day traders, swing traders, or long-term investors. Collectively, they add liquidity to the market, though individual retail traders usually have a smaller impact compared to institutional players."
-         ],
-         "audio": "the-financial-markets/4.mp3"
-        },
-        {
-         "id": "the-financial-markets--who-are-the-different-participants-in-the-financ-5--5",
-         "headline": "The Financial Markets",
-         "subhead": "Who Are the Different Participants in the Financial Market?",
-         "body": [
-          "Financial Institutions — Large entities, such as banks, insurance companies, and investment firms, that engage in a wide range of activities, from lending and market-making to asset management and proprietary trading. They facilitate transactions and offer investment products, often driving significant market movements."
-         ],
-         "audio": "the-financial-markets/5.mp3"
-        },
-        {
-         "id": "the-financial-markets--who-are-the-different-participants-in-the-financ-5--6",
-         "headline": "The Financial Markets",
-         "subhead": "Who Are the Different Participants in the Financial Market?",
-         "body": [
-          "Hedge Funds — Private investment funds that employ complex strategies to maximize returns, often using leverage, derivatives, and arbitrage. Hedge funds are highly active and can have a significant impact on markets due to their size and capital.",
-          "Proprietary Traders — Traders employed by financial firms who use the firm's capital to engage in various trading strategies. Proprietary traders aim to generate profits for their firm, often using high-frequency trading, arbitrage, and other sophisticated techniques."
-         ],
-         "audio": "the-financial-markets/6.mp3"
+         ]
         }
        ]
       }

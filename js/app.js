@@ -102,6 +102,7 @@
     videoCat: null,          // video category expanded in the library
     videoId: null,           // video in the full-screen player (null = closed)
     videoScroll: 0,          // library scroll position, restored on back
+    gridItem: null,          // open item on a word-grid screen (null = list)
   };
 
   /* ---------------- els ---------------- */
@@ -232,6 +233,35 @@
     }).join("")}
   </svg></div>`;
 
+  /* Word-grid screens (Individual Financial Markets / Participants): a list
+     of pill buttons that open a centred detail view with its own narration.
+     Reuses .btn-primary so the pill art matches the rest of the app. */
+
+  function gridItemById(scr, id) {
+    return (scr.grid || []).find((g) => g.id === id) || null;
+  }
+
+  function gridHTML(scr) {
+    const open = state.gridItem ? gridItemById(scr, state.gridItem) : null;
+    if (open) {
+      return `
+        <button class="grid-back" data-grid-back>‹ Back to the list</button>
+        <h2 class="grid-title">${esc(open.name)}</h2>
+        <div class="grid-body">${bodyHTML(open.body)}</div>
+        ${open.audioSrc
+          ? `<button class="grid-play" data-grid-play aria-label="Play narration for ${esc(open.name)}">
+               <img class="grid-play-img" src="assets/buttons-icon/btn-play@2x.png" alt="">
+             </button>`
+          : `<div class="grid-soon">Narration for this one is coming soon.</div>`}`;
+    }
+    return `
+      ${scr.gridLabel ? `<div class="grid-label">${esc(scr.gridLabel)}</div>` : ""}
+      <div class="grid-list">
+        ${scr.grid.map((g) =>
+          `<button class="btn-primary grid-pill" data-grid="${esc(g.id)}">${esc(g.name)}</button>`).join("")}
+      </div>`;
+  }
+
   function renderScreen() {
     stopAudio();
     const entry = screens[state.current];
@@ -262,10 +292,11 @@
         <img class="card-logo" src="assets/logo/logo-symbol-v2@3x.png" alt="">
         <h1 class="screen-headline">${esc(scr.headline)}</h1>
         ${scr.subhead ? `<h2 class="screen-subhead">${esc(scr.subhead)}</h2>` : ""}
+        ${scr.grid ? gridHTML(scr) : `
         ${diagramFor(entry)}
         <div class="screen-body">${bodyHTML(scr.body)}</div>
         ${scr.list ? `<ol class="screen-list">${scr.list.map((it) => `<li>${esc(it)}</li>`).join("")}</ol>` : ""}
-        ${scr.listClose ? `<div class="screen-body">${bodyHTML([].concat(scr.listClose))}</div>` : ""}
+        ${scr.listClose ? `<div class="screen-body">${bodyHTML([].concat(scr.listClose))}</div>` : ""}`}
       </div>`;
     cardScroll.scrollTop = 0;
     cardFooter.style.display = "";
@@ -687,6 +718,7 @@
     if (idx === undefined) return;
     state.view = "screen";
     state.current = idx;
+    state.gridItem = null;
     state.slideDir = 0;
     closeOverlay();
     render();
@@ -697,6 +729,7 @@
     const next = state.current + dir;
     if (next < 0 || next >= screens.length) return;
     state.current = next;
+    state.gridItem = null;
     state.slideDir = dir;
     render();
   }
@@ -904,10 +937,19 @@
   let audioIndex = 0;
   let playing = false;
   function setPlayIcon(on) {
-    $("playImg").src = on ? "assets/buttons-icon/btn-pause@2x.png" : "assets/buttons-icon/btn-play@2x.png";
+    const src = on ? "assets/buttons-icon/btn-pause@2x.png" : "assets/buttons-icon/btn-play@2x.png";
+    $("playImg").src = src;
+    const inline = document.querySelector(".grid-play-img");
+    if (inline) inline.src = src;
   }
   function currentAudioSrc() {
-    return state.view === "screen" ? screens[state.current].scr.audioSrc || null : null;
+    if (state.view !== "screen") return null;
+    const scr = screens[state.current].scr;
+    if (scr.grid && state.gridItem) {
+      const it = gridItemById(scr, state.gridItem);
+      return (it && it.audioSrc) || null;
+    }
+    return scr.audioSrc || null;
   }
   // header pulse tracks real narration only — not the no-audio visual toggle
   function setNarrating(on) {
@@ -950,7 +992,7 @@
     setPlayIcon(false);
     setNarrating(false);
   }
-  $("btnPlay").addEventListener("click", () => {
+  function togglePlay() {
     const src = currentAudioSrc();
     if (src) {
       const a = ensureAudio(src);
@@ -961,7 +1003,8 @@
     }
     setPlayIcon(playing);
     setNarrating(playing);
-  });
+  }
+  $("btnPlay").addEventListener("click", togglePlay);
   $("btnReplay").addEventListener("click", () => {
     const src = currentAudioSrc();
     if (!src) return;
@@ -1024,10 +1067,13 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-check],[data-check-reset],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-check],[data-check-reset],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play]");
     if (!t) return;
 
-    if (t.dataset.vcat) { state.videoCat = state.videoCat === t.dataset.vcat ? null : t.dataset.vcat; render(); }
+    if (t.dataset.grid) { state.gridItem = t.dataset.grid; render(); }
+    else if (t.hasAttribute("data-grid-back")) { state.gridItem = null; render(); }
+    else if (t.hasAttribute("data-grid-play")) togglePlay();
+    else if (t.dataset.vcat) { state.videoCat = state.videoCat === t.dataset.vcat ? null : t.dataset.vcat; render(); }
     else if (t.dataset.vid) playVideo(t.dataset.vid);
     else if (t.hasAttribute("data-vback")) closePlayer();
     else if (t.hasAttribute("data-vfull")) vpToggleFullscreen();
