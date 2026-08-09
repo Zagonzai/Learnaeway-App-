@@ -1094,7 +1094,15 @@
   $("btnBarHome").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
   $("btnCheckinHome").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
   $("btnCheckinProfile").addEventListener("click", openProfile);
-  // navAdd stays an inert placeholder
+  $("navAdd").addEventListener("click", () => {
+    openOverlay(panelHead("Trade Journal") + `
+      <div class="liked-empty">
+        <img src="assets/nav-icons/icon-trade-journal@2x.png" alt="" style="width:64px;display:block;margin:0 auto 14px;filter:drop-shadow(0 0 12px rgba(61,223,255,.4))">
+        The Trade Journal is coming soon — log your entries, review your trades
+        and see what your discipline is actually costing or earning you.
+      </div>
+      <button class="btn-primary" data-close>Got it</button>`);
+  });
 
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
