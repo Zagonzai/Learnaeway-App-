@@ -721,8 +721,7 @@
         ${CHECKIN_ITEMS.map((it) => `
           <button class="ci-row${store.checklist[it.id] ? " done" : ""}" data-ci="${it.id}"
                   aria-pressed="${!!store.checklist[it.id]}">
-            <span class="ci-icon" aria-hidden="true"></span>
-            <span class="ci-pill">${esc(it.label)}</span>
+            <span class="ci-plate"><span class="ci-label">${esc(it.label)}</span></span>
             <span class="ci-status" aria-hidden="true"></span>
           </button>`).join("")}
       </div>
@@ -745,6 +744,14 @@
     render();
   }
 
+  /* ring behind whichever dock icon matches the section you're in */
+  function syncDockActive() {
+    $("navHome").classList.toggle("active", state.view === "home" || state.view === "screen");
+    $("navVideo").classList.toggle("active", state.view === "videos");
+    $("navQuiz").classList.remove("active");
+    $("ciNavList").classList.toggle("active", state.view === "checkin");
+  }
+
   /* the check-in view swaps in its own date/time bar and dock */
   function syncCheckinChrome() {
     const on = state.view === "checkin";
@@ -762,6 +769,7 @@
     const listy = state.view === "home" || state.view === "videos" || state.view === "checkin";
     $("cardOuter").classList.toggle("outline-bg", listy);
     syncCheckinChrome();
+    syncDockActive();
     if (state.view === "home") renderHome();
     else if (state.view === "videos") renderVideos();
     else if (state.view === "checkin") renderCheckin();
@@ -841,7 +849,13 @@
 
   /* menu drawer — full section/subsection navigation (same as All Sections) */
   function openMenu() {
-    const html = panelHead("Course Menu") + DATA.modules.map((mod) => `
+    const html = panelHead("Course Menu") + `
+      <div class="menu-tools">
+        <button class="menu-tool" data-open-checkin>
+          <img src="assets/nav-icons/icon-trade-day@2x.png" alt="">Trade Day Check-In</button>
+        <button class="menu-tool" data-open-journal>
+          <img src="assets/nav-icons/icon-trade-journal@2x.png" alt="">Trade Journal</button>
+      </div>` + DATA.modules.map((mod) => `
       <div class="menu-module">
         <div class="menu-module-title">Module ${mod.num} — ${esc(mod.tagline)}</div>
         ${mod.sections.map((sec) => {
@@ -1077,11 +1091,9 @@
   $("btnSettings").addEventListener("click", openSettings);
   $("btnProfile").addEventListener("click", openProfile);
   $("btnHeart").addEventListener("click", toggleLike);
-  $("btnChecklist").innerHTML = SVG.checklist;
   $("ciNavList").innerHTML = SVG.checklist;
   $("btnNotes").innerHTML = SVG.notes;
   $("btnHeart").innerHTML = SVG.heart;
-  $("btnChecklist").addEventListener("click", openCheckin);
   $("btnNotes").addEventListener("click", openNotes);
 
   function openComingSoon() {
@@ -1115,10 +1127,19 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-open-checkin],[data-open-journal]");
     if (!t) return;
 
-    if (t.dataset.ci) {
+    if (t.hasAttribute("data-open-checkin")) { closeOverlay(); openCheckin(); }
+    else if (t.hasAttribute("data-open-journal")) {
+      openOverlay(panelHead("Trade Journal") + `
+        <div class="liked-empty">
+          <img src="assets/nav-icons/icon-trade-journal@2x.png" alt="" style="width:76px;display:block;margin:0 auto 14px;filter:drop-shadow(0 0 12px rgba(61,223,255,.4))">
+          The Trade Journal is coming soon — log entries, review your trades and track what your discipline is actually costing or earning you.
+        </div>
+        <button class="btn-primary" data-close>Got it</button>`);
+    }
+    else if (t.dataset.ci) {
       const id = t.dataset.ci;
       if (store.checklist[id]) delete store.checklist[id]; else store.checklist[id] = true;
       save();
