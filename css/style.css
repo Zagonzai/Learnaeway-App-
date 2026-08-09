@@ -488,43 +488,6 @@ img { user-select: none; -webkit-user-drag: none; }
 }
 
 /* daily trading checklist rows */
-.check-row {
-  width: 100%;
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  padding: 9px 10px;
-  margin-bottom: 7px;
-  text-align: left;
-  border-radius: 12px;
-  background: rgba(14,22,44,.7);
-  border: 1px solid rgba(61,223,255,.22);
-}
-.check-row:active { filter: brightness(1.3); }
-.check-box {
-  flex: 0 0 auto;
-  width: 24px;
-  height: 24px;
-  display: grid;
-  place-items: center;
-  border-radius: 8px;
-  border: 1.5px solid rgba(61,223,255,.5);
-  color: #06131f;
-  font-size: 15px;
-  font-weight: 800;
-}
-.check-row.done .check-box {
-  background: linear-gradient(135deg, var(--cyan), var(--teal));
-  border-color: transparent;
-  box-shadow: 0 0 10px rgba(47,230,194,.55);
-}
-.check-label {
-  flex: 1 1 auto;
-  font-size: calc(13.5px * var(--fs));
-  line-height: 1.45;
-  color: #DCEBFA;
-}
-.check-row.done .check-label { color: var(--teal); }
 
 /* deck: stacked-card affordance — peeking layers behind each section row */
 .deck { position: relative; margin: 0 2px 14px; }
@@ -1112,6 +1075,174 @@ img { user-select: none; -webkit-user-drag: none; }
   background: rgba(10,16,34,.72);
 }
 .sv-other.hidden { display: none; }
+
+/* ===================== TRADE DAY CHECK-IN ===================== */
+
+/* date/time bar — replaces the progress bar on this screen. Home sits hard
+   right with the same padding the other bars give their trailing icon. */
+/* the check-in view swaps these in and out, so both bars and both docks
+   need a hide rule — this stylesheet has no generic .hidden */
+.bar.hidden { display: none; }
+.bottom-nav.hidden { display: none; }
+.checkin-clock {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: baseline;
+  justify-content: center;
+  gap: 14px;
+  min-width: 0;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.ci-date, .ci-time {
+  font-size: calc(14.5px * var(--fs));
+  font-weight: 600;
+  color: #EAF6FF;
+  text-shadow: 0 0 10px rgba(61,223,255,.4);
+}
+.ci-time { font-variant-numeric: tabular-nums; }
+
+.ci-heading {
+  text-align: center;
+  font-size: calc(19px * var(--fs));
+  font-weight: 800;
+  color: var(--cyan);
+  text-shadow: 0 0 16px rgba(61,223,255,.6);
+  margin: 4px 0 22px;
+}
+
+/* rows: icon placeholder · title pill · status. One tap target per row so the
+   whole thing is hittable; the status circle only ever reports state. */
+.ci-list { display: flex; flex-direction: column; gap: 12px; }
+.ci-row {
+  display: grid;
+  grid-template-columns: 56px 1fr 40px;
+  align-items: center;
+  gap: 12px;
+  width: 100%;
+  min-height: 52px;
+  padding: 0;
+  text-align: left;
+}
+.ci-icon {
+  width: 52px;
+  height: 52px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(61,223,255,.5);
+  background: radial-gradient(circle at 34% 28%, rgba(61,223,255,.16), rgba(9,13,30,.92) 68%);
+  box-shadow: 0 0 12px -2px rgba(61,223,255,.45), inset 0 0 10px rgba(123,95,192,.3);
+}
+.ci-pill {
+  display: grid;
+  place-items: center;
+  min-height: 46px;
+  padding: 9px 14px;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  border-image: url("../assets/bars/background-bar-pill@2x.png") 54 60 fill / 20px 23px stretch;
+  font-size: calc(15px * var(--fs));
+  font-weight: 700;
+  letter-spacing: .01em;      /* uniform across all six rows */
+  color: #EAF6FF;
+  text-align: center;
+}
+.ci-status {
+  width: 40px;
+  height: 40px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(61,223,255,.45);
+  background: rgba(9,13,30,.85);
+  position: relative;
+}
+/* empty circle -> green tick, drawn so it needs no icon asset */
+.ci-row.done .ci-status {
+  border-color: var(--teal);
+  box-shadow: 0 0 12px rgba(47,230,194,.55);
+}
+.ci-row.done .ci-status::after {
+  content: "";
+  position: absolute;
+  left: 13px;
+  top: 8px;
+  width: 9px;
+  height: 16px;
+  border: solid var(--teal);
+  border-width: 0 2.5px 2.5px 0;
+  transform: rotate(45deg);
+}
+.ci-row:active .ci-pill { filter: brightness(1.3); }
+.ci-row:active { transform: scale(.99); }
+
+/* four round action placeholders — laid out but inert until specified */
+.ci-actions {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 8px;
+  margin: 26px 0 4px;
+}
+.ci-action { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.ci-orb {
+  width: 100%;
+  max-width: 62px;
+  aspect-ratio: 1;
+  border-radius: 50%;
+  border: 1.5px solid rgba(61,223,255,.45);
+  background: radial-gradient(circle at 34% 28%, rgba(61,223,255,.14), rgba(9,13,30,.92) 70%);
+  box-shadow: 0 0 14px -3px rgba(255,61,154,.45), inset 0 0 12px rgba(123,95,192,.28);
+}
+.ci-action-label {
+  font-size: calc(10.5px * var(--fs));
+  font-weight: 600;
+  line-height: 1.2;
+  color: #C7D9EF;
+  text-align: center;
+}
+
+/* dock: even spacing like the main dock, with a prominent centre "+" */
+.dock-checkin.hidden { display: none; }
+.dock-checkin .dock-btn { width: 54px; }
+/* centre "+" is the primary action: wider, with a ring so it reads as a
+   button rather than a bare glyph. Needs the .dock-checkin prefix to
+   outrank the rule above. */
+.dock-checkin .dock-btn-primary {
+  width: 76px;
+  height: 100%;
+  position: relative;
+}
+.dock-checkin .dock-btn-primary::before {
+  content: "";
+  position: absolute;
+  inset: 50% auto auto 50%;
+  translate: -50% -50%;
+  width: 46px;
+  height: 46px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(61,223,255,.55);
+  background: radial-gradient(circle at 36% 30%, rgba(61,223,255,.2), rgba(9,13,30,.9) 70%);
+  box-shadow: 0 0 16px -2px rgba(61,223,255,.6), inset 0 0 12px rgba(123,95,192,.35);
+}
+.dock-checkin .dock-btn-primary:active::before { filter: brightness(1.4); }
+.dock-plus {
+  position: relative;
+  display: block;
+  width: 30px;
+  height: 30px;
+}
+.dock-plus::before, .dock-plus::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  background: #EAF6FF;
+  border-radius: 2px;
+  box-shadow: 0 0 10px rgba(61,223,255,.75);
+}
+.dock-plus::before { width: 26px; height: 3px; }
+.dock-plus::after  { width: 3px;  height: 26px; }
+/* the check-in dock's own list icon, reusing the inline checklist SVG */
+#ciNavList svg { width: 26px; height: 26px; }
+#ciNavList .ico { fill: none; stroke: #BFE9FF; stroke-width: 2; filter: drop-shadow(0 0 5px rgba(61,223,255,.6)); }
+#ciNavList.on .ico { stroke: var(--cyan); }
 
 /* ===================== WORD-GRID SCREENS ===================== */
 /* Individual Financial Markets / Participants: tappable names down the

@@ -93,7 +93,7 @@
   /* ---------------- state ---------------- */
 
   const state = {
-    view: "home",            // 'home' | 'screen' | 'videos'
+    view: "home",            // 'home' | 'screen' | 'videos' | 'checkin'
     homeTab: "sections",     // 'sections' | 'liked' | 'saved'
     homeModule: 0,           // module index shown on home
     expanded: null,          // section id expanded into subsection deck
@@ -127,21 +127,20 @@
     checklist: '<svg viewBox="0 0 24 24"><rect class="ico" x="5" y="4" width="14" height="17" rx="2.5"/><path class="ico" d="M9 2.5v3M15 2.5v3M8.2 10.6l1.6 1.6 3.2-3.2M8.2 16.4l1.6 1.6 3.2-3.2M15.2 11.4h1.4M15.2 17.2h1.4"/></svg>',
   };
 
-  /* Daily trading checklist — a static discipline tool checked off before a
-     trade. Completely separate from course progress. Rules distilled from
-     the course's Daily Trading Checklist and Trading Psychology sections. */
-  const CHECKLIST_ITEMS = [
-    "I am well-rested, calm, and emotionally ready to trade",
-    "I have checked the economic calendar for news and reports",
-    "I know which market sessions and opening times are in play",
-    "I have marked higher-timeframe support and resistance levels",
-    "I have identified the trend and set my directional bias",
-    "My setup matches my strategy — I am not forcing a trade",
-    "My stop loss, position size, and max daily loss are defined",
-    "The reward-to-risk ratio justifies taking this trade",
-    "I am not trading out of boredom, FOMO, or revenge",
-    "I accept that this trade can lose, and I am okay with that",
+  /* Trade Day Check-In — the pre-session discipline pass. Replaces the old
+     10-item checklist overlay. Keyed by id (not index) so it can't collide
+     with ticks written by that earlier version. */
+  const CHECKIN_ITEMS = [
+    { id: "physically",    label: "Physically" },
+    { id: "mentally",      label: "Mentally" },
+    { id: "emotionally",   label: "Emotionally" },
+    { id: "distraction",   label: "Distraction" },
+    { id: "economic-news", label: "Economic News" },
+    { id: "daily-bias",    label: "Daily Bias" },
   ];
+
+  /* Placeholders until the icon artwork lands — see the layout prompt. */
+  const CHECKIN_ACTIONS = ["Start Day", "Before Trade", "After Trade", "Discipline Streak"];
 
   /* ---------------- progress helpers ---------------- */
 
@@ -700,13 +699,72 @@
     renderPlayerLayer();
   }
 
+  /* ---------------- Trade Day Check-In ---------------- */
+
+  const checkinBar = $("checkinBar");
+  const checkinNav = $("checkinNav");
+  let clockTimer = null;
+
+  function paintClock() {
+    const now = new Date();
+    const date = now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
+    const time = now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" });
+    $("checkinClock").innerHTML = `<span class="ci-date">${date}</span><span class="ci-time">${time}</span>`;
+  }
+
+  function renderCheckin() {
+    barTitle.textContent = "Trade Day Checkin";
+    paintClock();
+    cardScroll.innerHTML = `
+      <h1 class="ci-heading">Check List Before Trading Day</h1>
+      <div class="ci-list">
+        ${CHECKIN_ITEMS.map((it) => `
+          <button class="ci-row${store.checklist[it.id] ? " done" : ""}" data-ci="${it.id}"
+                  aria-pressed="${!!store.checklist[it.id]}">
+            <span class="ci-icon" aria-hidden="true"></span>
+            <span class="ci-pill">${esc(it.label)}</span>
+            <span class="ci-status" aria-hidden="true"></span>
+          </button>`).join("")}
+      </div>
+      <div class="ci-actions">
+        ${CHECKIN_ACTIONS.map((label) => `
+          <div class="ci-action">
+            <span class="ci-orb" aria-hidden="true"></span>
+            <span class="ci-action-label">${esc(label)}</span>
+          </div>`).join("")}
+      </div>`;
+    cardScroll.scrollTop = 0;
+    cardFooter.style.display = "none";
+  }
+
+  function openCheckin() {
+    stopAudio();
+    state.view = "checkin";
+    state.slideDir = 0;
+    closeOverlay();
+    render();
+  }
+
+  /* the check-in view swaps in its own date/time bar and dock */
+  function syncCheckinChrome() {
+    const on = state.view === "checkin";
+    checkinBar.classList.toggle("hidden", !on);
+    document.querySelectorAll(".bar")[1].classList.toggle("hidden", on);
+    document.querySelector(".bottom-nav:not(.dock-checkin)").classList.toggle("hidden", on);
+    checkinNav.classList.toggle("hidden", !on);
+    clearInterval(clockTimer);
+    if (on) clockTimer = setInterval(paintClock, 1000);
+  }
+
   function render() {
     // navigating anywhere other than the library closes the player
     if (state.videoId && state.view !== "videos") tearDownPlayer();
-    const listy = state.view === "home" || state.view === "videos";
+    const listy = state.view === "home" || state.view === "videos" || state.view === "checkin";
     $("cardOuter").classList.toggle("outline-bg", listy);
+    syncCheckinChrome();
     if (state.view === "home") renderHome();
     else if (state.view === "videos") renderVideos();
+    else if (state.view === "checkin") renderCheckin();
     else renderScreen();
   }
 
@@ -910,21 +968,6 @@
   }
 
   /* daily trading checklist overlay */
-  function openChecklist() {
-    const done = CHECKLIST_ITEMS.filter((_, i) => store.checklist[i]).length;
-    const html = panelHead("Daily Trading Checklist") + `
-      <div class="notes-hint" style="margin:0 0 12px">Run through this before entering any trade.
-        Checked ${done} of ${CHECKLIST_ITEMS.length}. This is a discipline tool — it does not affect course progress.</div>
-      ${CHECKLIST_ITEMS.map((item, i) => `
-        <button class="check-row ${store.checklist[i] ? "done" : ""}" data-check="${i}">
-          <span class="check-box">${store.checklist[i] ? "✓" : ""}</span>
-          <span class="check-label">${esc(item)}</span>
-        </button>`).join("")}
-      <button class="btn-secondary" data-check-reset>Reset checklist</button>
-      <button class="btn-primary" data-close>Done</button>`;
-    openOverlay(html);
-  }
-
   /* ---------------- narration audio (real playback where a track exists) --- */
 
   /* Narration player. audioSrc may be a single file or a list of parts —
@@ -1035,9 +1078,10 @@
   $("btnProfile").addEventListener("click", openProfile);
   $("btnHeart").addEventListener("click", toggleLike);
   $("btnChecklist").innerHTML = SVG.checklist;
+  $("ciNavList").innerHTML = SVG.checklist;
   $("btnNotes").innerHTML = SVG.notes;
   $("btnHeart").innerHTML = SVG.heart;
-  $("btnChecklist").addEventListener("click", openChecklist);
+  $("btnChecklist").addEventListener("click", openCheckin);
   $("btnNotes").addEventListener("click", openNotes);
 
   function openComingSoon() {
@@ -1055,6 +1099,11 @@
     setTimeout(() => el.classList.remove("glow-cyan"), 600);
   });
   $("navQuiz").addEventListener("click", openComingSoon);
+  $("btnCheckinHome").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
+  $("btnCheckinProfile").addEventListener("click", openProfile);
+  $("ciNavList").addEventListener("click", openCheckin);
+  $("ciNavPlay").addEventListener("click", openVideos);
+  // ciNavAdd and the four round action buttons are inert placeholders for now
   $("navHome").addEventListener("click", () => {
     state.homeTab = "sections";   // Home always lands on the outline + Continue
     goHome();
@@ -1066,10 +1115,16 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-check],[data-check-reset],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci]");
     if (!t) return;
 
-    if (t.dataset.grid) { state.gridItem = t.dataset.grid; render(); }
+    if (t.dataset.ci) {
+      const id = t.dataset.ci;
+      if (store.checklist[id]) delete store.checklist[id]; else store.checklist[id] = true;
+      save();
+      renderCheckin();
+    }
+    else if (t.dataset.grid) { state.gridItem = t.dataset.grid; render(); }
     else if (t.hasAttribute("data-grid-back")) { state.gridItem = null; render(); }
     else if (t.hasAttribute("data-grid-play")) togglePlay();
     else if (t.dataset.vcat) { state.videoCat = state.videoCat === t.dataset.vcat ? null : t.dataset.vcat; render(); }
@@ -1107,18 +1162,6 @@
       closeOverlay();
     }
     else if (t.hasAttribute("data-notes-list")) openNotesList();
-    else if (t.dataset.check !== undefined) {
-      const i = +t.dataset.check;
-      if (store.checklist[i]) delete store.checklist[i];
-      else store.checklist[i] = true;
-      save();
-      openChecklist();
-    }
-    else if (t.hasAttribute("data-check-reset")) {
-      store.checklist = {};
-      save();
-      openChecklist();
-    }
     else if (t.hasAttribute("data-logout")) {
       stopAudio();
       if (window.FB) FB.signOut();
