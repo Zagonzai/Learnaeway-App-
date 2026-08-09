@@ -393,7 +393,6 @@ img { user-select: none; -webkit-user-drag: none; }
   border-image: url("../assets/bars/background-bar-pill@2x.png") 54 60 fill / 24px 27px stretch;
 }
 .dock-btn {
-  width: 64px;
   height: 100%;
   display: grid;
   place-items: center;
@@ -1089,25 +1088,6 @@ img { user-select: none; -webkit-user-drag: none; }
 }
 .sv-other.hidden { display: none; }
 
-/* side-menu shortcuts to the standalone tools */
-.menu-tools { display: flex; flex-direction: column; gap: 10px; margin-bottom: 18px; }
-.menu-tool {
-  display: flex;
-  align-items: center;
-  gap: 12px;
-  width: 100%;
-  padding: 10px 14px;
-  border-radius: 16px;
-  background: linear-gradient(180deg, rgba(20,32,64,.55), rgba(7,10,24,.8));
-  border: 1px solid rgba(61,223,255,.3);
-  font-size: calc(14.5px * var(--fs));
-  font-weight: 700;
-  color: #EAF6FF;
-  text-align: left;
-}
-.menu-tool img { width: 30px; height: 30px; object-fit: contain; flex: 0 0 auto; }
-.menu-tool:active { border-color: var(--cyan); filter: brightness(1.2); }
-
 /* ===================== TRADE DAY CHECK-IN ===================== */
 
 /* date/time bar — replaces the progress bar on this screen. Home sits hard
@@ -1225,17 +1205,16 @@ img { user-select: none; -webkit-user-drag: none; }
 }
 
 /* dock: even spacing like the main dock, with a prominent centre "+" */
-.dock-checkin.hidden { display: none; }
-.dock-checkin .dock-btn { width: 54px; }
+.dock-btn { width: 54px; }
 /* centre "+" is the primary action: wider, with a ring so it reads as a
-   button rather than a bare glyph. Needs the .dock-checkin prefix to
-   outrank the rule above. */
-.dock-checkin .dock-btn-primary {
+   button rather than a bare glyph. Sized above the flanking icons so it
+   reads as the dock's primary action. */
+.dock-btn-primary {
   width: 76px;
   height: 100%;
   position: relative;
 }
-.dock-checkin .dock-btn-primary::before {
+.dock-btn-primary::before {
   content: "";
   position: absolute;
   inset: 50% auto auto 50%;
@@ -1247,7 +1226,7 @@ img { user-select: none; -webkit-user-drag: none; }
   background: radial-gradient(circle at 36% 30%, rgba(61,223,255,.2), rgba(9,13,30,.9) 70%);
   box-shadow: 0 0 16px -2px rgba(61,223,255,.6), inset 0 0 12px rgba(123,95,192,.35);
 }
-.dock-checkin .dock-btn-primary:active::before { filter: brightness(1.4); }
+.dock-btn-primary:active::before { filter: brightness(1.4); }
 .dock-plus {
   position: relative;
   display: block;
@@ -1265,10 +1244,6 @@ img { user-select: none; -webkit-user-drag: none; }
 }
 .dock-plus::before { width: 26px; height: 3px; }
 .dock-plus::after  { width: 3px;  height: 26px; }
-/* the check-in dock's own list icon, reusing the inline checklist SVG */
-#ciNavList svg { width: 26px; height: 26px; }
-#ciNavList .ico { fill: none; stroke: #BFE9FF; stroke-width: 2; filter: drop-shadow(0 0 5px rgba(61,223,255,.6)); }
-#ciNavList.on .ico { stroke: var(--cyan); }
 
 /* ===================== WORD-GRID SCREENS ===================== */
 /* Individual Financial Markets / Participants: tappable names down the

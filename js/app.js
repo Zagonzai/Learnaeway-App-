@@ -702,7 +702,6 @@
   /* ---------------- Trade Day Check-In ---------------- */
 
   const checkinBar = $("checkinBar");
-  const checkinNav = $("checkinNav");
   let clockTimer = null;
 
   function paintClock() {
@@ -746,10 +745,8 @@
 
   /* ring behind whichever dock icon matches the section you're in */
   function syncDockActive() {
-    $("navHome").classList.toggle("active", state.view === "home" || state.view === "screen");
-    $("navVideo").classList.toggle("active", state.view === "videos");
-    $("navQuiz").classList.remove("active");
-    $("ciNavList").classList.toggle("active", state.view === "checkin");
+    $("navCheckin").classList.toggle("active", state.view === "checkin");
+    $("navPlay").classList.toggle("active", state.view === "videos");
   }
 
   /* the check-in view swaps in its own date/time bar and dock */
@@ -757,8 +754,6 @@
     const on = state.view === "checkin";
     checkinBar.classList.toggle("hidden", !on);
     document.querySelectorAll(".bar")[1].classList.toggle("hidden", on);
-    document.querySelector(".bottom-nav:not(.dock-checkin)").classList.toggle("hidden", on);
-    checkinNav.classList.toggle("hidden", !on);
     clearInterval(clockTimer);
     if (on) clockTimer = setInterval(paintClock, 1000);
   }
@@ -849,13 +844,7 @@
 
   /* menu drawer — full section/subsection navigation (same as All Sections) */
   function openMenu() {
-    const html = panelHead("Course Menu") + `
-      <div class="menu-tools">
-        <button class="menu-tool" data-open-checkin>
-          <img src="assets/nav-icons/icon-trade-day@2x.png" alt="">Trade Day Check-In</button>
-        <button class="menu-tool" data-open-journal>
-          <img src="assets/nav-icons/icon-trade-journal@2x.png" alt="">Trade Journal</button>
-      </div>` + DATA.modules.map((mod) => `
+    const html = panelHead("Course Menu") + DATA.modules.map((mod) => `
       <div class="menu-module">
         <div class="menu-module-title">Module ${mod.num} — ${esc(mod.tagline)}</div>
         ${mod.sections.map((sec) => {
@@ -1091,55 +1080,29 @@
   $("btnSettings").addEventListener("click", openSettings);
   $("btnProfile").addEventListener("click", openProfile);
   $("btnHeart").addEventListener("click", toggleLike);
-  $("ciNavList").innerHTML = SVG.checklist;
   $("btnNotes").innerHTML = SVG.notes;
   $("btnHeart").innerHTML = SVG.heart;
   $("btnNotes").addEventListener("click", openNotes);
 
-  function openComingSoon() {
-    openOverlay(panelHead("Knowledge Test") + `
-      <div class="liked-empty">
-        <img src="assets/nav-icons/icon-knowledge-test-lightning@2x.png" alt="" style="width:88px;display:block;margin:0 auto 14px;filter:drop-shadow(0 0 12px rgba(61,223,255,.4))">
-        Pattern-recognition quizzes and knowledge checks are coming soon. You'll be able to test yourself on every section you complete.
-      </div>
-      <button class="btn-primary" data-close>Got it</button>`);
-  }
-  $("navVideo").addEventListener("click", () => {
+  $("navPlay").addEventListener("click", () => {
     openVideos();
-    const el = $("navVideo");
+    const el = $("navPlay");
     el.classList.add("glow-cyan");
     setTimeout(() => el.classList.remove("glow-cyan"), 600);
   });
-  $("navQuiz").addEventListener("click", openComingSoon);
+  $("navCheckin").addEventListener("click", openCheckin);
+  $("btnBarHome").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
   $("btnCheckinHome").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
   $("btnCheckinProfile").addEventListener("click", openProfile);
-  $("ciNavList").addEventListener("click", openCheckin);
-  $("ciNavPlay").addEventListener("click", openVideos);
-  // ciNavAdd and the four round action buttons are inert placeholders for now
-  $("navHome").addEventListener("click", () => {
-    state.homeTab = "sections";   // Home always lands on the outline + Continue
-    goHome();
-    const el = $("navHome");
-    el.classList.add("glow-cyan");
-    setTimeout(() => el.classList.remove("glow-cyan"), 600);
-  });
+  // navAdd stays an inert placeholder
 
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-open-checkin],[data-open-journal]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci]");
     if (!t) return;
 
-    if (t.hasAttribute("data-open-checkin")) { closeOverlay(); openCheckin(); }
-    else if (t.hasAttribute("data-open-journal")) {
-      openOverlay(panelHead("Trade Journal") + `
-        <div class="liked-empty">
-          <img src="assets/nav-icons/icon-trade-journal@2x.png" alt="" style="width:76px;display:block;margin:0 auto 14px;filter:drop-shadow(0 0 12px rgba(61,223,255,.4))">
-          The Trade Journal is coming soon — log entries, review your trades and track what your discipline is actually costing or earning you.
-        </div>
-        <button class="btn-primary" data-close>Got it</button>`);
-    }
-    else if (t.dataset.ci) {
+    if (t.dataset.ci) {
       const id = t.dataset.ci;
       if (store.checklist[id]) delete store.checklist[id]; else store.checklist[id] = true;
       save();
