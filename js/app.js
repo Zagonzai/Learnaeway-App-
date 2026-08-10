@@ -35,6 +35,11 @@
   if (!store.notes) store.notes = {};
   if (!store.settings) store.settings = { sound: true, textSize: "M", name: "" };
   if (!store.videosWatched) store.videosWatched = {};   // videoId -> true
+  if (!store.checkinLog) store.checkinLog = {};         // YYYY-MM-DD -> submitted answers
+  function todayKey() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
   function load() {
     try {
       const raw = localStorage.getItem(KEY);
@@ -66,6 +71,7 @@
       notes: store.notes || {},
       checklist: store.checklist || {},
       videosWatched: store.videosWatched || {},
+      checkinLog: store.checkinLog || {},
       settings: store.settings || {},
       updatedAt: new Date().toISOString(),
     };
@@ -80,7 +86,7 @@
     const cloud = await FB.loadUserDoc();
     if (!cloud) return false;
     // union maps (local device stays authoritative for its own recent edits)
-    for (const k of ["visited", "liked", "checklist", "notes", "videosWatched"]) {
+    for (const k of ["visited", "liked", "checklist", "notes", "videosWatched", "checkinLog"]) {
       store[k] = Object.assign({}, cloud[k] || {}, store[k] || {});
     }
     if (!store.lastScreen && cloud.lastScreen) store.lastScreen = cloud.lastScreen;
@@ -139,6 +145,7 @@
     { id: "distraction",   label: "Distraction" },
     { id: "economic-news", label: "Economic News" },
     { id: "daily-bias",    label: "Daily Bias" },
+    { id: "ready-to-trade", label: "Are you ready to trade?" },
   ];
 
   /* Placeholders until the icon artwork lands — see the layout prompt. */
@@ -720,12 +727,22 @@
       <h1 class="ci-heading">Check List Before Trading Day</h1>
       <div class="ci-list">
         ${CHECKIN_ITEMS.map((it) => `
-          <button class="ci-row${store.checklist[it.id] ? " done" : ""}" data-ci="${it.id}"
-                  aria-pressed="${!!store.checklist[it.id]}">
+          <div class="ci-row${store.checklist[it.id] ? " answered" : ""}">
             <span class="ci-plate"><span class="ci-label">${esc(it.label)}</span></span>
-            <span class="ci-status" aria-hidden="true"></span>
-          </button>`).join("")}
+            <span class="ci-toggle ${store.checklist[it.id] === "yes" ? "yes" : store.checklist[it.id] === "no" ? "no" : ""}">
+              <button class="ci-half" data-ci="${it.id}" data-ci-val="yes"
+                      aria-label="${esc(it.label)} — yes" aria-pressed="${store.checklist[it.id] === "yes"}"></button>
+              <button class="ci-half" data-ci="${it.id}" data-ci-val="no"
+                      aria-label="${esc(it.label)} — no" aria-pressed="${store.checklist[it.id] === "no"}"></button>
+            </span>
+          </div>`).join("")}
       </div>
+      ${(() => {
+        const ready = CHECKIN_ITEMS.every((it) => store.checklist[it.id]);
+        const sent = store.checkinLog[todayKey()];
+        return `<button class="ci-submit${ready ? "" : " off"}"
+          ${ready ? "" : "disabled"} data-ci-submit>${sent ? "Submitted" : "Submit"}</button>`;
+      })()}
       <div class="ci-actions">
         ${CHECKIN_ACTIONS.map((label) => `
           <div class="ci-action">
@@ -1247,7 +1264,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-jtab],[data-jmonth],[data-jadd]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-jtab],[data-jmonth],[data-jadd]");
     if (!t) return;
 
     if (t.dataset.jtab) { state.journalTab = t.dataset.jtab; renderJournal(); }
@@ -1261,10 +1278,24 @@
         <button class="btn-primary" data-close>Got it</button>`);
     }
     else if (t.dataset.ci) {
-      const id = t.dataset.ci;
-      if (store.checklist[id]) delete store.checklist[id]; else store.checklist[id] = true;
+      const id = t.dataset.ci, val = t.dataset.ciVal;
+      // tapping the chosen side clears it; the other side switches the answer
+      if (store.checklist[id] === val) delete store.checklist[id];
+      else store.checklist[id] = val;
       save();
       renderCheckin();
+    }
+    else if (t.hasAttribute("data-ci-submit")) {
+      if (!CHECKIN_ITEMS.every((it) => store.checklist[it.id])) return;
+      const answers = {};
+      CHECKIN_ITEMS.forEach((it) => { answers[it.id] = store.checklist[it.id]; });
+      store.checkinLog[todayKey()] = { answers, submittedAt: new Date().toISOString() };
+      save();
+      renderCheckin();
+      openOverlay(panelHead("Start Day Logged") + `
+        <div class="liked-empty">Your Start Day answers are saved for
+          ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric" })}.</div>
+        <button class="btn-primary" data-close>Done</button>`);
     }
     else if (t.dataset.grid) { state.gridItem = t.dataset.grid; render(); }
     else if (t.hasAttribute("data-grid-back")) { state.gridItem = null; render(); }
