@@ -729,14 +729,12 @@
       <h1 class="ci-heading">Check List Before Trading Day</h1>
       <div class="ci-list">
         ${CHECKIN_ITEMS.map((it) => `
-          <div class="ci-row${store.checklist[it.id] ? " answered" : ""}">
-            <span class="ci-plate"><span class="ci-label">${esc(it.label)}</span></span>
-            <span class="ci-toggle ${store.checklist[it.id] === "yes" ? "yes" : store.checklist[it.id] === "no" ? "no" : ""}">
-              <button class="ci-half" data-ci="${it.id}" data-ci-val="yes"
-                      aria-label="${esc(it.label)} — yes" aria-pressed="${store.checklist[it.id] === "yes"}"></button>
-              <button class="ci-half" data-ci="${it.id}" data-ci-val="no"
-                      aria-label="${esc(it.label)} — no" aria-pressed="${store.checklist[it.id] === "no"}"></button>
-            </span>
+          <div class="ci-row ${store.checklist[it.id] === "yes" ? "yes" : store.checklist[it.id] === "no" ? "no" : ""}">
+            <button class="ci-half ci-yes" data-ci="${it.id}" data-ci-val="yes"
+                    aria-label="${esc(it.label)} — yes" aria-pressed="${store.checklist[it.id] === "yes"}"></button>
+            <span class="ci-label">${esc(it.label)}</span>
+            <button class="ci-half ci-no" data-ci="${it.id}" data-ci-val="no"
+                    aria-label="${esc(it.label)} — no" aria-pressed="${store.checklist[it.id] === "no"}"></button>
           </div>`).join("")}
       </div>
       ${(() => {
