@@ -36,6 +36,7 @@
   if (!store.settings) store.settings = { sound: true, textSize: "M", name: "" };
   if (!store.videosWatched) store.videosWatched = {};   // videoId -> true
   if (!store.checkinLog) store.checkinLog = {};         // YYYY-MM-DD -> submitted answers
+  if (!store.journalImport) store.journalImport = {};   // account -> YYYY-MM-DD -> day totals
   function todayKey() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -72,6 +73,7 @@
       checklist: store.checklist || {},
       videosWatched: store.videosWatched || {},
       checkinLog: store.checkinLog || {},
+      journalImport: store.journalImport || {},
       settings: store.settings || {},
       updatedAt: new Date().toISOString(),
     };
@@ -86,7 +88,7 @@
     const cloud = await FB.loadUserDoc();
     if (!cloud) return false;
     // union maps (local device stays authoritative for its own recent edits)
-    for (const k of ["visited", "liked", "checklist", "notes", "videosWatched", "checkinLog"]) {
+    for (const k of ["visited", "liked", "checklist", "notes", "videosWatched", "checkinLog", "journalImport"]) {
       store[k] = Object.assign({}, cloud[k] || {}, store[k] || {});
     }
     if (!store.lastScreen && cloud.lastScreen) store.lastScreen = cloud.lastScreen;
@@ -768,6 +770,93 @@
      entry, live broker/balance sync and per-account storage are a later phase;
      the "+" and the four stat circles are placeholders. */
 
+  /* ---------------- broker export import ----------------
+     Each broker gets its own parse function that normalises rows into
+     { day: "YYYY-MM-DD", pnl: Number, symbol }. Everything downstream — day
+     aggregation, the calendar, the month stats — is broker-agnostic, so adding
+     Robinhood or another format later means writing one more
+     parse<Broker>Export() and registering it below. */
+
+  function parseCsv(text) {
+    const rows = [];
+    let row = [], cell = "", quoted = false;
+    for (let i = 0; i < text.length; i++) {
+      const c = text[i];
+      if (quoted) {
+        if (c === '"') { if (text[i + 1] === '"') { cell += '"'; i++; } else quoted = false; }
+        else cell += c;
+      } else if (c === '"') quoted = true;
+      else if (c === ",") { row.push(cell); cell = ""; }
+      else if (c === "\n") { row.push(cell); rows.push(row); row = []; cell = ""; }
+      else if (c !== "\r") cell += c;
+    }
+    if (cell !== "" || row.length) { row.push(cell); rows.push(row); }
+    return rows.filter((r) => r.some((c) => c.trim() !== ""));
+  }
+
+  /* Tradovate writes losses in parentheses with no minus: "$(360.00)" */
+  function parseParenMoney(v) {
+    const str = String(v == null ? "" : v).trim();
+    const n = parseFloat(str.replace(/[^0-9.]/g, "")) || 0;
+    return str.indexOf("(") >= 0 ? -n : n;
+  }
+
+  /* MM/DD/YYYY HH:MM:SS -> YYYY-MM-DD */
+  function mdyToDayKey(ts) {
+    const m = String(ts == null ? "" : ts).trim().match(/^(\d{1,2})\/(\d{1,2})\/(\d{4})/);
+    return m ? `${m[3]}-${m[1].padStart(2, "0")}-${m[2].padStart(2, "0")}` : null;
+  }
+
+  function parseTradovateExport(rows) {
+    const head = rows[0].map((h) => h.trim());
+    const iPnl = head.indexOf("pnl");
+    const iSold = head.indexOf("soldTimestamp");
+    const iSym = head.indexOf("symbol");
+    if (iPnl < 0 || iSold < 0) throw new Error("That doesn't look like a Tradovate export — no pnl / soldTimestamp columns.");
+    const trades = [];
+    for (let r = 1; r < rows.length; r++) {
+      // a trade belongs to the day it was CLOSED — some open one day, close the next
+      const day = mdyToDayKey(rows[r][iSold]);
+      if (!day) continue;
+      trades.push({ day, pnl: parseParenMoney(rows[r][iPnl]), symbol: (rows[r][iSym] || "").trim() });
+    }
+    return trades;
+  }
+
+  const BROKER_PARSERS = [
+    { id: "tradovate", label: "Tradovate", parse: parseTradovateExport,
+      detect: (head) => head.indexOf("soldTimestamp") >= 0 && head.indexOf("buyFillId") >= 0 },
+  ];
+
+  /* broker-agnostic: normalised trades -> per-day totals */
+  function aggregateTrades(trades) {
+    const days = {};
+    trades.forEach((t) => {
+      const d = days[t.day] || (days[t.day] = { pnl: 0, trades: 0, wins: 0, losses: 0, flat: 0 });
+      d.pnl += t.pnl;
+      d.trades++;
+      if (t.pnl > 0) d.wins++; else if (t.pnl < 0) d.losses++; else d.flat++;
+    });
+    Object.keys(days).forEach((k) => { days[k].pnl = Math.round(days[k].pnl * 100) / 100; });
+    return days;
+  }
+
+  function importCsvText(text) {
+    const rows = parseCsv(text);
+    if (rows.length < 2) throw new Error("That file has no rows to import.");
+    const head = rows[0].map((h) => h.trim());
+    const broker = BROKER_PARSERS.find((b) => b.detect(head)) || BROKER_PARSERS[0];
+    const trades = broker.parse(rows);
+    if (!trades.length) throw new Error("No trades found in that file.");
+    const days = aggregateTrades(trades);
+    // import wins over sample/manual figures for the days it covers — it's the
+    // real broker record. Change here if manual entry should take precedence.
+    const acct = store.journalImport[state.journalTab] || (store.journalImport[state.journalTab] = {});
+    Object.keys(days).forEach((k) => { acct[k] = days[k]; });
+    save();
+    return { broker: broker.label, trades: trades.length, days: Object.keys(days).sort() };
+  }
+
   const JOURNAL_ACCOUNTS = {
     personal: { title: "Personal Account Trade Journal", broker: "Interactive Brokers",
                 balance: 24750.68, change: 623.45, pct: 2.58 },
@@ -791,6 +880,32 @@
     if (x % 9 === 0) return null;                         // a few flat days
     const mag = 80 + (x % 620);
     return x % 100 < 63 ? mag : -Math.round(mag * 0.62);
+  }
+
+  function dayKey(y, m, d) {
+    return `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+  }
+
+  /* True once a month holds any imported day. Sample figures are then dropped
+     for the whole month: mixing invented P&L into a month that has a real
+     broker record would make the month total and win rate wrong. Extends the
+     "import is the source of truth" rule from the day to the month — remove
+     this check if sample days should persist alongside imports. */
+  function monthHasImport(y, m) {
+    const acct = store.journalImport[state.journalTab] || {};
+    const prefix = `${y}-${String(m + 1).padStart(2, "0")}-`;
+    return Object.keys(acct).some((k) => k.indexOf(prefix) === 0);
+  }
+
+  /* imported broker data for a day, else the Phase-1 sample. Sample days count
+     as a single win or loss so the win rate uses one formula throughout. */
+  function journalDay(y, m, d, imported) {
+    const imp = (store.journalImport[state.journalTab] || {})[dayKey(y, m, d)];
+    if (imp) return { pnl: imp.pnl, wins: imp.wins, losses: imp.losses, imported: true };
+    if (imported) return null;                 // real month — no invented days
+    const p = samplePnl(state.journalTab, y, m, d);
+    if (p === null) return null;
+    return { pnl: p, wins: p > 0 ? 1 : 0, losses: p < 0 ? 1 : 0, imported: false };
   }
 
   function money(n, cents) {
@@ -819,13 +934,15 @@
     const first = new Date(y, m, 1);
     const start = new Date(y, m, 1 - first.getDay());
     const cells = [];
-    let total = 0, wins = 0, traded = 0;
+    const realMonth = monthHasImport(y, m);
+    let total = 0, wins = 0, losses = 0, traded = 0;
     for (let i = 0; i < 42; i++) {
       const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
       const inMonth = d.getMonth() === m && d.getFullYear() === y;
-      const pnl = inMonth ? samplePnl(state.journalTab, y, m, d.getDate()) : null;
-      if (inMonth && pnl !== null) { total += pnl; traded++; if (pnl > 0) wins++; }
-      cells.push({ d, inMonth, pnl });
+      const info = inMonth ? journalDay(y, m, d.getDate(), realMonth) : null;
+      const pnl = info ? info.pnl : null;
+      if (info) { total += info.pnl; wins += info.wins; losses += info.losses; traded++; }
+      cells.push({ d, inMonth, pnl, imported: !!(info && info.imported) });
       if (i >= 34 && d.getDate() >= daysIn && d.getMonth() === m) { /* keep filling to row end */ }
     }
     // trim trailing all-outside rows
@@ -849,7 +966,7 @@
             <span class="j-pnl ${wt < 0 ? "neg" : "pos"}">${money(wt)}</span></div>`;
           continue;
         }
-        const cls = cell.pnl === null ? "flat" : cell.pnl < 0 ? "loss" : "profit";
+        const cls = (cell.pnl === null ? "flat" : cell.pnl < 0 ? "loss" : "profit") + (cell.imported ? " imported" : "");
         grid += `<div class="j-day ${cls}">
           <span class="j-date">${cell.d.getDate()}</span>
           ${cell.pnl === null ? "" : `<span class="j-pnl ${cell.pnl < 0 ? "neg" : "pos"}">${money(cell.pnl)}</span>`}
@@ -857,7 +974,9 @@
       }
     }
 
-    const winRate = traded ? Math.round((1000 * wins) / traded) / 10 : 0;
+    // break-even trades sit out of the denominator
+    const decided = wins + losses;
+    const winRate = decided ? Math.round((1000 * wins) / decided) / 10 : 0;
     cardScroll.innerHTML = `
       <div class="j-tabs">
         ${Object.keys(JOURNAL_ACCOUNTS).map((k) => `
@@ -882,6 +1001,8 @@
         <div class="j-grid">${grid}</div>
       </div>
       <button class="j-add" data-jadd aria-label="Add a trade manually — coming soon"></button>
+      <button class="j-import" data-jimport>Import Broker CSV</button>
+      <input id="jCsvFile" class="j-file" type="file" accept=".csv,text/csv">
       <div class="j-stat-row">
         ${JOURNAL_STATS.map((label) => `
           <div class="j-stat-btn">
@@ -892,6 +1013,39 @@
     cardScroll.scrollTop = 0;
     cardFooter.style.display = "none";
   }
+
+  /* delegated on document so it survives every re-render of the journal */
+  document.addEventListener("change", (e) => {
+    if (!e.target || e.target.id !== "jCsvFile" || !e.target.files || !e.target.files[0]) return;
+    const input = e.target;
+    const reader = new FileReader();
+    reader.onload = () => {
+      let res;
+      try {
+        res = importCsvText(String(reader.result));
+      } catch (err) {
+        openOverlay(panelHead("Import Failed") + `
+          <div class="liked-empty">${esc(err.message || "Could not read that file.")}</div>
+          <button class="btn-primary" data-close>Close</button>`);
+        input.value = "";
+        return;
+      }
+      // jump to the month the trades landed in, so the change is visible
+      const last = res.days[res.days.length - 1].split("-");
+      state.journalMonth = (+last[0] - SAMPLE_MONTH.y) * 12 + (+last[1] - 1 - SAMPLE_MONTH.m);
+      renderJournal();
+      const span = res.days.length === 1
+        ? new Date(+last[0], +last[1] - 1, +last[2]).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+        : `${res.days.length} days`;
+      openOverlay(panelHead("Import Complete") + `
+        <div class="liked-empty">${res.trades} ${res.broker} trade${res.trades === 1 ? "" : "s"}
+          imported across ${span}.<br>Day totals on the calendar now use the broker record.</div>
+        <button class="btn-primary" data-close>Done</button>`);
+      input.value = "";
+    };
+    reader.onerror = () => { input.value = ""; };
+    reader.readAsText(input.files[0]);
+  });
 
   function openJournal() {
     stopAudio();
@@ -1264,11 +1418,12 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-jtab],[data-jmonth],[data-jadd]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-jtab],[data-jmonth],[data-jadd],[data-jimport]");
     if (!t) return;
 
     if (t.dataset.jtab) { state.journalTab = t.dataset.jtab; renderJournal(); }
     else if (t.dataset.jmonth) { state.journalMonth += +t.dataset.jmonth; renderJournal(); }
+    else if (t.hasAttribute("data-jimport")) $("jCsvFile").click();
     else if (t.hasAttribute("data-jadd")) {
       openOverlay(panelHead("Add a Trade") + `
         <div class="liked-empty">
