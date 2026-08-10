@@ -93,7 +93,7 @@
   /* ---------------- state ---------------- */
 
   const state = {
-    view: "home",            // 'home' | 'screen' | 'videos' | 'checkin'
+    view: "home",            // 'home' | 'screen' | 'videos' | 'checkin' | 'journal'
     homeTab: "sections",     // 'sections' | 'liked' | 'saved'
     homeModule: 0,           // module index shown on home
     expanded: null,          // section id expanded into subsection deck
@@ -103,6 +103,8 @@
     videoId: null,           // video in the full-screen player (null = closed)
     videoScroll: 0,          // library scroll position, restored on back
     gridItem: null,          // open item on a word-grid screen (null = list)
+    journalTab: "personal",  // 'personal' | 'prop'
+    journalMonth: 0,         // months offset from the sample month
   };
 
   /* ---------------- els ---------------- */
@@ -743,17 +745,159 @@
     render();
   }
 
+  /* ---------------- Trade Journal ----------------
+     PHASE 1: LAYOUT ONLY. The numbers below are deterministic samples so the
+     calendar looks plausible and stable while navigating months. Manual trade
+     entry, live broker/balance sync and per-account storage are a later phase;
+     the "+" and the four stat circles are placeholders. */
+
+  const JOURNAL_ACCOUNTS = {
+    personal: { title: "Personal Account Trade Journal", broker: "Interactive Brokers",
+                balance: 24750.68, change: 623.45, pct: 2.58 },
+    prop:     { title: "Prop Firms Trade Journal", broker: "Apex Trader Funding",
+                balance: 51200.00, change: -318.20, pct: -0.62 },
+  };
+  const JOURNAL_STATS = ["Month Cal", "Total P&L", "Net P&L", "Recent Trade"];
+  const SAMPLE_MONTH = { y: 2025, m: 4 };   // May 2025, as in the reference
+
+  function journalDate() {
+    return new Date(SAMPLE_MONTH.y, SAMPLE_MONTH.m + state.journalMonth, 1);
+  }
+
+  /* sample P&L: weekdays only, ~63% winners, stable for a given day + account */
+  function samplePnl(tab, y, m, d) {
+    const dow = new Date(y, m, d).getDay();
+    if (dow === 0 || dow === 6) return null;              // no weekend trading
+    let x = (y * 10000 + (m + 1) * 100 + d) * (tab === "prop" ? 7919 : 6151);
+    x = Math.imul(x ^ (x >>> 13), 1274126177);
+    x = (x ^ (x >>> 16)) >>> 0;
+    if (x % 9 === 0) return null;                         // a few flat days
+    const mag = 80 + (x % 620);
+    return x % 100 < 63 ? mag : -Math.round(mag * 0.62);
+  }
+
+  function money(n, cents) {
+    const v = Math.abs(n).toLocaleString("en-US", cents
+      ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : { maximumFractionDigits: 0 });
+    return (n < 0 ? "-$" : "+$") + v;
+  }
+
+  function renderJournal() {
+    const acct = JOURNAL_ACCOUNTS[state.journalTab];
+    barTitle.textContent = acct.title;
+    $("journalSummary").innerHTML = `
+      <span class="j-broker">${esc(acct.broker)}</span>
+      <span class="j-balance">$${acct.balance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+      <span class="j-change">
+        <span class="j-change-label">Daily Change</span>
+        <span class="${acct.change < 0 ? "neg" : "pos"}">${money(acct.change, true)} (${acct.pct}%)</span>
+      </span>`;
+
+    const base = journalDate();
+    const y = base.getFullYear(), m = base.getMonth();
+    const monthName = base.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+    const daysIn = new Date(y, m + 1, 0).getDate();
+
+    // grid starts on the Sunday on or before the 1st
+    const first = new Date(y, m, 1);
+    const start = new Date(y, m, 1 - first.getDay());
+    const cells = [];
+    let total = 0, wins = 0, traded = 0;
+    for (let i = 0; i < 42; i++) {
+      const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+      const inMonth = d.getMonth() === m && d.getFullYear() === y;
+      const pnl = inMonth ? samplePnl(state.journalTab, y, m, d.getDate()) : null;
+      if (inMonth && pnl !== null) { total += pnl; traded++; if (pnl > 0) wins++; }
+      cells.push({ d, inMonth, pnl });
+      if (i >= 34 && d.getDate() >= daysIn && d.getMonth() === m) { /* keep filling to row end */ }
+    }
+    // trim trailing all-outside rows
+    while (cells.length > 35 && cells.slice(-7).every((c) => !c.inMonth)) cells.length -= 7;
+
+    const weekTotal = (row) => cells.slice(row * 7, row * 7 + 7)
+      .reduce((a, c) => a + (c.inMonth && c.pnl !== null ? c.pnl : 0), 0);
+
+    const rows = cells.length / 7;
+    let grid = "";
+    for (let r = 0; r < rows; r++) {
+      for (let c = 0; c < 7; c++) {
+        const cell = cells[r * 7 + c];
+        const isSat = c === 6;
+        if (!cell.inMonth) { grid += `<div class="j-day out">${cell.d.getDate()}</div>`; continue; }
+        if (isSat) {
+          const wt = weekTotal(r);
+          grid += `<div class="j-day j-week ${wt < 0 ? "loss" : "profit"}">
+            <span class="j-week-label">Total</span>
+            <span class="j-date">${cell.d.getDate()}</span>
+            <span class="j-pnl ${wt < 0 ? "neg" : "pos"}">${money(wt)}</span></div>`;
+          continue;
+        }
+        const cls = cell.pnl === null ? "flat" : cell.pnl < 0 ? "loss" : "profit";
+        grid += `<div class="j-day ${cls}">
+          <span class="j-date">${cell.d.getDate()}</span>
+          ${cell.pnl === null ? "" : `<span class="j-pnl ${cell.pnl < 0 ? "neg" : "pos"}">${money(cell.pnl)}</span>`}
+        </div>`;
+      }
+    }
+
+    const winRate = traded ? Math.round((1000 * wins) / traded) / 10 : 0;
+    cardScroll.innerHTML = `
+      <div class="j-tabs">
+        ${Object.keys(JOURNAL_ACCOUNTS).map((k) => `
+          <button class="home-tab ${state.journalTab === k ? "active" : ""}" data-jtab="${k}">${
+            k === "personal" ? "Personal Account" : "Prop Firms"}</button>`).join("")}
+      </div>
+      <div class="j-cal">
+        <div class="j-cal-head">
+          <div class="j-month">
+            <span>${esc(monthName)}</span>
+            <button class="j-nav" data-jmonth="-1" aria-label="Previous month">‹</button>
+            <button class="j-nav" data-jmonth="1" aria-label="Next month">›</button>
+          </div>
+          <div class="j-cal-stats">
+            <span><span class="j-stat-label">Total P&amp;L</span>
+              <span class="j-stat-val ${total < 0 ? "neg" : "pos"}">${money(total)}</span></span>
+            <span><span class="j-stat-label">Win Rate</span>
+              <span class="j-stat-val cyan">${winRate}%</span></span>
+          </div>
+        </div>
+        <div class="j-dow">${["SUN","MON","TUE","WED","THU","FRI","SAT"].map((d) => `<span>${d}</span>`).join("")}</div>
+        <div class="j-grid">${grid}</div>
+      </div>
+      <button class="j-add" data-jadd aria-label="Add a trade manually — coming soon"></button>
+      <div class="j-stat-row">
+        ${JOURNAL_STATS.map((label) => `
+          <div class="j-stat-btn">
+            <span class="ci-orb" aria-hidden="true"></span>
+            <span class="ci-action-label">${esc(label)}</span>
+          </div>`).join("")}
+      </div>`;
+    cardScroll.scrollTop = 0;
+    cardFooter.style.display = "none";
+  }
+
+  function openJournal() {
+    stopAudio();
+    state.view = "journal";
+    state.slideDir = 0;
+    closeOverlay();
+    render();
+  }
+
   /* ring behind whichever dock icon matches the section you're in */
   function syncDockActive() {
     $("navCheckin").classList.toggle("active", state.view === "checkin");
+    $("navAdd").classList.toggle("active", state.view === "journal");
     $("navPlay").classList.toggle("active", state.view === "videos");
   }
 
   /* the check-in view swaps in its own date/time bar and dock */
   function syncCheckinChrome() {
     const on = state.view === "checkin";
+    const jr = state.view === "journal";
     checkinBar.classList.toggle("hidden", !on);
-    document.querySelectorAll(".bar")[1].classList.toggle("hidden", on);
+    $("journalBar").classList.toggle("hidden", !jr);
+    document.querySelectorAll(".bar")[1].classList.toggle("hidden", on || jr);
     clearInterval(clockTimer);
     if (on) clockTimer = setInterval(paintClock, 1000);
   }
@@ -761,13 +905,15 @@
   function render() {
     // navigating anywhere other than the library closes the player
     if (state.videoId && state.view !== "videos") tearDownPlayer();
-    const listy = state.view === "home" || state.view === "videos" || state.view === "checkin";
+    const listy = state.view === "home" || state.view === "videos"
+      || state.view === "checkin" || state.view === "journal";
     $("cardOuter").classList.toggle("outline-bg", listy);
     syncCheckinChrome();
     syncDockActive();
     if (state.view === "home") renderHome();
     else if (state.view === "videos") renderVideos();
     else if (state.view === "checkin") renderCheckin();
+    else if (state.view === "journal") renderJournal();
     else renderScreen();
   }
 
@@ -1094,23 +1240,27 @@
   $("btnBarHome").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
   $("btnCheckinHome").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
   $("btnCheckinProfile").addEventListener("click", openProfile);
-  $("navAdd").addEventListener("click", () => {
-    openOverlay(panelHead("Trade Journal") + `
-      <div class="liked-empty">
-        <img src="assets/nav-icons/icon-trade-journal@2x.png" alt="" style="width:64px;display:block;margin:0 auto 14px;filter:drop-shadow(0 0 12px rgba(61,223,255,.4))">
-        The Trade Journal is coming soon — log your entries, review your trades
-        and see what your discipline is actually costing or earning you.
-      </div>
-      <button class="btn-primary" data-close>Got it</button>`);
-  });
+  $("navAdd").addEventListener("click", openJournal);
+  $("btnJournalHome").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
+  $("btnJournalProfile").addEventListener("click", openProfile);
 
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-jtab],[data-jmonth],[data-jadd]");
     if (!t) return;
 
-    if (t.dataset.ci) {
+    if (t.dataset.jtab) { state.journalTab = t.dataset.jtab; renderJournal(); }
+    else if (t.dataset.jmonth) { state.journalMonth += +t.dataset.jmonth; renderJournal(); }
+    else if (t.hasAttribute("data-jadd")) {
+      openOverlay(panelHead("Add a Trade") + `
+        <div class="liked-empty">
+          Manual trade entry is coming soon — you'll be able to log each trade,
+          tag the setup and see it land on this calendar.
+        </div>
+        <button class="btn-primary" data-close>Got it</button>`);
+    }
+    else if (t.dataset.ci) {
       const id = t.dataset.ci;
       if (store.checklist[id]) delete store.checklist[id]; else store.checklist[id] = true;
       save();

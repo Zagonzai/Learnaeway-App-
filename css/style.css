@@ -1078,6 +1078,140 @@ img { user-select: none; -webkit-user-drag: none; }
 }
 .sv-other.hidden { display: none; }
 
+/* ===================== TRADE JOURNAL (Phase 1: layout) ===================== */
+
+.bar-journal.hidden { display: none; }
+.journal-summary {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  white-space: nowrap;
+  overflow: hidden;
+}
+.j-broker {
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1.15;
+  color: #C7D9EF;
+  flex: 0 1 auto;
+  min-width: 0;
+  max-width: 58px;
+  white-space: normal;
+  text-align: right;
+}
+.j-balance {
+  flex: 0 0 auto;
+  font-size: calc(15px * var(--fs));
+  font-weight: 800;
+  color: #EAF6FF;
+  text-shadow: 0 0 12px rgba(61,223,255,.45);
+}
+.j-change { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-start; line-height: 1.2; }
+.j-change-label { font-size: 9.5px; font-weight: 600; color: #8FB4D8; }
+.j-change .pos, .j-stat-val.pos, .j-pnl.pos { color: #2FE6C2; }
+.j-change .neg, .j-stat-val.neg, .j-pnl.neg { color: #FF6B9D; }
+.j-change span:last-child { font-size: 10.5px; font-weight: 700; }
+
+/* account toggle — same pill style as the Home tabs */
+.j-tabs { display: flex; gap: 12px; margin: 2px 0 16px; }
+.j-tabs .home-tab { flex: 1 1 0; }
+
+.j-cal {
+  padding: 12px 10px 14px;
+  border-radius: 20px;
+  background: rgba(4,7,18,.55);
+  border: 1px solid rgba(61,223,255,.22);
+}
+.j-cal-head { display: flex; align-items: flex-start; justify-content: space-between; gap: 10px; margin-bottom: 12px; }
+.j-month { display: flex; align-items: center; gap: 6px; font-size: calc(15px * var(--fs)); font-weight: 700; color: #EAF6FF; }
+.j-nav {
+  width: 26px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid rgba(61,223,255,.35);
+  color: #C7D9EF;
+  font-size: 15px;
+  line-height: 1;
+}
+.j-nav:active { border-color: var(--cyan); filter: brightness(1.3); }
+.j-cal-stats { display: flex; gap: 14px; text-align: center; }
+.j-cal-stats > span { display: flex; flex-direction: column; gap: 2px; }
+.j-stat-label { font-size: 9.5px; font-weight: 600; letter-spacing: .04em; color: #8FB4D8; }
+.j-stat-val { font-size: calc(13px * var(--fs)); font-weight: 800; }
+.j-stat-val.cyan { color: var(--cyan); }
+
+.j-dow, .j-grid { display: grid; grid-template-columns: repeat(7, 1fr); gap: 3px; }
+.j-dow {
+  margin-bottom: 5px;
+  padding-bottom: 5px;
+  border-bottom: 1px solid rgba(61,223,255,.16);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  color: #8FB4D8;
+  text-align: center;
+}
+/* day cells: colour carries the outcome, so no artwork is needed */
+.j-day {
+  min-height: 42px;
+  padding: 3px 2px;
+  border-radius: 7px;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 1px;
+  border: 1px solid rgba(61,223,255,.14);
+  background: rgba(9,13,30,.5);
+}
+.j-date { font-size: calc(12.5px * var(--fs)); font-weight: 700; color: #EAF6FF; line-height: 1.1; }
+.j-pnl { font-size: 8.5px; font-weight: 700; line-height: 1.1; }
+.j-day.out { border-color: rgba(61,223,255,.07); background: rgba(9,13,30,.25); }
+.j-day.out, .j-day.out .j-date { color: #46567A; }
+.j-day.profit { background: rgba(47,230,194,.1);  border-color: rgba(47,230,194,.4); }
+.j-day.loss   { background: rgba(255,61,154,.12); border-color: rgba(255,61,154,.45); }
+.j-week-label {
+  font-size: 7.5px;
+  font-weight: 700;
+  letter-spacing: .05em;
+  color: #9FC0E0;
+  line-height: 1;
+}
+
+/* manual entry — the dock's "+" treatment at button scale */
+.j-add {
+  position: relative;
+  display: block;
+  width: 66px;
+  height: 66px;
+  margin: 20px auto 4px;
+  border-radius: 50%;
+  border: 1.5px solid rgba(61,223,255,.5);
+  background: radial-gradient(circle at 36% 30%, rgba(61,223,255,.22), rgba(9,13,30,.92) 70%);
+  box-shadow: 0 0 20px -2px rgba(61,223,255,.6), inset 0 0 14px rgba(123,95,192,.35);
+}
+.j-add::before, .j-add::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  margin: auto;
+  background: #EAF6FF;
+  border-radius: 2px;
+  box-shadow: 0 0 10px rgba(61,223,255,.8);
+}
+.j-add::before { width: 26px; height: 3px; }
+.j-add::after  { width: 3px;  height: 26px; }
+.j-add:active { transform: scale(.94); filter: brightness(1.3); }
+
+/* four stat placeholders — same frame asset as the check-in category buttons */
+.j-stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 16px 0 2px; }
+.j-stat-btn { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+
 /* ===================== TRADE DAY CHECK-IN ===================== */
 
 /* date/time bar — replaces the progress bar on this screen. Home sits hard
