@@ -39,7 +39,7 @@
   if (!store.journalImport) store.journalImport = {};   // account -> YYYY-MM-DD -> day totals
   if (!store.journalManual) store.journalManual = {};   // account -> YYYY-MM-DD -> [manual trades]
   if (!store.journalAccounts) store.journalAccounts = [];  // user-added brokerage accounts
-  if (!store.journalActive) store.journalActive = null;
+  if (!store.journalActive) store.journalActive = "__all";   // "__all" = combined view
   // "Daily Bias" was renamed to "Market Awareness" — carry answers already
   // recorded under the old id, including inside submitted day logs
   let renamed = false;
@@ -870,7 +870,11 @@
     // import wins over sample/manual figures for the days it covers — it's the
     // real broker record. Change here if manual entry should take precedence.
     const account = activeAccount();
-    if (!account) throw new Error("Add an account before importing trades.");
+    if (!account) {
+      throw new Error((store.journalAccounts || []).length
+        ? "Select a single account before importing — the combined view can't receive trades."
+        : "Add an account before importing trades.");
+    }
     const acct = store.journalImport[account.id] || (store.journalImport[account.id] = {});
     Object.keys(days).forEach((k) => { acct[k] = days[k]; });
     save();
@@ -891,9 +895,18 @@
   function accountsIn(category) {
     return (store.journalAccounts || []).filter((a) => a.category === category);
   }
+  /* the combined view is the default; a specific account can be selected to
+     see its balance and calendar on its own */
+  function isCombined() {
+    return store.journalActive === "__all" || !activeAccount();
+  }
   function activeAccount() {
-    const list = accountsIn(state.journalTab);
-    return list.find((a) => a.id === store.journalActive) || list[0] || null;
+    return (store.journalAccounts || []).find((a) => a.id === store.journalActive) || null;
+  }
+  /* which accounts the current scope covers — every one when combined */
+  function scopeAccounts() {
+    const a = activeAccount();
+    return a ? [a] : (store.journalAccounts || []);
   }
   function accountLabel(a) {
     return a.nickname ? `${a.platform} · ${a.nickname}` : a.platform;
@@ -943,6 +956,20 @@
     return { pnl: Math.round(t.pnl * 100) / 100, wins: t.wins, losses: t.losses };
   }
 
+  /* the same day across every account in scope, added together */
+  function scopeDay(accts, y, m, d) {
+    let hit = false;
+    const t = accts.reduce((a, acc) => {
+      const info = journalDay(acc.id, y, m, d);
+      if (info) { hit = true; a.pnl += info.pnl; a.wins += info.wins; a.losses += info.losses; }
+      return a;
+    }, { pnl: 0, wins: 0, losses: 0 });
+    return hit ? { pnl: Math.round(t.pnl * 100) / 100, wins: t.wins, losses: t.losses } : null;
+  }
+  function scopeBalance(accts) {
+    return Math.round(accts.reduce((t, a) => t + accountBalance(a), 0) * 100) / 100;
+  }
+
   function money(n, cents) {
     const v = Math.abs(n).toLocaleString("en-US", cents
       ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : { maximumFractionDigits: 0 });
@@ -953,19 +980,19 @@
   }
 
   function renderJournal() {
+    const all = store.journalAccounts || [];
     const acct = activeAccount();
-    if (acct) store.journalActive = acct.id;
-    barTitle.textContent = acct
-      ? `${accountLabel(acct)} Journal`
-      : (state.journalTab === "personal" ? "Personal Account Trade Journal" : "Prop Firms Trade Journal");
+    const scope = scopeAccounts();
+    barTitle.textContent = acct ? `${accountLabel(acct)} Journal` : "All Accounts Trade Journal";
 
-    const balance = acct ? accountBalance(acct) : 0;
+    const balance = scopeBalance(scope);
     const today = new Date();
-    const todayInfo = acct ? journalDay(acct.id, today.getFullYear(), today.getMonth(), today.getDate()) : null;
+    const todayInfo = scope.length
+      ? scopeDay(scope, today.getFullYear(), today.getMonth(), today.getDate()) : null;
     const change = todayInfo ? todayInfo.pnl : 0;
     const pct = balance - change !== 0 ? Math.round((10000 * change) / (balance - change)) / 100 : 0;
     $("journalSummary").innerHTML = `
-      <span class="j-broker">${esc(acct ? acct.platform : "No account")}</span>
+      <span class="j-broker">${esc(acct ? acct.platform : (all.length ? `All ${all.length} accounts` : "No accounts"))}</span>
       <span class="j-balance">${plainMoney(balance)}</span>
       <span class="j-change">
         <span class="j-change-label">Daily Change</span>
@@ -982,6 +1009,11 @@
     const list = accountsIn(state.journalTab);
     const picker = `
       <div class="j-accounts">
+        ${all.length ? `
+          <button class="j-acct j-acct-all ${isCombined() ? "on" : ""}" data-jacct="__all">
+            <span class="j-acct-name">All Accounts</span>
+            <span class="j-acct-bal">${plainMoney(scopeBalance(all))}</span>
+          </button>` : ""}
         ${list.map((a) => `
           <button class="j-acct ${acct && a.id === acct.id ? "on" : ""}" data-jacct="${esc(a.id)}">
             <span class="j-acct-name">${esc(accountLabel(a))}</span>
@@ -990,10 +1022,11 @@
         <button class="j-acct j-acct-add" data-jaddacct>+ Add Account</button>
       </div>`;
 
-    if (!acct) {
+    if (!scope.length) {
       cardScroll.innerHTML = tabs + picker + `
-        <div class="liked-empty">No ${state.journalTab === "personal" ? "personal" : "prop firm"} accounts yet.<br>
-          Add one to start logging trades — it begins at the balance you enter, with an empty calendar.</div>`;
+        <div class="liked-empty">No accounts yet.<br>
+          Add one to start logging trades — it begins at the balance you enter, with an empty
+          calendar. Everything here is typed in by you; nothing connects to a real broker.</div>`;
       cardFooter.style.display = "none";
       return;
     }
@@ -1008,7 +1041,7 @@
     for (let i = 0; i < 42; i++) {
       const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
       const inMonth = d.getMonth() === m && d.getFullYear() === y;
-      const info = inMonth ? journalDay(acct.id, y, m, d.getDate()) : null;
+      const info = inMonth ? scopeDay(scope, y, m, d.getDate()) : null;
       if (info) { total += info.pnl; wins += info.wins; losses += info.losses; }
       cells.push({ d, inMonth, pnl: info ? info.pnl : null });
     }
@@ -1078,6 +1111,8 @@
   /* ---- add an account ---- */
   function openAddAccount() {
     openOverlay(panelHead("Add Account") + `
+      <div class="notes-hint" style="margin:0 0 14px">Manual tracking only — you type the
+        name and the balance. Nothing links to a real brokerage.</div>
       <form id="acctForm" autocomplete="off" novalidate>
         <label class="mt-label">Platform
           <select class="mt-input" name="platform">
@@ -1131,7 +1166,13 @@
   /* ---- deposits and withdrawals ---- */
   function openCashFlow() {
     const a = activeAccount();
-    if (!a) return;
+    if (!a) {
+      openOverlay(panelHead("Deposit / Withdraw") + `
+        <div class="liked-empty">Pick a single account first — deposits and withdrawals
+          belong to one account, not the combined view.</div>
+        <button class="btn-primary" data-close>Got it</button>`);
+      return;
+    }
     const log = (a.ledger || []).slice().reverse().slice(0, 8);
     openOverlay(panelHead("Deposit / Withdraw") + `
       <div class="notes-hint" style="margin:0 0 12px">${esc(accountLabel(a))} — balance ${plainMoney(accountBalance(a))}</div>
@@ -1213,7 +1254,13 @@
     if (isNaN(amount)) { err.textContent = "Enter the amount won or lost."; err.classList.remove("hidden"); return; }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) { err.textContent = "Pick a date for the trade."; err.classList.remove("hidden"); return; }
     const account = activeAccount();
-    if (!account) { err.textContent = "Add an account first."; err.classList.remove("hidden"); return; }
+    if (!account) {
+      err.textContent = (store.journalAccounts || []).length
+        ? "Pick a single account first — trades can't go into the combined view."
+        : "Add an account first.";
+      err.classList.remove("hidden");
+      return;
+    }
     const acct = store.journalManual[account.id] || (store.journalManual[account.id] = {});
     (acct[day] || (acct[day] = [])).push({
       platform: val("platform"), asset: val("asset"),
@@ -1642,7 +1689,13 @@
     else if (t.dataset.jmonth) { state.journalMonth += +t.dataset.jmonth; renderJournal(); }
     else if (t.hasAttribute("data-jimport")) { closeOverlay(); $("jCsvFile").click(); }
     else if (t.hasAttribute("data-jmanual")) openManualTrade();
-    else if (t.dataset.jacct) { store.journalActive = t.dataset.jacct; save(); renderJournal(); }
+    else if (t.dataset.jacct) {
+      store.journalActive = t.dataset.jacct;
+      const sel = activeAccount();
+      if (sel) state.journalTab = sel.category;
+      save();
+      renderJournal();
+    }
     else if (t.hasAttribute("data-jaddacct")) openAddAccount();
     else if (t.hasAttribute("data-jsaveacct")) saveAccount();
     else if (t.hasAttribute("data-jcash")) openCashFlow();
