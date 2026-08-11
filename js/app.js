@@ -40,6 +40,7 @@
   if (!store.journalManual) store.journalManual = {};   // account -> YYYY-MM-DD -> [manual trades]
   if (!store.journalAccounts) store.journalAccounts = [];  // user-added brokerage accounts
   if (!store.journalActive) store.journalActive = "__all";   // "__all" = combined view
+  if (!store.propLedger) store.propLedger = {};         // prop account -> [evaluation/reset/payout]
   // "Daily Bias" was renamed to "Market Awareness" — carry answers already
   // recorded under the old id, including inside submitted day logs
   let renamed = false;
@@ -94,6 +95,7 @@
       journalImport: store.journalImport || {},
       journalManual: store.journalManual || {},
       journalAccounts: store.journalAccounts || [],
+      propLedger: store.propLedger || {},
       settings: store.settings || {},
       updatedAt: new Date().toISOString(),
     };
@@ -927,6 +929,146 @@
     return Math.round((a.start + ledger + accountRealised(a.id)) * 100) / 100;
   }
 
+  /* ---------------- prop firm net P&L ----------------
+     Evaluations and resets are money out, payouts are money in. This is a
+     spend-vs-earned view of the prop firm business and is deliberately kept
+     out of accountBalance(): a challenge balance is simulated, whereas these
+     are real dollars. Manual entry only — bank linking (Plaid-style
+     auto-detection of evaluations, resets and payouts) is a possible later
+     phase, not built here. */
+
+  const PROP_KINDS = [
+    { id: "evaluation", label: "Evaluation", out: true },
+    { id: "reset", label: "Reset", out: true },
+    { id: "payout", label: "Payout", out: false },
+  ];
+
+  function propTotals(id) {
+    return (store.propLedger[id] || []).reduce((t, e) => {
+      if (e.kind === "payout") t.earned += e.amount; else t.spent += e.amount;
+      return t;
+    }, { spent: 0, earned: 0 });
+  }
+  function propNet(id) {
+    const t = propTotals(id);
+    return Math.round((t.earned - t.spent) * 100) / 100;
+  }
+  function propTotalsAll() {
+    return accountsIn("prop").reduce((t, a) => {
+      const x = propTotals(a.id);
+      t.spent += x.spent; t.earned += x.earned;
+      return t;
+    }, { spent: 0, earned: 0 });
+  }
+
+  function propCardHTML() {
+    const accts = accountsIn("prop");
+    const all = propTotalsAll();
+    const net = Math.round((all.earned - all.spent) * 100) / 100;
+    return `
+      <div class="pf-card">
+        <div class="pf-head">Prop Firm Net P&amp;L</div>
+        <div class="pf-net ${net < 0 ? "neg" : "pos"}">${money(net, true)}</div>
+        <div class="pf-sub">across ${accts.length} prop ${accts.length === 1 ? "account" : "accounts"} — real money spent vs. returned</div>
+        <div class="pf-split">
+          <span><span class="pf-k">Spent</span><span class="pf-v neg">${plainMoney(all.spent)}</span></span>
+          <span><span class="pf-k">Earned</span><span class="pf-v pos">${plainMoney(all.earned)}</span></span>
+        </div>
+        ${accts.length ? `<div class="pf-rows">
+          ${accts.map((a) => {
+            const t = propTotals(a.id);
+            const n = Math.round((t.earned - t.spent) * 100) / 100;
+            return `<button class="pf-row" data-pfacct="${esc(a.id)}">
+              <span class="pf-row-name">${esc(accountLabel(a))}</span>
+              <span class="pf-row-nums">
+                <span class="neg">-${plainMoney(t.spent).slice(1)}</span>
+                <span class="pos">+${plainMoney(t.earned).slice(1)}</span>
+                <span class="pf-row-net ${n < 0 ? "neg" : "pos"}">${money(n, true)}</span>
+              </span>
+            </button>`;
+          }).join("")}
+        </div>` : `<div class="pf-empty">Add a prop firm account to start logging evaluations, resets and payouts.</div>`}
+        ${accts.length ? `<button class="pf-log" data-pflog>Log Evaluation / Reset / Payout</button>` : ""}
+      </div>`;
+  }
+
+  function openPropLog(preId) {
+    const accts = accountsIn("prop");
+    if (!accts.length) return;
+    const pre = accts.find((a) => a.id === preId) || activeAccount() || accts[0];
+    openOverlay(panelHead("Log Prop Firm Entry") + `
+      <div class="notes-hint" style="margin:0 0 14px">Manual entry — evaluations and resets
+        count as spend, payouts as income. Nothing is detected automatically.</div>
+      <form id="pfForm" autocomplete="off" novalidate>
+        <label class="mt-label">Account
+          <select class="mt-input" name="account">
+            ${accts.map((a) => `<option value="${esc(a.id)}"${a.id === (pre && pre.id) ? " selected" : ""}>${esc(accountLabel(a))}</option>`).join("")}
+          </select>
+        </label>
+        <label class="mt-label">Type
+          <select class="mt-input" name="kind">
+            ${PROP_KINDS.map((k) => `<option value="${k.id}">${k.label}${k.out ? " (spend)" : " (income)"}</option>`).join("")}
+          </select>
+        </label>
+        <label class="mt-label">Firm name
+          <input class="mt-input" name="firm" type="text" value="${esc(pre ? pre.platform : "")}" placeholder="Lucid, Apex, Topstep…"></label>
+        <label class="mt-label">Amount ($)
+          <input class="mt-input" name="amount" type="text" inputmode="decimal" placeholder="0.00"></label>
+        <label class="mt-label">Date
+          <input class="mt-input mt-date" name="date" type="date" value="${todayKey()}"></label>
+        <div id="pfError" class="gate-error hidden"></div>
+        <button type="button" class="btn-primary" data-pfsave>Log It</button>
+      </form>`);
+    // firm follows the chosen account unless the user has typed their own
+    const sel = document.querySelector('#pfForm [name="account"]');
+    const firm = document.querySelector('#pfForm [name="firm"]');
+    let touched = false;
+    firm.addEventListener("input", () => { touched = true; });
+    sel.addEventListener("change", () => {
+      if (touched) return;
+      const a = accts.find((x) => x.id === sel.value);
+      if (a) firm.value = a.platform;
+    });
+  }
+
+  function savePropEntry() {
+    const f = $("pfForm");
+    const err = $("pfError");
+    const get = (n) => (new FormData(f).get(n) || "").toString().trim();
+    const amount = parseFloat(get("amount").replace(/[^0-9.]/g, ""));
+    if (isNaN(amount) || amount <= 0) { err.textContent = "Enter an amount."; err.classList.remove("hidden"); return; }
+    const id = get("account");
+    if (!id) { err.textContent = "Pick an account."; err.classList.remove("hidden"); return; }
+    const list = store.propLedger[id] || (store.propLedger[id] = []);
+    list.push({ kind: get("kind") || "evaluation", firm: get("firm"),
+                amount: Math.round(amount * 100) / 100, date: get("date") || todayKey() });
+    save();
+    closeOverlay();
+    state.journalTab = "prop";
+    renderJournal();
+  }
+
+  function openPropDetail(id) {
+    const a = (store.journalAccounts || []).find((x) => x.id === id);
+    if (!a) return;
+    const t = propTotals(id);
+    const net = Math.round((t.earned - t.spent) * 100) / 100;
+    const log = (store.propLedger[id] || []).slice().reverse();
+    openOverlay(panelHead(accountLabel(a)) + `
+      <div class="pf-split" style="margin-bottom:14px">
+        <span><span class="pf-k">Spent</span><span class="pf-v neg">${plainMoney(t.spent)}</span></span>
+        <span><span class="pf-k">Earned</span><span class="pf-v pos">${plainMoney(t.earned)}</span></span>
+        <span><span class="pf-k">Net</span><span class="pf-v ${net < 0 ? "neg" : "pos"}">${money(net, true)}</span></span>
+      </div>
+      ${log.length ? log.map((e) => `<div class="j-ledger">
+          <span>${esc(e.date)} · ${esc((PROP_KINDS.find((k) => k.id === e.kind) || {}).label || e.kind)}${e.firm ? " · " + esc(e.firm) : ""}</span>
+          <span class="${e.kind === "payout" ? "pos" : "neg"}">${e.kind === "payout" ? "+" : "-"}${plainMoney(e.amount).slice(1)}</span>
+        </div>`).join("")
+        : `<div class="liked-empty">Nothing logged for this account yet.</div>`}
+      <button class="btn-secondary" data-pflog="${esc(id)}">Log Another</button>
+      <button class="btn-primary" data-close>Done</button>`);
+  }
+
   function journalDate() {
     const now = new Date();
     return new Date(now.getFullYear(), now.getMonth() + state.journalMonth, 1);
@@ -1022,8 +1164,9 @@
         <button class="j-acct j-acct-add" data-jaddacct>+ Add Account</button>
       </div>`;
 
+    const propCard = state.journalTab === "prop" ? propCardHTML() : "";
     if (!scope.length) {
-      cardScroll.innerHTML = tabs + picker + `
+      cardScroll.innerHTML = tabs + picker + propCard + `
         <div class="liked-empty">No accounts yet.<br>
           Add one to start logging trades — it begins at the balance you enter, with an empty
           calendar. Everything here is typed in by you; nothing connects to a real broker.</div>`;
@@ -1073,7 +1216,7 @@
 
     const decided = wins + losses;   // break-even trades sit out of the denominator
     const winRate = decided ? Math.round((1000 * wins) / decided) / 10 : 0;
-    cardScroll.innerHTML = tabs + picker + `
+    cardScroll.innerHTML = tabs + picker + propCard + `
       <div class="j-cal">
         <div class="j-cal-head">
           <div class="j-month">
@@ -1682,10 +1825,17 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pflog],[data-pfsave],[data-pfacct]");
     if (!t) return;
 
-    if (t.dataset.jtab) { state.journalTab = t.dataset.jtab; renderJournal(); }
+    if (t.dataset.jtab) {
+      state.journalTab = t.dataset.jtab;
+      // a selected account from the other category would leave the header
+      // showing figures the picker below doesn't list — fall back to combined
+      const sel = activeAccount();
+      if (sel && sel.category !== state.journalTab) { store.journalActive = "__all"; save(); }
+      renderJournal();
+    }
     else if (t.dataset.jmonth) { state.journalMonth += +t.dataset.jmonth; renderJournal(); }
     else if (t.hasAttribute("data-jimport")) { closeOverlay(); $("jCsvFile").click(); }
     else if (t.hasAttribute("data-jmanual")) openManualTrade();
@@ -1699,6 +1849,9 @@
     else if (t.hasAttribute("data-jaddacct")) openAddAccount();
     else if (t.hasAttribute("data-jsaveacct")) saveAccount();
     else if (t.hasAttribute("data-jcash")) openCashFlow();
+    else if (t.hasAttribute("data-pflog")) openPropLog(t.getAttribute("data-pflog"));
+    else if (t.hasAttribute("data-pfsave")) savePropEntry();
+    else if (t.dataset.pfacct) openPropDetail(t.dataset.pfacct);
     else if (t.hasAttribute("data-jsavecash")) saveCashFlow();
     else if (t.hasAttribute("data-jsave")) saveManualTrade();
     else if (t.hasAttribute("data-jadd")) {
