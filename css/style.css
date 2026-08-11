@@ -1078,6 +1078,71 @@ img { user-select: none; -webkit-user-drag: none; }
 }
 .sv-other.hidden { display: none; }
 
+/* Start Day result */
+.ci-result { text-align: center; padding: 4px 0 2px; }
+.ci-result-title {
+  font-size: calc(23px * var(--fs));
+  font-weight: 800;
+  letter-spacing: .04em;
+  margin-bottom: 12px;
+}
+.ci-result.go .ci-result-title { color: var(--teal); text-shadow: 0 0 20px rgba(47,230,194,.75); }
+.ci-result.stop .ci-result-title { color: #FF6B9D; text-shadow: 0 0 20px rgba(255,61,154,.7); }
+.ci-result-body {
+  font-size: calc(13.5px * var(--fs));
+  line-height: 1.55;
+  color: #D9EAFB;
+  margin-bottom: 6px;
+}
+
+/* manual trade entry form */
+.mt-label {
+  display: block;
+  margin-bottom: 12px;
+  font-size: 11px;
+  font-weight: 700;
+  letter-spacing: .07em;
+  text-transform: uppercase;
+  color: #8FB4D8;
+}
+.mt-row { display: flex; gap: 10px; }
+.mt-row .mt-label { flex: 1 1 0; }
+.mt-input {
+  display: block;
+  width: 100%;
+  height: 44px;
+  margin-top: 5px;
+  padding: 0 14px;
+  border-radius: 12px;
+  border: 1px solid rgba(61,223,255,.3);
+  background: rgba(9,13,30,.75);
+  color: var(--text);
+  font-family: inherit;
+  font-size: 16px;                  /* >=16px keeps iOS from zooming on focus */
+  font-weight: 600;
+  letter-spacing: normal;
+  text-transform: none;
+  outline: none;
+  -webkit-appearance: none;
+  appearance: none;
+}
+.mt-input:focus { border-color: var(--cyan); }
+.mt-date { color-scheme: dark; }
+.mt-result {
+  margin: 2px 0 12px;
+  padding: 9px;
+  border-radius: 10px;
+  text-align: center;
+  font-size: 12.5px;
+  font-weight: 800;
+  letter-spacing: .1em;
+  color: #8FB4D8;
+  border: 1px solid rgba(61,223,255,.2);
+}
+.mt-result.win  { color: var(--teal);  border-color: rgba(47,230,194,.6);  background: rgba(47,230,194,.1); }
+.mt-result.loss { color: #FF6B9D;      border-color: rgba(255,61,154,.6);  background: rgba(255,61,154,.12); }
+.mt-result.flat { color: #C7D9EF; }
+
 /* ===================== TRADE JOURNAL (Phase 1: layout) ===================== */
 
 .bar-journal.hidden { display: none; }
@@ -1116,8 +1181,14 @@ img { user-select: none; -webkit-user-drag: none; }
 .j-change span:last-child { font-size: 10.5px; font-weight: 700; }
 
 /* account toggle — same pill style as the Home tabs */
-.j-tabs { display: flex; gap: 12px; margin: 2px 0 16px; }
-.j-tabs .home-tab { flex: 1 1 0; }
+/* the pills use the shared label-button art; the selected one is brightened
+   and glows rather than filled, since the art carries its own colour */
+.j-tabs { display: flex; gap: 6px; margin: 2px 0 16px; }
+.j-tabs .home-tab { flex: 1 1 0; font-size: calc(11.5px * var(--fs)); letter-spacing: .05em; }
+.j-tabs .home-tab.active {
+  filter: brightness(1.28) drop-shadow(0 0 10px rgba(61,223,255,.6));
+  color: #FFFFFF;
+}
 
 .j-cal {
   padding: 12px 10px 14px;
@@ -1187,13 +1258,13 @@ img { user-select: none; -webkit-user-drag: none; }
 .j-add {
   position: relative;
   display: block;
-  width: 66px;
-  height: 66px;
+  width: 72px;
+  height: 72px;
   margin: 20px auto 4px;
+  border: 0;
   border-radius: 50%;
-  border: 1.5px solid rgba(61,223,255,.5);
-  background: radial-gradient(circle at 36% 30%, rgba(61,223,255,.22), rgba(9,13,30,.92) 70%);
-  box-shadow: 0 0 20px -2px rgba(61,223,255,.6), inset 0 0 14px rgba(123,95,192,.35);
+  background: url("../assets/buttons-icon/plus-button@2x.png") center / contain no-repeat;
+  box-shadow: 0 0 22px -6px rgba(61,223,255,.7);
 }
 .j-add::before, .j-add::after {
   content: "";
@@ -1202,28 +1273,16 @@ img { user-select: none; -webkit-user-drag: none; }
   margin: auto;
   background: #EAF6FF;
   border-radius: 2px;
-  box-shadow: 0 0 10px rgba(61,223,255,.8);
+  box-shadow: 0 0 10px rgba(61,223,255,.85);
 }
-.j-add::before { width: 26px; height: 3px; }
-.j-add::after  { width: 3px;  height: 26px; }
+.j-add::before { width: 28px; height: 3px; }
+.j-add::after  { width: 3px;  height: 28px; }
 .j-add:active { transform: scale(.94); filter: brightness(1.3); }
 
-.j-import {
-  display: block;
-  margin: 12px auto 2px;
-  padding: 9px 20px;
-  border-radius: 999px;
-  border: 1px solid rgba(61,223,255,.4);
-  background: rgba(10,16,34,.72);
-  font-size: calc(12.5px * var(--fs));
-  font-weight: 700;
-  letter-spacing: .06em;
-  color: #C7D9EF;
-}
-.j-import:active { border-color: var(--cyan); filter: brightness(1.3); }
 .j-file { display: none; }
-/* days sourced from a broker export read slightly brighter than sample days */
-.j-day.imported { box-shadow: inset 0 0 0 1px rgba(61,223,255,.35); }
+/* days backed by real data — imported or manually logged — read slightly
+   brighter than the Phase-1 sample days */
+.j-day.real { box-shadow: inset 0 0 0 1px rgba(61,223,255,.35); }
 
 /* four stat placeholders — same frame asset as the check-in category buttons */
 .j-stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 16px 0 2px; }
@@ -1326,33 +1385,32 @@ img { user-select: none; -webkit-user-drag: none; }
 .ci-row.yes .ci-yes::before { opacity: 1; }
 .ci-row.no  .ci-no::before  { opacity: 1; }
 
-.ci-submit {
-  display: block;
-  width: 62%;
-  margin: 16px auto 2px;
-  padding: 12px;
-  border-radius: 999px;
-  border: 1.5px solid rgba(61,223,255,.5);
-  /* elliptical, so the sheen spans the pill instead of pooling in a circle */
-  background:
-    radial-gradient(120% 180% at 22% 0%, rgba(61,223,255,.3), rgba(61,223,255,0) 60%),
-    linear-gradient(180deg, rgba(20,32,64,.9), rgba(7,10,24,.95));
-  box-shadow: 0 0 22px -4px rgba(61,223,255,.75), inset 0 0 16px rgba(123,95,192,.4);
-  font-size: calc(14.5px * var(--fs));
+/* label-button asset: end circles + centre bar, 9-sliced so the circles stay
+   round and only the bar stretches. Shared by Submit and the journal's
+   Personal Account / Prop Firms toggle. */
+.ci-submit, .j-tabs .home-tab {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 52px;
+  padding: 0 6px;
+  border-radius: 0;
+  border-style: solid;
+  border-width: 0 52px;              /* == height, so the end circles stay round */
+  border-image: url("../assets/buttons-icon/label-button@2x.png") 0 108 fill / 0 52px stretch;
+  background: none;
+  box-shadow: none;
+  font-size: calc(13.5px * var(--fs));
   font-weight: 800;
-  letter-spacing: .12em;
+  letter-spacing: .1em;
   text-transform: uppercase;
   color: #EAF6FF;
+  opacity: 1;
 }
-.ci-submit:active { transform: scale(.97); filter: brightness(1.3); }
-/* dimmed until all seven rows carry an answer */
-.ci-submit.off {
-  opacity: .4;
-  border-color: rgba(61,223,255,.22);
-  box-shadow: none;
-  color: #9FC0E0;
-  cursor: default;
-}
+.ci-submit { width: 78%; margin: 16px auto 2px; }
+.ci-submit:active, .j-tabs .home-tab:active { filter: brightness(1.3); transform: scale(.98); }
+
+.ci-submit.off { opacity: .4; color: #9FC0E0; cursor: default; }
 
 /* four round action placeholders — laid out but inert until specified */
 .ci-actions {

@@ -37,6 +37,22 @@
   if (!store.videosWatched) store.videosWatched = {};   // videoId -> true
   if (!store.checkinLog) store.checkinLog = {};         // YYYY-MM-DD -> submitted answers
   if (!store.journalImport) store.journalImport = {};   // account -> YYYY-MM-DD -> day totals
+  if (!store.journalManual) store.journalManual = {};   // account -> YYYY-MM-DD -> [manual trades]
+  // "Daily Bias" was renamed to "Market Awareness" — carry answers already
+  // recorded under the old id, including inside submitted day logs
+  let renamed = false;
+  if (store.checklist && store.checklist["daily-bias"]) {
+    store.checklist["market-awareness"] = store.checklist["daily-bias"];
+    delete store.checklist["daily-bias"];
+    renamed = true;
+  }
+  Object.keys(store.checkinLog || {}).forEach((day) => {
+    const a = store.checkinLog[day] && store.checkinLog[day].answers;
+    if (a && a["daily-bias"]) { a["market-awareness"] = a["daily-bias"]; delete a["daily-bias"]; renamed = true; }
+  });
+  // written straight out rather than through save(): the cloud-sync timer it
+  // touches is declared further down and would still be in its dead zone here
+  if (renamed) { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) { /* quota */ } }
   function todayKey() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -74,6 +90,7 @@
       videosWatched: store.videosWatched || {},
       checkinLog: store.checkinLog || {},
       journalImport: store.journalImport || {},
+      journalManual: store.journalManual || {},
       settings: store.settings || {},
       updatedAt: new Date().toISOString(),
     };
@@ -88,7 +105,7 @@
     const cloud = await FB.loadUserDoc();
     if (!cloud) return false;
     // union maps (local device stays authoritative for its own recent edits)
-    for (const k of ["visited", "liked", "checklist", "notes", "videosWatched", "checkinLog", "journalImport"]) {
+    for (const k of ["visited", "liked", "checklist", "notes", "videosWatched", "checkinLog", "journalImport", "journalManual"]) {
       store[k] = Object.assign({}, cloud[k] || {}, store[k] || {});
     }
     if (!store.lastScreen && cloud.lastScreen) store.lastScreen = cloud.lastScreen;
@@ -146,7 +163,7 @@
     { id: "emotionally",   label: "Emotionally" },
     { id: "distraction",   label: "Distraction" },
     { id: "economic-news", label: "Economic News" },
-    { id: "daily-bias",    label: "Daily Bias" },
+    { id: "market-awareness", label: "Market Awareness" },
     { id: "ready-to-trade", label: "Are you ready to trade?" },
   ];
 
@@ -890,20 +907,30 @@
      "import is the source of truth" rule from the day to the month — remove
      this check if sample days should persist alongside imports. */
   function monthHasImport(y, m) {
-    const acct = store.journalImport[state.journalTab] || {};
     const prefix = `${y}-${String(m + 1).padStart(2, "0")}-`;
-    return Object.keys(acct).some((k) => k.indexOf(prefix) === 0);
+    const has = (map) => Object.keys(map || {}).some((k) => k.indexOf(prefix) === 0);
+    return has(store.journalImport[state.journalTab]) || has(store.journalManual[state.journalTab]);
   }
 
   /* imported broker data for a day, else the Phase-1 sample. Sample days count
      as a single win or loss so the win rate uses one formula throughout. */
   function journalDay(y, m, d, imported) {
-    const imp = (store.journalImport[state.journalTab] || {})[dayKey(y, m, d)];
-    if (imp) return { pnl: imp.pnl, wins: imp.wins, losses: imp.losses, imported: true };
+    const key = dayKey(y, m, d);
+    const imp = (store.journalImport[state.journalTab] || {})[key];
+    if (imp) return { pnl: imp.pnl, wins: imp.wins, losses: imp.losses, real: true };
+    const man = (store.journalManual[state.journalTab] || {})[key];
+    if (man && man.length) {
+      const t = man.reduce((a, x) => {
+        a.pnl += x.pnl;
+        if (x.pnl > 0) a.wins++; else if (x.pnl < 0) a.losses++;
+        return a;
+      }, { pnl: 0, wins: 0, losses: 0 });
+      return { pnl: Math.round(t.pnl * 100) / 100, wins: t.wins, losses: t.losses, real: true };
+    }
     if (imported) return null;                 // real month — no invented days
     const p = samplePnl(state.journalTab, y, m, d);
     if (p === null) return null;
-    return { pnl: p, wins: p > 0 ? 1 : 0, losses: p < 0 ? 1 : 0, imported: false };
+    return { pnl: p, wins: p > 0 ? 1 : 0, losses: p < 0 ? 1 : 0, real: false };
   }
 
   function money(n, cents) {
@@ -940,7 +967,7 @@
       const info = inMonth ? journalDay(y, m, d.getDate(), realMonth) : null;
       const pnl = info ? info.pnl : null;
       if (info) { total += info.pnl; wins += info.wins; losses += info.losses; traded++; }
-      cells.push({ d, inMonth, pnl, imported: !!(info && info.imported) });
+      cells.push({ d, inMonth, pnl, real: !!(info && info.real) });
       if (i >= 34 && d.getDate() >= daysIn && d.getMonth() === m) { /* keep filling to row end */ }
     }
     // trim trailing all-outside rows
@@ -964,7 +991,7 @@
             <span class="j-pnl ${wt < 0 ? "neg" : "pos"}">${money(wt)}</span></div>`;
           continue;
         }
-        const cls = (cell.pnl === null ? "flat" : cell.pnl < 0 ? "loss" : "profit") + (cell.imported ? " imported" : "");
+        const cls = (cell.pnl === null ? "flat" : cell.pnl < 0 ? "loss" : "profit") + (cell.real ? " real" : "");
         grid += `<div class="j-day ${cls}">
           <span class="j-date">${cell.d.getDate()}</span>
           ${cell.pnl === null ? "" : `<span class="j-pnl ${cell.pnl < 0 ? "neg" : "pos"}">${money(cell.pnl)}</span>`}
@@ -998,8 +1025,7 @@
         <div class="j-dow">${["SUN","MON","TUE","WED","THU","FRI","SAT"].map((d) => `<span>${d}</span>`).join("")}</div>
         <div class="j-grid">${grid}</div>
       </div>
-      <button class="j-add" data-jadd aria-label="Add a trade manually — coming soon"></button>
-      <button class="j-import" data-jimport>Import Broker CSV</button>
+      <button class="j-add" data-jadd aria-label="Add a trade"></button>
       <input id="jCsvFile" class="j-file" type="file" accept=".csv,text/csv">
       <div class="j-stat-row">
         ${JOURNAL_STATS.map((label) => `
@@ -1044,6 +1070,63 @@
     reader.onerror = () => { input.value = ""; };
     reader.readAsText(input.files[0]);
   });
+
+  /* Manual trade entry. Feeds the same day-level aggregation as the CSV
+     import, so a manually logged trade lands on the calendar exactly like an
+     imported one. A CSV import still wins for any day it covers. */
+  function openManualTrade() {
+    const today = todayKey();
+    openOverlay(panelHead("Manually Enter Trade") + `
+      <form id="manualTradeForm" autocomplete="off" novalidate>
+        <label class="mt-label">Platform<input class="mt-input" name="platform" type="text" placeholder="Tradovate, IBKR…"></label>
+        <label class="mt-label">Asset<input class="mt-input" name="asset" type="text" placeholder="MNQU6, ES, AAPL…"></label>
+        <div class="mt-row">
+          <label class="mt-label">Entry price<input class="mt-input" name="entry" type="text" inputmode="decimal" placeholder="0.00"></label>
+          <label class="mt-label">Exit price<input class="mt-input" name="exit" type="text" inputmode="decimal" placeholder="0.00"></label>
+        </div>
+        <label class="mt-label">Amount won or lost ($)
+          <input class="mt-input" id="mtAmount" name="amount" type="text" inputmode="text" placeholder="-125.50 for a loss">
+        </label>
+        <div class="mt-label">Date<input class="mt-input mt-date" name="day" type="date" value="${today}"></div>
+        <div class="mt-result" id="mtResult">Result follows the amount you enter</div>
+        <div id="mtError" class="gate-error hidden"></div>
+        <button type="button" class="btn-primary" data-jsave>Save Trade</button>
+      </form>`);
+    const amt = $("mtAmount");
+    const paint = () => {
+      const n = parseFloat(String(amt.value).replace(/[^0-9.\-]/g, ""));
+      const el = $("mtResult");
+      if (!amt.value.trim() || isNaN(n)) { el.className = "mt-result"; el.textContent = "Result follows the amount you enter"; return; }
+      el.className = "mt-result " + (n > 0 ? "win" : n < 0 ? "loss" : "flat");
+      el.textContent = n > 0 ? "WIN" : n < 0 ? "LOSS" : "BREAK EVEN";
+    };
+    amt.addEventListener("input", paint);
+    paint();
+  }
+
+  function saveManualTrade() {
+    const f = $("manualTradeForm");
+    const err = $("mtError");
+    const val = (n) => (new FormData(f).get(n) || "").toString().trim();
+    const amount = parseFloat(val("amount").replace(/[^0-9.\-]/g, ""));
+    const day = val("day");
+    if (isNaN(amount)) { err.textContent = "Enter the amount won or lost."; err.classList.remove("hidden"); return; }
+    if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) { err.textContent = "Pick a date for the trade."; err.classList.remove("hidden"); return; }
+    const acct = store.journalManual[state.journalTab] || (store.journalManual[state.journalTab] = {});
+    (acct[day] || (acct[day] = [])).push({
+      platform: val("platform"), asset: val("asset"),
+      entry: val("entry"), exit: val("exit"),
+      pnl: Math.round(amount * 100) / 100, loggedAt: new Date().toISOString(),
+    });
+    save();
+    const d = day.split("-");
+    state.journalMonth = (+d[0] - SAMPLE_MONTH.y) * 12 + (+d[1] - 1 - SAMPLE_MONTH.m);
+    renderJournal();
+    openOverlay(panelHead("Trade Saved") + `
+      <div class="liked-empty">${money(Math.round(amount * 100) / 100, true)}
+        logged for ${new Date(+d[0], +d[1] - 1, +d[2]).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}.</div>
+      <button class="btn-primary" data-close>Done</button>`);
+  }
 
   function openJournal() {
     stopAudio();
@@ -1416,19 +1499,19 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-jtab],[data-jmonth],[data-jadd],[data-jimport]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave]");
     if (!t) return;
 
     if (t.dataset.jtab) { state.journalTab = t.dataset.jtab; renderJournal(); }
     else if (t.dataset.jmonth) { state.journalMonth += +t.dataset.jmonth; renderJournal(); }
-    else if (t.hasAttribute("data-jimport")) $("jCsvFile").click();
+    else if (t.hasAttribute("data-jimport")) { closeOverlay(); $("jCsvFile").click(); }
+    else if (t.hasAttribute("data-jmanual")) openManualTrade();
+    else if (t.hasAttribute("data-jsave")) saveManualTrade();
     else if (t.hasAttribute("data-jadd")) {
       openOverlay(panelHead("Add a Trade") + `
-        <div class="liked-empty">
-          Manual trade entry is coming soon — you'll be able to log each trade,
-          tag the setup and see it land on this calendar.
-        </div>
-        <button class="btn-primary" data-close>Got it</button>`);
+        <div class="notes-hint" style="margin:0 0 14px">How would you like to add trades?</div>
+        <button class="btn-primary" data-jimport>Import Broker CSV</button>
+        <button class="btn-secondary" data-jmanual>Manually Enter Trade</button>`);
     }
     else if (t.dataset.ci) {
       const id = t.dataset.ci, val = t.dataset.ciVal;
@@ -1438,6 +1521,16 @@
       save();
       renderCheckin();
     }
+    else if (t.hasAttribute("data-ci-before")) {
+      closeOverlay();
+      // Before Trade has no screen yet — this is the hand-off point for it
+      openOverlay(panelHead("Before Trade") + `
+        <div class="liked-empty">The pre-market checklist is coming soon. It runs
+          before the open and applies whichever session you trade — Asian, London
+          or New York.</div>
+        <button class="btn-primary" data-close>Got it</button>`);
+    }
+    else if (t.hasAttribute("data-ci-exit")) { closeOverlay(); state.homeTab = "sections"; goHome(); }
     else if (t.hasAttribute("data-ci-submit")) {
       if (!CHECKIN_ITEMS.every((it) => store.checklist[it.id])) return;
       const answers = {};
@@ -1445,10 +1538,19 @@
       store.checkinLog[todayKey()] = { answers, submittedAt: new Date().toISOString() };
       save();
       renderCheckin();
-      openOverlay(panelHead("Start Day Logged") + `
-        <div class="liked-empty">Your Start Day answers are saved for
-          ${new Date().toLocaleDateString("en-US", { month: "long", day: "numeric" })}.</div>
-        <button class="btn-primary" data-close>Done</button>`);
+      // three or more "No" answers across the seven rows calls the day off.
+      // "Are you ready to trade?" is just one of the seven now, not an override.
+      const noCount = CHECKIN_ITEMS.filter((it) => answers[it.id] === "no").length;
+      const go = noCount < 3;
+      openOverlay(`<div class="ci-result ${go ? "go" : "stop"}">
+        <div class="ci-result-title">${go ? "Start Trade Day" : "Not a Trade Day"}</div>
+        <div class="ci-result-body">${go
+          ? `${noCount} of ${CHECKIN_ITEMS.length} marked No — you're clear to trade. Next is the pre-market checklist, which applies whichever session you trade.`
+          : `${noCount} of ${CHECKIN_ITEMS.length} marked No. Three or more says today isn't the day. Protect the account and come back tomorrow.`}</div>
+        ${go
+          ? `<button class="btn-primary" data-ci-before>Continue to Before Trade</button>`
+          : `<button class="btn-primary" data-ci-exit>Back to Home</button>`}
+      </div>`);
     }
     else if (t.dataset.grid) { state.gridItem = t.dataset.grid; render(); }
     else if (t.hasAttribute("data-grid-back")) { state.gridItem = null; render(); }
