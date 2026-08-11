@@ -38,6 +38,8 @@
   if (!store.checkinLog) store.checkinLog = {};         // YYYY-MM-DD -> submitted answers
   if (!store.journalImport) store.journalImport = {};   // account -> YYYY-MM-DD -> day totals
   if (!store.journalManual) store.journalManual = {};   // account -> YYYY-MM-DD -> [manual trades]
+  if (!store.journalAccounts) store.journalAccounts = [];  // user-added brokerage accounts
+  if (!store.journalActive) store.journalActive = null;
   // "Daily Bias" was renamed to "Market Awareness" — carry answers already
   // recorded under the old id, including inside submitted day logs
   let renamed = false;
@@ -91,6 +93,7 @@
       checkinLog: store.checkinLog || {},
       journalImport: store.journalImport || {},
       journalManual: store.journalManual || {},
+      journalAccounts: store.journalAccounts || [],
       settings: store.settings || {},
       updatedAt: new Date().toISOString(),
     };
@@ -866,71 +869,78 @@
     const days = aggregateTrades(trades);
     // import wins over sample/manual figures for the days it covers — it's the
     // real broker record. Change here if manual entry should take precedence.
-    const acct = store.journalImport[state.journalTab] || (store.journalImport[state.journalTab] = {});
+    const account = activeAccount();
+    if (!account) throw new Error("Add an account before importing trades.");
+    const acct = store.journalImport[account.id] || (store.journalImport[account.id] = {});
     Object.keys(days).forEach((k) => { acct[k] = days[k]; });
     save();
     return { broker: broker.label, trades: trades.length, days: Object.keys(days).sort() };
   }
 
-  const JOURNAL_ACCOUNTS = {
-    personal: { title: "Personal Account Trade Journal", broker: "Interactive Brokers",
-                balance: 24750.68, change: 623.45, pct: 2.58 },
-    prop:     { title: "Prop Firms Trade Journal", broker: "Apex Trader Funding",
-                balance: 51200.00, change: -318.20, pct: -0.62 },
-  };
+  /* ---------------- accounts ----------------
+     Users add their own brokerage accounts; nothing is hardcoded and every
+     new account starts at the balance they enter with an empty calendar.
+     Personal Account / Prop Firms stays the higher-level category filter —
+     each added account belongs to one of them. */
+
   const JOURNAL_STATS = ["Month Cal", "Total P&L", "Net P&L", "Recent Trade"];
-  const SAMPLE_MONTH = { y: 2025, m: 4 };   // May 2025, as in the reference
+  const PLATFORMS = ["Robinhood", "Tradovate", "ThinkorSwim", "Interactive Brokers",
+                     "Webull", "TastyTrade", "NinjaTrader", "Apex Trader Funding",
+                     "Topstep", "MetaTrader"];
+
+  function accountsIn(category) {
+    return (store.journalAccounts || []).filter((a) => a.category === category);
+  }
+  function activeAccount() {
+    const list = accountsIn(state.journalTab);
+    return list.find((a) => a.id === store.journalActive) || list[0] || null;
+  }
+  function accountLabel(a) {
+    return a.nickname ? `${a.platform} · ${a.nickname}` : a.platform;
+  }
+
+  /* every realised trade on the account, imported or manual */
+  function accountRealised(id) {
+    let sum = 0;
+    const imp = (store.journalImport[id] || {});
+    Object.keys(imp).forEach((k) => { sum += imp[k].pnl; });
+    const man = (store.journalManual[id] || {});
+    Object.keys(man).forEach((k) => man[k].forEach((t) => { sum += t.pnl; }));
+    return sum;
+  }
+  /* starting balance, plus every deposit/withdrawal, plus realised P&L */
+  function accountBalance(a) {
+    const ledger = (a.ledger || []).reduce((t, e) => t + e.amount, 0);
+    return Math.round((a.start + ledger + accountRealised(a.id)) * 100) / 100;
+  }
 
   function journalDate() {
-    return new Date(SAMPLE_MONTH.y, SAMPLE_MONTH.m + state.journalMonth, 1);
+    const now = new Date();
+    return new Date(now.getFullYear(), now.getMonth() + state.journalMonth, 1);
   }
-
-  /* sample P&L: weekdays only, ~63% winners, stable for a given day + account */
-  function samplePnl(tab, y, m, d) {
-    const dow = new Date(y, m, d).getDay();
-    if (dow === 0 || dow === 6) return null;              // no weekend trading
-    let x = (y * 10000 + (m + 1) * 100 + d) * (tab === "prop" ? 7919 : 6151);
-    x = Math.imul(x ^ (x >>> 13), 1274126177);
-    x = (x ^ (x >>> 16)) >>> 0;
-    if (x % 9 === 0) return null;                         // a few flat days
-    const mag = 80 + (x % 620);
-    return x % 100 < 63 ? mag : -Math.round(mag * 0.62);
+  function monthOffsetFor(y, m) {
+    const now = new Date();
+    return (y - now.getFullYear()) * 12 + (m - now.getMonth());
   }
-
   function dayKey(y, m, d) {
     return `${y}-${String(m + 1).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
   }
 
-  /* True once a month holds any imported day. Sample figures are then dropped
-     for the whole month: mixing invented P&L into a month that has a real
-     broker record would make the month total and win rate wrong. Extends the
-     "import is the source of truth" rule from the day to the month — remove
-     this check if sample days should persist alongside imports. */
-  function monthHasImport(y, m) {
-    const prefix = `${y}-${String(m + 1).padStart(2, "0")}-`;
-    const has = (map) => Object.keys(map || {}).some((k) => k.indexOf(prefix) === 0);
-    return has(store.journalImport[state.journalTab]) || has(store.journalManual[state.journalTab]);
-  }
-
-  /* imported broker data for a day, else the Phase-1 sample. Sample days count
-     as a single win or loss so the win rate uses one formula throughout. */
-  function journalDay(y, m, d, imported) {
+  /* A day holds only what the user imported or logged — there is no generated
+     data any more, so an untouched day is simply blank and every new account
+     starts at zero. */
+  function journalDay(id, y, m, d) {
     const key = dayKey(y, m, d);
-    const imp = (store.journalImport[state.journalTab] || {})[key];
-    if (imp) return { pnl: imp.pnl, wins: imp.wins, losses: imp.losses, real: true };
-    const man = (store.journalManual[state.journalTab] || {})[key];
-    if (man && man.length) {
-      const t = man.reduce((a, x) => {
-        a.pnl += x.pnl;
-        if (x.pnl > 0) a.wins++; else if (x.pnl < 0) a.losses++;
-        return a;
-      }, { pnl: 0, wins: 0, losses: 0 });
-      return { pnl: Math.round(t.pnl * 100) / 100, wins: t.wins, losses: t.losses, real: true };
-    }
-    if (imported) return null;                 // real month — no invented days
-    const p = samplePnl(state.journalTab, y, m, d);
-    if (p === null) return null;
-    return { pnl: p, wins: p > 0 ? 1 : 0, losses: p < 0 ? 1 : 0, real: false };
+    const imp = (store.journalImport[id] || {})[key];
+    if (imp) return { pnl: imp.pnl, wins: imp.wins, losses: imp.losses };
+    const man = ((store.journalManual[id] || {})[key] || []);
+    if (!man.length) return null;
+    const t = man.reduce((a, x) => {
+      a.pnl += x.pnl;
+      if (x.pnl > 0) a.wins++; else if (x.pnl < 0) a.losses++;
+      return a;
+    }, { pnl: 0, wins: 0, losses: 0 });
+    return { pnl: Math.round(t.pnl * 100) / 100, wins: t.wins, losses: t.losses };
   }
 
   function money(n, cents) {
@@ -938,60 +948,89 @@
       ? { minimumFractionDigits: 2, maximumFractionDigits: 2 } : { maximumFractionDigits: 0 });
     return (n < 0 ? "-$" : "+$") + v;
   }
+  function plainMoney(n) {
+    return "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
 
   function renderJournal() {
-    const acct = JOURNAL_ACCOUNTS[state.journalTab];
-    barTitle.textContent = acct.title;
+    const acct = activeAccount();
+    if (acct) store.journalActive = acct.id;
+    barTitle.textContent = acct
+      ? `${accountLabel(acct)} Journal`
+      : (state.journalTab === "personal" ? "Personal Account Trade Journal" : "Prop Firms Trade Journal");
+
+    const balance = acct ? accountBalance(acct) : 0;
+    const today = new Date();
+    const todayInfo = acct ? journalDay(acct.id, today.getFullYear(), today.getMonth(), today.getDate()) : null;
+    const change = todayInfo ? todayInfo.pnl : 0;
+    const pct = balance - change !== 0 ? Math.round((10000 * change) / (balance - change)) / 100 : 0;
     $("journalSummary").innerHTML = `
-      <span class="j-broker">${esc(acct.broker)}</span>
-      <span class="j-balance">$${acct.balance.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</span>
+      <span class="j-broker">${esc(acct ? acct.platform : "No account")}</span>
+      <span class="j-balance">${plainMoney(balance)}</span>
       <span class="j-change">
         <span class="j-change-label">Daily Change</span>
-        <span class="${acct.change < 0 ? "neg" : "pos"}">${money(acct.change, true)} (${acct.pct}%)</span>
+        <span class="${change < 0 ? "neg" : "pos"}">${money(change, true)} (${pct}%)</span>
       </span>`;
+
+    const tabs = `
+      <div class="j-tabs">
+        ${["personal", "prop"].map((k) => `
+          <button class="home-tab ${state.journalTab === k ? "active" : ""}" data-jtab="${k}">${
+            k === "personal" ? "Personal Account" : "Prop Firms"}</button>`).join("")}
+      </div>`;
+
+    const list = accountsIn(state.journalTab);
+    const picker = `
+      <div class="j-accounts">
+        ${list.map((a) => `
+          <button class="j-acct ${acct && a.id === acct.id ? "on" : ""}" data-jacct="${esc(a.id)}">
+            <span class="j-acct-name">${esc(accountLabel(a))}</span>
+            <span class="j-acct-bal">${plainMoney(accountBalance(a))}</span>
+          </button>`).join("")}
+        <button class="j-acct j-acct-add" data-jaddacct>+ Add Account</button>
+      </div>`;
+
+    if (!acct) {
+      cardScroll.innerHTML = tabs + picker + `
+        <div class="liked-empty">No ${state.journalTab === "personal" ? "personal" : "prop firm"} accounts yet.<br>
+          Add one to start logging trades — it begins at the balance you enter, with an empty calendar.</div>`;
+      cardFooter.style.display = "none";
+      return;
+    }
 
     const base = journalDate();
     const y = base.getFullYear(), m = base.getMonth();
     const monthName = base.toLocaleDateString("en-US", { month: "long", year: "numeric" });
-    const daysIn = new Date(y, m + 1, 0).getDate();
-
-    // grid starts on the Sunday on or before the 1st
     const first = new Date(y, m, 1);
     const start = new Date(y, m, 1 - first.getDay());
     const cells = [];
-    const realMonth = monthHasImport(y, m);
-    let total = 0, wins = 0, losses = 0, traded = 0;
+    let total = 0, wins = 0, losses = 0;
     for (let i = 0; i < 42; i++) {
       const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
       const inMonth = d.getMonth() === m && d.getFullYear() === y;
-      const info = inMonth ? journalDay(y, m, d.getDate(), realMonth) : null;
-      const pnl = info ? info.pnl : null;
-      if (info) { total += info.pnl; wins += info.wins; losses += info.losses; traded++; }
-      cells.push({ d, inMonth, pnl, real: !!(info && info.real) });
-      if (i >= 34 && d.getDate() >= daysIn && d.getMonth() === m) { /* keep filling to row end */ }
+      const info = inMonth ? journalDay(acct.id, y, m, d.getDate()) : null;
+      if (info) { total += info.pnl; wins += info.wins; losses += info.losses; }
+      cells.push({ d, inMonth, pnl: info ? info.pnl : null });
     }
-    // trim trailing all-outside rows
     while (cells.length > 35 && cells.slice(-7).every((c) => !c.inMonth)) cells.length -= 7;
 
     const weekTotal = (row) => cells.slice(row * 7, row * 7 + 7)
       .reduce((a, c) => a + (c.inMonth && c.pnl !== null ? c.pnl : 0), 0);
 
-    const rows = cells.length / 7;
     let grid = "";
-    for (let r = 0; r < rows; r++) {
+    for (let r = 0; r < cells.length / 7; r++) {
       for (let c = 0; c < 7; c++) {
         const cell = cells[r * 7 + c];
-        const isSat = c === 6;
         if (!cell.inMonth) { grid += `<div class="j-day out">${cell.d.getDate()}</div>`; continue; }
-        if (isSat) {
+        if (c === 6) {
           const wt = weekTotal(r);
-          grid += `<div class="j-day j-week ${wt < 0 ? "loss" : "profit"}">
+          grid += `<div class="j-day j-week ${wt < 0 ? "loss" : wt > 0 ? "profit" : ""}">
             <span class="j-week-label">Total</span>
             <span class="j-date">${cell.d.getDate()}</span>
             <span class="j-pnl ${wt < 0 ? "neg" : "pos"}">${money(wt)}</span></div>`;
           continue;
         }
-        const cls = (cell.pnl === null ? "flat" : cell.pnl < 0 ? "loss" : "profit") + (cell.real ? " real" : "");
+        const cls = cell.pnl === null ? "" : (cell.pnl < 0 ? "loss real" : cell.pnl > 0 ? "profit real" : "real");
         grid += `<div class="j-day ${cls}">
           <span class="j-date">${cell.d.getDate()}</span>
           ${cell.pnl === null ? "" : `<span class="j-pnl ${cell.pnl < 0 ? "neg" : "pos"}">${money(cell.pnl)}</span>`}
@@ -999,15 +1038,9 @@
       }
     }
 
-    // break-even trades sit out of the denominator
-    const decided = wins + losses;
+    const decided = wins + losses;   // break-even trades sit out of the denominator
     const winRate = decided ? Math.round((1000 * wins) / decided) / 10 : 0;
-    cardScroll.innerHTML = `
-      <div class="j-tabs">
-        ${Object.keys(JOURNAL_ACCOUNTS).map((k) => `
-          <button class="home-tab ${state.journalTab === k ? "active" : ""}" data-jtab="${k}">${
-            k === "personal" ? "Personal Account" : "Prop Firms"}</button>`).join("")}
-      </div>
+    cardScroll.innerHTML = tabs + picker + `
       <div class="j-cal">
         <div class="j-cal-head">
           <div class="j-month">
@@ -1025,8 +1058,12 @@
         <div class="j-dow">${["SUN","MON","TUE","WED","THU","FRI","SAT"].map((d) => `<span>${d}</span>`).join("")}</div>
         <div class="j-grid">${grid}</div>
       </div>
-      <button class="j-add" data-jadd aria-label="Add a trade"></button>
+      <div class="j-add-wrap">
+        <button class="j-add" data-jadd aria-label="Add a trade"></button>
+        <span class="j-add-label">Add Trade</span>
+      </div>
       <input id="jCsvFile" class="j-file" type="file" accept=".csv,text/csv">
+      <button class="j-cash" data-jcash>Deposit / Withdraw</button>
       <div class="j-stat-row">
         ${JOURNAL_STATS.map((label) => `
           <div class="j-stat-btn">
@@ -1038,38 +1075,101 @@
     cardFooter.style.display = "none";
   }
 
-  /* delegated on document so it survives every re-render of the journal */
-  document.addEventListener("change", (e) => {
-    if (!e.target || e.target.id !== "jCsvFile" || !e.target.files || !e.target.files[0]) return;
-    const input = e.target;
-    const reader = new FileReader();
-    reader.onload = () => {
-      let res;
-      try {
-        res = importCsvText(String(reader.result));
-      } catch (err) {
-        openOverlay(panelHead("Import Failed") + `
-          <div class="liked-empty">${esc(err.message || "Could not read that file.")}</div>
-          <button class="btn-primary" data-close>Close</button>`);
-        input.value = "";
-        return;
-      }
-      // jump to the month the trades landed in, so the change is visible
-      const last = res.days[res.days.length - 1].split("-");
-      state.journalMonth = (+last[0] - SAMPLE_MONTH.y) * 12 + (+last[1] - 1 - SAMPLE_MONTH.m);
-      renderJournal();
-      const span = res.days.length === 1
-        ? new Date(+last[0], +last[1] - 1, +last[2]).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
-        : `${res.days.length} days`;
-      openOverlay(panelHead("Import Complete") + `
-        <div class="liked-empty">${res.trades} ${res.broker} trade${res.trades === 1 ? "" : "s"}
-          imported across ${span}.<br>Day totals on the calendar now use the broker record.</div>
-        <button class="btn-primary" data-close>Done</button>`);
-      input.value = "";
-    };
-    reader.onerror = () => { input.value = ""; };
-    reader.readAsText(input.files[0]);
-  });
+  /* ---- add an account ---- */
+  function openAddAccount() {
+    openOverlay(panelHead("Add Account") + `
+      <form id="acctForm" autocomplete="off" novalidate>
+        <label class="mt-label">Platform
+          <select class="mt-input" name="platform">
+            ${PLATFORMS.map((x) => `<option>${esc(x)}</option>`).join("")}
+            <option value="__custom">Other (type it in)</option>
+          </select>
+        </label>
+        <label class="mt-label mt-custom hidden">Platform name
+          <input class="mt-input" name="custom" type="text" placeholder="Your platform"></label>
+        <label class="mt-label">Nickname (optional)
+          <input class="mt-input" name="nickname" type="text" placeholder="Main Account, Swing Account…"></label>
+        <label class="mt-label">Starting balance ($)
+          <input class="mt-input" name="start" type="text" inputmode="decimal" placeholder="0.00"></label>
+        <label class="mt-label">Category
+          <select class="mt-input" name="category">
+            <option value="personal">Personal Account</option>
+            <option value="prop">Prop Firms</option>
+          </select>
+        </label>
+        <div id="acctError" class="gate-error hidden"></div>
+        <button type="button" class="btn-primary" data-jsaveacct>Add Account</button>
+      </form>`);
+    const sel = document.querySelector('#acctForm [name="platform"]');
+    const custom = document.querySelector("#acctForm .mt-custom");
+    document.querySelector('#acctForm [name="category"]').value = state.journalTab;
+    sel.addEventListener("change", () => custom.classList.toggle("hidden", sel.value !== "__custom"));
+  }
+
+  function saveAccount() {
+    const f = $("acctForm");
+    const get = (n) => (new FormData(f).get(n) || "").toString().trim();
+    const err = $("acctError");
+    const platform = get("platform") === "__custom" ? get("custom") : get("platform");
+    if (!platform) { err.textContent = "Name the platform."; err.classList.remove("hidden"); return; }
+    const startRaw = get("start").replace(/[^0-9.\-]/g, "");
+    const start = startRaw === "" ? 0 : parseFloat(startRaw);
+    if (isNaN(start)) { err.textContent = "Starting balance must be a number."; err.classList.remove("hidden"); return; }
+    const id = "acct-" + Date.now().toString(36);
+    if (!store.journalAccounts) store.journalAccounts = [];
+    store.journalAccounts.push({
+      id, platform, nickname: get("nickname"), category: get("category") || "personal",
+      start: Math.round(start * 100) / 100, ledger: [], addedAt: new Date().toISOString(),
+    });
+    store.journalActive = id;
+    state.journalTab = get("category") || "personal";
+    save();
+    closeOverlay();
+    renderJournal();
+  }
+
+  /* ---- deposits and withdrawals ---- */
+  function openCashFlow() {
+    const a = activeAccount();
+    if (!a) return;
+    const log = (a.ledger || []).slice().reverse().slice(0, 8);
+    openOverlay(panelHead("Deposit / Withdraw") + `
+      <div class="notes-hint" style="margin:0 0 12px">${esc(accountLabel(a))} — balance ${plainMoney(accountBalance(a))}</div>
+      <form id="cashForm" autocomplete="off" novalidate>
+        <label class="mt-label">Type
+          <select class="mt-input" name="type">
+            <option value="deposit">Deposit</option>
+            <option value="withdrawal">Withdrawal</option>
+          </select>
+        </label>
+        <label class="mt-label">Amount ($)
+          <input class="mt-input" name="amount" type="text" inputmode="decimal" placeholder="0.00"></label>
+        <label class="mt-label">Date
+          <input class="mt-input mt-date" name="date" type="date" value="${todayKey()}"></label>
+        <div id="cashError" class="gate-error hidden"></div>
+        <button type="button" class="btn-primary" data-jsavecash>Log It</button>
+      </form>
+      ${log.length ? `<div class="liked-group-title">Recent</div>
+        ${log.map((e) => `<div class="j-ledger">
+          <span>${esc(e.date)} · ${e.amount < 0 ? "Withdrawal" : "Deposit"}</span>
+          <span class="${e.amount < 0 ? "neg" : "pos"}">${money(e.amount, true)}</span>
+        </div>`).join("")}` : ""}`);
+  }
+
+  function saveCashFlow() {
+    const a = activeAccount();
+    const f = $("cashForm");
+    const err = $("cashError");
+    const get = (n) => (new FormData(f).get(n) || "").toString().trim();
+    const amt = parseFloat(get("amount").replace(/[^0-9.]/g, ""));
+    if (isNaN(amt) || amt <= 0) { err.textContent = "Enter an amount."; err.classList.remove("hidden"); return; }
+    const signed = get("type") === "withdrawal" ? -amt : amt;
+    a.ledger = a.ledger || [];
+    a.ledger.push({ date: get("date") || todayKey(), amount: Math.round(signed * 100) / 100, type: get("type") });
+    save();
+    closeOverlay();
+    renderJournal();
+  }
 
   /* Manual trade entry. Feeds the same day-level aggregation as the CSV
      import, so a manually logged trade lands on the calendar exactly like an
@@ -1112,7 +1212,9 @@
     const day = val("day");
     if (isNaN(amount)) { err.textContent = "Enter the amount won or lost."; err.classList.remove("hidden"); return; }
     if (!/^\d{4}-\d{2}-\d{2}$/.test(day)) { err.textContent = "Pick a date for the trade."; err.classList.remove("hidden"); return; }
-    const acct = store.journalManual[state.journalTab] || (store.journalManual[state.journalTab] = {});
+    const account = activeAccount();
+    if (!account) { err.textContent = "Add an account first."; err.classList.remove("hidden"); return; }
+    const acct = store.journalManual[account.id] || (store.journalManual[account.id] = {});
     (acct[day] || (acct[day] = [])).push({
       platform: val("platform"), asset: val("asset"),
       entry: val("entry"), exit: val("exit"),
@@ -1120,13 +1222,47 @@
     });
     save();
     const d = day.split("-");
-    state.journalMonth = (+d[0] - SAMPLE_MONTH.y) * 12 + (+d[1] - 1 - SAMPLE_MONTH.m);
+    state.journalMonth = monthOffsetFor(+d[0], +d[1] - 1);
     renderJournal();
     openOverlay(panelHead("Trade Saved") + `
       <div class="liked-empty">${money(Math.round(amount * 100) / 100, true)}
         logged for ${new Date(+d[0], +d[1] - 1, +d[2]).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })}.</div>
       <button class="btn-primary" data-close>Done</button>`);
   }
+
+  /* Delegated on document so it survives every re-render of the journal —
+     the file input is recreated each time renderJournal() runs. */
+  document.addEventListener("change", (e) => {
+    if (!e.target || e.target.id !== "jCsvFile" || !e.target.files || !e.target.files[0]) return;
+    const input = e.target;
+    const reader = new FileReader();
+    reader.onload = () => {
+      let res;
+      try {
+        res = importCsvText(String(reader.result));
+      } catch (err) {
+        openOverlay(panelHead("Import Failed") + `
+          <div class="liked-empty">${esc(err.message || "Could not read that file.")}</div>
+          <button class="btn-primary" data-close>Close</button>`);
+        input.value = "";
+        return;
+      }
+      // jump to the month the trades landed in, so the change is visible
+      const last = res.days[res.days.length - 1].split("-");
+      state.journalMonth = monthOffsetFor(+last[0], +last[1] - 1);
+      renderJournal();
+      const span = res.days.length === 1
+        ? new Date(+last[0], +last[1] - 1, +last[2]).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
+        : `${res.days.length} days`;
+      openOverlay(panelHead("Import Complete") + `
+        <div class="liked-empty">${res.trades} ${res.broker} trade${res.trades === 1 ? "" : "s"}
+          imported across ${span}.<br>Day totals on the calendar now use the broker record.</div>
+        <button class="btn-primary" data-close>Done</button>`);
+      input.value = "";
+    };
+    reader.onerror = () => { input.value = ""; };
+    reader.readAsText(input.files[0]);
+  });
 
   function openJournal() {
     stopAudio();
@@ -1499,13 +1635,18 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash]");
     if (!t) return;
 
     if (t.dataset.jtab) { state.journalTab = t.dataset.jtab; renderJournal(); }
     else if (t.dataset.jmonth) { state.journalMonth += +t.dataset.jmonth; renderJournal(); }
     else if (t.hasAttribute("data-jimport")) { closeOverlay(); $("jCsvFile").click(); }
     else if (t.hasAttribute("data-jmanual")) openManualTrade();
+    else if (t.dataset.jacct) { store.journalActive = t.dataset.jacct; save(); renderJournal(); }
+    else if (t.hasAttribute("data-jaddacct")) openAddAccount();
+    else if (t.hasAttribute("data-jsaveacct")) saveAccount();
+    else if (t.hasAttribute("data-jcash")) openCashFlow();
+    else if (t.hasAttribute("data-jsavecash")) saveCashFlow();
     else if (t.hasAttribute("data-jsave")) saveManualTrade();
     else if (t.hasAttribute("data-jadd")) {
       openOverlay(panelHead("Add a Trade") + `
