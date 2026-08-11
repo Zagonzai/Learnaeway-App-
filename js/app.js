@@ -161,12 +161,12 @@
      10-item checklist overlay. Keyed by id (not index) so it can't collide
      with ticks written by that earlier version. */
   const CHECKIN_ITEMS = [
-    { id: "physically",    label: "Physically" },
-    { id: "mentally",      label: "Mentally" },
-    { id: "emotionally",   label: "Emotionally" },
-    { id: "distraction",   label: "Distraction" },
-    { id: "economic-news", label: "Economic News" },
-    { id: "market-awareness", label: "Market Awareness" },
+    { id: "physically",    label: "Are you Physically ready?" },
+    { id: "mentally",      label: "Are you Mentally ready?" },
+    { id: "emotionally",   label: "Are you Emotionally ready?" },
+    { id: "distraction",   label: "Are you Distraction ready?" },
+    { id: "economic-news", label: "Are you Economic News ready?" },
+    { id: "market-awareness", label: "Are you Market Awareness ready?" },
     { id: "ready-to-trade", label: "Are you ready to trade?" },
   ];
 
