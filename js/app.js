@@ -170,7 +170,7 @@
     { id: "physically",    label: "Are you Physically ready?" },
     { id: "mentally",      label: "Are you Mentally ready?" },
     { id: "emotionally",   label: "Are you Emotionally ready?" },
-    { id: "distraction",   label: "Do you have Distractions Today?" },
+    { id: "distraction",   label: "Are you Distraction-Free Today?" },
     { id: "economic-news", label: "Have you checked today's economic news?" },
     { id: "market-awareness", label: "Are you aware of Current Market Conditions?" },
     { id: "ready-to-trade", label: "Are you ready to trade?" },
