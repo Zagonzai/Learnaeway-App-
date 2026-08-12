@@ -177,7 +177,12 @@
   ];
 
   /* Placeholders until the icon artwork lands — see the layout prompt. */
-  const CHECKIN_ACTIONS = ["Start Day", "Before Trade", "After Trade", "Discipline Streak"];
+  const CHECKIN_ACTIONS = [
+    { label: "Start Day", icon: "cat-start-day" },
+    { label: "Before Trade", icon: "cat-before-trade" },
+    { label: "After Trade", icon: "cat-after-trade" },
+    { label: "Discipline Streak", icon: "cat-discipline-streak" },
+  ];
 
   /* ---------------- progress helpers ---------------- */
 
@@ -770,10 +775,11 @@
           ${ready ? "" : "disabled"} data-ci-submit>${sent ? "Submitted" : "Submit"}</button>`;
       })()}
       <div class="ci-actions">
-        ${CHECKIN_ACTIONS.map((label) => `
+        ${CHECKIN_ACTIONS.map((a) => `
           <div class="ci-action">
-            <span class="ci-orb" aria-hidden="true"></span>
-            <span class="ci-action-label">${esc(label)}</span>
+            <span class="ci-orb" aria-hidden="true">
+              <img src="assets/nav-icons/${a.icon}@2x.png" alt=""></span>
+            <span class="ci-action-label">${esc(a.label)}</span>
           </div>`).join("")}
       </div>`;
     cardScroll.scrollTop = 0;
@@ -907,7 +913,7 @@
      each added account belongs to one of them. */
 
   const JOURNAL_SECTIONS = [
-    { id: "calendar", label: "Month Cal", icon: "stat-month-cal" },
+    { id: "calendar", label: "Month Cal", icon: null },   // artwork still to come
     { id: "total", label: "Total P&L", icon: "stat-total-pnl" },
     { id: "net", label: "Net P&L", icon: "stat-net-pnl" },
     { id: "recent", label: "Recent Trade", icon: "stat-recent-trade" },
@@ -916,8 +922,8 @@
     return `<div class="j-stat-row">
       ${JOURNAL_SECTIONS.map((sec) => `
         <button class="j-stat-btn ${state.journalSection === sec.id ? "on" : ""}" data-jsection="${sec.id}">
-          <span class="ci-orb" aria-hidden="true">
-            <img src="assets/nav-icons/${sec.icon}@2x.png" alt=""></span>
+          <span class="ci-orb" aria-hidden="true">${sec.icon
+            ? `<img src="assets/nav-icons/${sec.icon}@2x.png" alt="">` : ""}</span>
           <span class="ci-action-label">${esc(sec.label)}</span>
         </button>`).join("")}
     </div>`;
