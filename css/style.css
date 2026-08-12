@@ -1624,36 +1624,28 @@ select.mt-input {
   padding: 0 4px;
 }
 
-/* the two circles, tappable at full row height */
-.ci-half { position: absolute; top: 0; width: 58px; height: 100%; }
+/* The two circles carry their own labels, so it's obvious which side is
+   which. Selection removes the label from the side that wasn't chosen — the
+   answer that stands is the one still showing. No colour overlay. */
+.ci-half {
+  position: absolute;
+  top: 0;
+  width: 58px;
+  height: 100%;
+  display: grid;
+  place-items: center;
+  font-size: 11.5px;
+  font-weight: 800;
+  letter-spacing: .1em;
+  color: #EAF6FF;
+  transition: opacity .18s ease, transform .12s ease;
+}
 .ci-yes { left: -58px; }             /* reach back past the border box */
 .ci-no  { right: -58px; }
 .ci-half:active { transform: scale(.93); }
-
-/* selection is the glow alone — no icon. Centred in each half, which sits
-   exactly over the artwork's circles (centres measured at 16% / 84%). */
-.ci-half::before {
-  content: "";
-  position: absolute;
-  inset: 50% auto auto 50%;
-  translate: -50% -50%;
-  width: 30px;
-  height: 30px;
-  border-radius: 50%;
-  opacity: 0;
-  transition: opacity .18s ease;
-  pointer-events: none;
-}
-.ci-yes::before {
-  background: radial-gradient(circle, rgba(47,230,194,.5), rgba(47,230,194,0) 72%);
-  box-shadow: 0 0 16px 4px rgba(47,230,194,.85);
-}
-.ci-no::before {
-  background: radial-gradient(circle, rgba(255,61,154,.5), rgba(255,61,154,0) 72%);
-  box-shadow: 0 0 16px 4px rgba(255,61,154,.9);
-}
-.ci-row.yes .ci-yes::before { opacity: 1; }
-.ci-row.no  .ci-no::before  { opacity: 1; }
+/* the unchosen side's word clears away, leaving the answer on its own */
+.ci-row.yes .ci-no,
+.ci-row.no  .ci-yes { opacity: 0; }
 
 /* label-button asset: a plain rounded pill with a gradient border, 9-sliced on
    all four sides so the rounded caps stay crisp and only the middle stretches.

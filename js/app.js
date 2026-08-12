@@ -170,9 +170,9 @@
     { id: "physically",    label: "Are you Physically ready?" },
     { id: "mentally",      label: "Are you Mentally ready?" },
     { id: "emotionally",   label: "Are you Emotionally ready?" },
-    { id: "distraction",   label: "Are you Distraction ready?" },
-    { id: "economic-news", label: "Are you Economic News ready?" },
-    { id: "market-awareness", label: "Are you Market Awareness ready?" },
+    { id: "distraction",   label: "Do you have Distractions Today?" },
+    { id: "economic-news", label: "Have you checked today's economic news?" },
+    { id: "market-awareness", label: "Are you aware of Current Market Conditions?" },
     { id: "ready-to-trade", label: "Are you ready to trade?" },
   ];
 
@@ -762,10 +762,10 @@
         ${CHECKIN_ITEMS.map((it) => `
           <div class="ci-row ${store.checklist[it.id] === "yes" ? "yes" : store.checklist[it.id] === "no" ? "no" : ""}">
             <button class="ci-half ci-yes" data-ci="${it.id}" data-ci-val="yes"
-                    aria-label="${esc(it.label)} — yes" aria-pressed="${store.checklist[it.id] === "yes"}"></button>
+                    aria-label="${esc(it.label)} — yes" aria-pressed="${store.checklist[it.id] === "yes"}">YES</button>
             <span class="ci-label">${esc(it.label)}</span>
             <button class="ci-half ci-no" data-ci="${it.id}" data-ci-val="no"
-                    aria-label="${esc(it.label)} — no" aria-pressed="${store.checklist[it.id] === "no"}"></button>
+                    aria-label="${esc(it.label)} — no" aria-pressed="${store.checklist[it.id] === "no"}">NO</button>
           </div>`).join("")}
       </div>
       ${(() => {
@@ -913,7 +913,7 @@
      each added account belongs to one of them. */
 
   const JOURNAL_SECTIONS = [
-    { id: "calendar", label: "Month Cal", icon: null },   // artwork still to come
+    { id: "calendar", label: "Month Cal", icon: "stat-month-cal" },
     { id: "total", label: "Total P&L", icon: "stat-total-pnl" },
     { id: "net", label: "Net P&L", icon: "stat-net-pnl" },
     { id: "recent", label: "Recent Trade", icon: "stat-recent-trade" },
