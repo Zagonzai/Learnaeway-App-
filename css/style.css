@@ -1429,6 +1429,131 @@ select.mt-input {
 }
 .mt-custom.hidden { display: none; }
 
+/* section panels — Total P&L, Net P&L, Recent Trades. Same card treatment as
+   the calendar so the three views read as one family. */
+.j-panel {
+  padding: 14px 12px 12px;
+  border-radius: 20px;
+  background: rgba(4,7,18,.55);
+  border: 1px solid rgba(61,223,255,.22);
+}
+.j-panel-head { display: flex; align-items: center; justify-content: space-between; gap: 10px; }
+.j-panel-title {
+  font-size: calc(13.5px * var(--fs));
+  font-weight: 700;
+  color: #DDEFFF;
+}
+.j-range {
+  height: 30px;
+  padding: 0 26px 0 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(61,223,255,.35);
+  background: rgba(9,13,30,.8);
+  background-image: linear-gradient(45deg, transparent 50%, #8FB4D8 50%), linear-gradient(135deg, #8FB4D8 50%, transparent 50%);
+  background-position: calc(100% - 14px) 13px, calc(100% - 9px) 13px;
+  background-size: 5px 5px, 5px 5px;
+  background-repeat: no-repeat;
+  color: #EAF6FF;
+  font-family: inherit;
+  font-size: 12px;
+  font-weight: 700;
+  -webkit-appearance: none;
+  appearance: none;
+  color-scheme: dark;
+}
+.j-panel-net {
+  font-size: calc(26px * var(--fs));
+  font-weight: 800;
+  text-align: center;
+  margin: 8px 0 6px;
+}
+.j-panel-net.pos { color: var(--teal); text-shadow: 0 0 18px rgba(47,230,194,.55); }
+.j-panel-net.neg { color: #FF6B9D; text-shadow: 0 0 18px rgba(255,61,154,.55); }
+.j-panel-foot { text-align: center; font-size: 10.5px; color: #8FB4D8; margin-top: 8px; }
+
+.j-chart { display: block; width: 100%; height: 118px; }
+.j-chart-zero { stroke: rgba(143,180,216,.35); stroke-width: 1; stroke-dasharray: 3 3; }
+.j-chart-empty { text-align: center; font-size: 12px; color: #8FB4D8; padding: 26px 0; }
+
+/* Net P&L: profit left, loss right, trade count centred between them */
+.j-net-grid {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  gap: 10px 8px;
+  align-items: center;
+  margin-top: 6px;
+}
+.j-net-cell { display: flex; flex-direction: column; gap: 2px; }
+.j-net-cell.right { text-align: right; }
+.j-net-k { font-size: 10px; font-weight: 600; color: #9FC0E0; }
+.j-net-v { font-size: calc(15px * var(--fs)); font-weight: 800; }
+.j-net-v.pos { color: var(--teal); }
+.j-net-v.neg { color: #FF6B9D; }
+.j-net-mid {
+  grid-row: span 2;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+  padding: 8px 12px;
+  border-radius: 12px;
+  border: 1px solid rgba(61,223,255,.28);
+  background: rgba(9,13,30,.6);
+}
+.j-net-total { font-size: calc(20px * var(--fs)); font-weight: 800; color: #EAF6FF; }
+
+/* Recent Trades table */
+.j-viewall {
+  font-size: 11.5px;
+  font-weight: 700;
+  color: var(--cyan);
+  text-decoration: underline;
+}
+.j-tt { margin-top: 10px; }
+.j-tt-head, .j-tt-row {
+  display: grid;
+  grid-template-columns: 40px 1fr 46px 28px 42px 1fr;
+  gap: 5px;
+  align-items: center;
+}
+.j-tt-head {
+  padding-bottom: 6px;
+  margin-bottom: 5px;
+  border-bottom: 1px solid rgba(61,223,255,.18);
+  font-size: 8.5px;
+  font-weight: 700;
+  letter-spacing: .04em;
+  text-transform: uppercase;
+  color: #8FB4D8;
+}
+.j-tt-row {
+  padding: 7px 0;
+  border-bottom: 1px solid rgba(61,223,255,.07);
+  font-size: 10.5px;
+  font-weight: 600;
+  color: #D9EAFB;
+}
+.j-tt-row:last-child { border-bottom: 0; }
+.j-tt-row .pos { color: var(--teal); font-weight: 800; }
+.j-tt-row .neg { color: #FF6B9D; font-weight: 800; }
+.j-tt-sym { font-weight: 700; color: #EAF6FF; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.j-pill {
+  display: inline-block;
+  padding: 2px 6px;
+  border-radius: 999px;
+  font-size: 8.5px;
+  font-weight: 800;
+  letter-spacing: .03em;
+}
+.j-pill.long, .j-pill.win { color: var(--teal); background: rgba(47,230,194,.14); border: 1px solid rgba(47,230,194,.45); }
+.j-pill.short, .j-pill.loss { color: #FF6B9D; background: rgba(255,61,154,.14); border: 1px solid rgba(255,61,154,.5); }
+
+/* the four stat circles are the section switcher, now carrying their icons */
+.j-stat-btn.on .ci-orb { filter: brightness(1.3) drop-shadow(0 0 10px rgba(61,223,255,.75)); }
+.j-stat-btn.on .ci-action-label { color: var(--cyan); }
+.ci-orb { display: grid; place-items: center; }
+.ci-orb img { width: 56%; height: 56%; object-fit: contain; }
+
 /* four stat placeholders — same frame asset as the check-in category buttons */
 .j-stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 16px 0 2px; }
 .j-stat-btn { display: flex; flex-direction: column; align-items: center; gap: 8px; }

@@ -41,6 +41,7 @@
   if (!store.journalAccounts) store.journalAccounts = [];  // user-added brokerage accounts
   if (!store.journalActive) store.journalActive = "__all";   // "__all" = combined view
   if (!store.propLedger) store.propLedger = {};         // prop account -> [evaluation/reset/payout]
+  if (!store.journalTrades) store.journalTrades = {};   // account -> [per-trade records]
   // "Daily Bias" was renamed to "Market Awareness" — carry answers already
   // recorded under the old id, including inside submitted day logs
   let renamed = false;
@@ -96,6 +97,7 @@
       journalManual: store.journalManual || {},
       journalAccounts: store.journalAccounts || [],
       propLedger: store.propLedger || {},
+      journalTrades: store.journalTrades || {},
       settings: store.settings || {},
       updatedAt: new Date().toISOString(),
     };
@@ -134,7 +136,9 @@
     videoScroll: 0,          // library scroll position, restored on back
     gridItem: null,          // open item on a word-grid screen (null = list)
     journalTab: "personal",  // 'personal' | 'prop'
-    journalMonth: 0,         // months offset from the sample month
+    journalMonth: 0,         // months offset from the current month
+    journalSection: "calendar",   // calendar | total | net | recent
+    journalRange: "1M",
   };
 
   /* ---------------- els ---------------- */
@@ -832,13 +836,22 @@
     const iPnl = head.indexOf("pnl");
     const iSold = head.indexOf("soldTimestamp");
     const iSym = head.indexOf("symbol");
+    const iQty = head.indexOf("qty");
+    const iBought = head.indexOf("boughtTimestamp");
     if (iPnl < 0 || iSold < 0) throw new Error("That doesn't look like a Tradovate export — no pnl / soldTimestamp columns.");
     const trades = [];
     for (let r = 1; r < rows.length; r++) {
       // a trade belongs to the day it was CLOSED — some open one day, close the next
       const day = mdyToDayKey(rows[r][iSold]);
       if (!day) continue;
-      trades.push({ day, pnl: parseParenMoney(rows[r][iPnl]), symbol: (rows[r][iSym] || "").trim() });
+      // Tradovate has no side column: a position opened before it was closed
+      // is a long, one closed before it was opened is a short
+      const bought = rows[r][iBought] || "", sold = rows[r][iSold] || "";
+      trades.push({
+        day, pnl: parseParenMoney(rows[r][iPnl]), symbol: (rows[r][iSym] || "").trim(),
+        qty: (rows[r][iQty] || "").trim(),
+        side: bought && sold && new Date(bought) > new Date(sold) ? "Short" : "Long",
+      });
     }
     return trades;
   }
@@ -879,6 +892,10 @@
     }
     const acct = store.journalImport[account.id] || (store.journalImport[account.id] = {});
     Object.keys(days).forEach((k) => { acct[k] = days[k]; });
+    // the calendar needs day totals; the P&L views need each trade
+    addTradeRecords(account.id, trades.map((t) => ({
+      date: t.day, symbol: t.symbol || "", side: t.side || "Long", qty: t.qty || "", pnl: t.pnl,
+    })));
     save();
     return { broker: broker.label, trades: trades.length, days: Object.keys(days).sort() };
   }
@@ -889,7 +906,22 @@
      Personal Account / Prop Firms stays the higher-level category filter —
      each added account belongs to one of them. */
 
-  const JOURNAL_STATS = ["Month Cal", "Total P&L", "Net P&L", "Recent Trade"];
+  const JOURNAL_SECTIONS = [
+    { id: "calendar", label: "Month Cal", icon: "stat-month-cal" },
+    { id: "total", label: "Total P&L", icon: "stat-total-pnl" },
+    { id: "net", label: "Net P&L", icon: "stat-net-pnl" },
+    { id: "recent", label: "Recent Trade", icon: "stat-recent-trade" },
+  ];
+  function statRowHTML() {
+    return `<div class="j-stat-row">
+      ${JOURNAL_SECTIONS.map((sec) => `
+        <button class="j-stat-btn ${state.journalSection === sec.id ? "on" : ""}" data-jsection="${sec.id}">
+          <span class="ci-orb" aria-hidden="true">
+            <img src="assets/nav-icons/${sec.icon}@2x.png" alt=""></span>
+          <span class="ci-action-label">${esc(sec.label)}</span>
+        </button>`).join("")}
+    </div>`;
+  }
   const PLATFORMS = ["Robinhood", "Tradovate", "ThinkorSwim", "Interactive Brokers",
                      "Webull", "TastyTrade", "NinjaTrader", "Apex Trader Funding",
                      "Topstep", "MetaTrader"];
@@ -905,10 +937,14 @@
   function activeAccount() {
     return (store.journalAccounts || []).find((a) => a.id === store.journalActive) || null;
   }
-  /* which accounts the current scope covers — every one when combined */
+  /* Which accounts the current scope covers. The combined view now follows the
+     Personal Account / Prop Firms toggle, so every figure on screen — balance,
+     calendar, charts and trade list — belongs to the category being shown.
+     (Earlier this summed every account regardless of tab, which meant the Prop
+     tab could show personal trades.) */
   function scopeAccounts() {
     const a = activeAccount();
-    return a ? [a] : (store.journalAccounts || []);
+    return a ? [a] : accountsIn(state.journalTab);
   }
   function accountLabel(a) {
     return a.nickname ? `${a.platform} · ${a.nickname}` : a.platform;
@@ -927,6 +963,142 @@
   function accountBalance(a) {
     const ledger = (a.ledger || []).reduce((t, e) => t + e.amount, 0);
     return Math.round((a.start + ledger + accountRealised(a.id)) * 100) / 100;
+  }
+
+  /* ---------------- trade records ----------------
+     The calendar only needs day totals, but the Total P&L, Net P&L and Recent
+     Trades views need each trade, so both the CSV import and manual entry now
+     keep a per-trade record alongside the day aggregation. */
+
+  const RANGES = [
+    { id: "1W", label: "1W", days: 7 },
+    { id: "1M", label: "1M", days: 30 },
+    { id: "3M", label: "3M", days: 90 },
+    { id: "6M", label: "6M", days: 180 },
+    { id: "1Y", label: "1Y", days: 365 },
+    { id: "ALL", label: "All", days: 0 },
+  ];
+
+  function addTradeRecords(accountId, records) {
+    const list = store.journalTrades[accountId] || (store.journalTrades[accountId] = []);
+    records.forEach((r) => list.push(r));
+  }
+
+  /* every trade across the accounts in scope, newest first, within the range */
+  function scopeTrades(accts, rangeId) {
+    const range = RANGES.find((r) => r.id === rangeId) || RANGES[1];
+    let cutoff = null;
+    if (range.days) {
+      const d = new Date();
+      d.setDate(d.getDate() - range.days);
+      cutoff = dayKey(d.getFullYear(), d.getMonth(), d.getDate());
+    }
+    const out = [];
+    accts.forEach((a) => (store.journalTrades[a.id] || []).forEach((t) => {
+      if (!cutoff || t.date >= cutoff) out.push(t);
+    }));
+    return out.sort((x, y) => (x.date < y.date ? 1 : x.date > y.date ? -1 : 0));
+  }
+
+  function tradeStats(trades) {
+    return trades.reduce((s, t) => {
+      s.net += t.pnl;
+      if (t.pnl > 0) { s.gross += t.pnl; s.wins++; }
+      else if (t.pnl < 0) { s.loss += t.pnl; s.losses++; }
+      else s.flat++;
+      return s;
+    }, { net: 0, gross: 0, loss: 0, wins: 0, losses: 0, flat: 0 });
+  }
+
+  function rangePicker() {
+    return `<select class="j-range" data-jrange>
+      ${RANGES.map((r) => `<option value="${r.id}"${state.journalRange === r.id ? " selected" : ""}>${r.label}</option>`).join("")}
+    </select>`;
+  }
+
+  /* cumulative P&L as an inline area chart — no library, no external request */
+  function cumulativeChart(trades) {
+    const asc = trades.slice().reverse();
+    if (!asc.length) return `<div class="j-chart-empty">No trades in this range yet.</div>`;
+    let run = 0;
+    const pts = asc.map((t) => { run += t.pnl; return run; });
+    const W = 300, H = 120, pad = 4;
+    const lo = Math.min(0, ...pts), hi = Math.max(0, ...pts);
+    const span = (hi - lo) || 1;
+    const x = (i) => pad + (pts.length === 1 ? (W - pad * 2) / 2 : (i * (W - pad * 2)) / (pts.length - 1));
+    const y = (v) => H - pad - ((v - lo) / span) * (H - pad * 2);
+    const line = pts.map((v, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(v).toFixed(1)}`).join(" ");
+    const area = `${line} L${x(pts.length - 1).toFixed(1)},${y(lo).toFixed(1)} L${x(0).toFixed(1)},${y(lo).toFixed(1)} Z`;
+    const up = run >= 0;
+    return `
+      <svg class="j-chart" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" role="img"
+           aria-label="Cumulative profit and loss, ending ${money(Math.round(run * 100) / 100, true)}">
+        <defs>
+          <linearGradient id="pnlFill" x1="0" y1="0" x2="0" y2="1">
+            <stop offset="0%" stop-color="${up ? "#2FE6C2" : "#FF3D9A"}" stop-opacity=".38"/>
+            <stop offset="100%" stop-color="${up ? "#2FE6C2" : "#FF3D9A"}" stop-opacity="0"/>
+          </linearGradient>
+        </defs>
+        ${lo < 0 && hi > 0 ? `<line class="j-chart-zero" x1="0" y1="${y(0).toFixed(1)}" x2="${W}" y2="${y(0).toFixed(1)}"/>` : ""}
+        <path d="${area}" fill="url(#pnlFill)"/>
+        <path d="${line}" fill="none" stroke="${up ? "#2FE6C2" : "#FF3D9A"}" stroke-width="2"
+              stroke-linejoin="round" stroke-linecap="round" vector-effect="non-scaling-stroke"/>
+      </svg>`;
+  }
+
+  function sectionHTML(scope) {
+    const trades = scopeTrades(scope, state.journalRange);
+    const st = tradeStats(trades);
+    const round = (n) => Math.round(n * 100) / 100;
+
+    if (state.journalSection === "total") {
+      return `<div class="j-panel">
+        <div class="j-panel-head"><span class="j-panel-title">Cumulative P&amp;L</span>${rangePicker()}</div>
+        <div class="j-panel-net ${st.net < 0 ? "neg" : "pos"}">${money(round(st.net), true)}</div>
+        ${cumulativeChart(trades)}
+        <div class="j-panel-foot">${trades.length} trade${trades.length === 1 ? "" : "s"} in this range</div>
+      </div>`;
+    }
+    if (state.journalSection === "net") {
+      const pct = (n) => (st.wins + st.losses ? Math.round((1000 * n) / (st.wins + st.losses)) / 10 : 0);
+      return `<div class="j-panel">
+        <div class="j-panel-head"><span class="j-panel-title">Net P&amp;L</span>${rangePicker()}</div>
+        <div class="j-panel-net ${st.net < 0 ? "neg" : "pos"}">${money(round(st.net), true)}</div>
+        <div class="j-net-grid">
+          <div class="j-net-cell"><span class="j-net-k">Gross Profit</span>
+            <span class="j-net-v pos">${money(round(st.gross), true)}</span></div>
+          <div class="j-net-mid"><span class="j-net-k">Total Trades</span>
+            <span class="j-net-total">${trades.length}</span></div>
+          <div class="j-net-cell right"><span class="j-net-k">Gross Loss</span>
+            <span class="j-net-v neg">${money(round(st.loss), true)}</span></div>
+          <div class="j-net-cell"><span class="j-net-k">Winning Trades</span>
+            <span class="j-net-v pos">${st.wins} (${pct(st.wins)}%)</span></div>
+          <div class="j-net-cell right"><span class="j-net-k">Losing Trades</span>
+            <span class="j-net-v neg">${st.losses} (${pct(st.losses)}%)</span></div>
+        </div>
+      </div>`;
+    }
+    // recent trades
+    const shown = state.journalAllTrades ? trades : trades.slice(0, 8);
+    return `<div class="j-panel">
+      <div class="j-panel-head"><span class="j-panel-title">Recent Trades</span>
+        ${trades.length > 8 ? `<button class="j-viewall" data-jviewall>${state.journalAllTrades ? "Show Less" : "View All"}</button>` : ""}</div>
+      ${trades.length ? `
+        <div class="j-tt">
+          <div class="j-tt-head"><span>Date</span><span>Symbol</span><span>Side</span><span>Qty</span><span>Result</span><span>P&amp;L</span></div>
+          ${shown.map((t) => {
+            const win = t.pnl > 0;
+            return `<div class="j-tt-row">
+              <span>${esc((t.date || "").slice(5))}</span>
+              <span class="j-tt-sym">${esc(t.symbol || "—")}</span>
+              <span><span class="j-pill ${t.side === "Short" ? "short" : "long"}">${esc(t.side || "Long")}</span></span>
+              <span>${t.qty || "—"}</span>
+              <span><span class="j-pill ${win ? "win" : "loss"}">${win ? "Win" : "Loss"}</span></span>
+              <span class="${t.pnl < 0 ? "neg" : "pos"}">${money(round(t.pnl))}</span>
+            </div>`;
+          }).join("")}
+        </div>` : `<div class="j-chart-empty">No trades in this range yet.</div>`}
+    </div>`;
   }
 
   /* ---------------- prop firm net P&L ----------------
@@ -1125,7 +1297,8 @@
     const all = store.journalAccounts || [];
     const acct = activeAccount();
     const scope = scopeAccounts();
-    barTitle.textContent = acct ? `${accountLabel(acct)} Journal` : "All Accounts Trade Journal";
+    const catName = state.journalTab === "personal" ? "Personal" : "Prop Firm";
+    barTitle.textContent = acct ? `${accountLabel(acct)} Journal` : `All ${catName} Accounts Journal`;
 
     const balance = scopeBalance(scope);
     const today = new Date();
@@ -1134,7 +1307,8 @@
     const change = todayInfo ? todayInfo.pnl : 0;
     const pct = balance - change !== 0 ? Math.round((10000 * change) / (balance - change)) / 100 : 0;
     $("journalSummary").innerHTML = `
-      <span class="j-broker">${esc(acct ? acct.platform : (all.length ? `All ${all.length} accounts` : "No accounts"))}</span>
+      <span class="j-broker">${esc(acct ? acct.platform
+        : (scope.length ? `All ${scope.length} ${catName.toLowerCase()}` : "No accounts"))}</span>
       <span class="j-balance">${plainMoney(balance)}</span>
       <span class="j-change">
         <span class="j-change-label">Daily Change</span>
@@ -1151,10 +1325,10 @@
     const list = accountsIn(state.journalTab);
     const picker = `
       <div class="j-accounts">
-        ${all.length ? `
+        ${accountsIn(state.journalTab).length ? `
           <button class="j-acct j-acct-all ${isCombined() ? "on" : ""}" data-jacct="__all">
-            <span class="j-acct-name">All Accounts</span>
-            <span class="j-acct-bal">${plainMoney(scopeBalance(all))}</span>
+            <span class="j-acct-name">All ${esc(catName)} Accounts</span>
+            <span class="j-acct-bal">${plainMoney(scopeBalance(accountsIn(state.journalTab)))}</span>
           </button>` : ""}
         ${list.map((a) => `
           <button class="j-acct ${acct && a.id === acct.id ? "on" : ""}" data-jacct="${esc(a.id)}">
@@ -1216,7 +1390,7 @@
 
     const decided = wins + losses;   // break-even trades sit out of the denominator
     const winRate = decided ? Math.round((1000 * wins) / decided) / 10 : 0;
-    cardScroll.innerHTML = tabs + picker + propCard + `
+    const calendarHTML = `
       <div class="j-cal">
         <div class="j-cal-head">
           <div class="j-month">
@@ -1233,20 +1407,17 @@
         </div>
         <div class="j-dow">${["SUN","MON","TUE","WED","THU","FRI","SAT"].map((d) => `<span>${d}</span>`).join("")}</div>
         <div class="j-grid">${grid}</div>
-      </div>
+      </div>`;
+
+    cardScroll.innerHTML = tabs + picker + propCard +
+      (state.journalSection === "calendar" ? calendarHTML : sectionHTML(scope)) + `
       <div class="j-add-wrap">
         <button class="j-add" data-jadd aria-label="Add a trade"></button>
         <span class="j-add-label">Add Trade</span>
       </div>
       <input id="jCsvFile" class="j-file" type="file" accept=".csv,text/csv">
       <button class="j-cash" data-jcash>Deposit / Withdraw</button>
-      <div class="j-stat-row">
-        ${JOURNAL_STATS.map((label) => `
-          <div class="j-stat-btn">
-            <span class="ci-orb" aria-hidden="true"></span>
-            <span class="ci-action-label">${esc(label)}</span>
-          </div>`).join("")}
-      </div>`;
+      ${statRowHTML()}`;
     cardScroll.scrollTop = 0;
     cardFooter.style.display = "none";
   }
@@ -1405,11 +1576,17 @@
       return;
     }
     const acct = store.journalManual[account.id] || (store.journalManual[account.id] = {});
+    const pnl = Math.round(amount * 100) / 100;
     (acct[day] || (acct[day] = [])).push({
       platform: val("platform"), asset: val("asset"),
       entry: val("entry"), exit: val("exit"),
-      pnl: Math.round(amount * 100) / 100, loggedAt: new Date().toISOString(),
+      pnl, loggedAt: new Date().toISOString(),
     });
+    // a winner with exit above entry is a long, as is a loser with exit below
+    const en = parseFloat(val("entry")), ex = parseFloat(val("exit"));
+    const side = (!isNaN(en) && !isNaN(ex) && en !== ex)
+      ? (((ex > en) === (pnl >= 0)) ? "Long" : "Short") : "Long";
+    addTradeRecords(account.id, [{ date: day, symbol: val("asset"), side, qty: "", pnl }]);
     save();
     const d = day.split("-");
     state.journalMonth = monthOffsetFor(+d[0], +d[1] - 1);
@@ -1423,6 +1600,11 @@
   /* Delegated on document so it survives every re-render of the journal —
      the file input is recreated each time renderJournal() runs. */
   document.addEventListener("change", (e) => {
+    if (e.target && e.target.classList && e.target.classList.contains("j-range")) {
+      state.journalRange = e.target.value;
+      renderJournal();
+      return;
+    }
     if (!e.target || e.target.id !== "jCsvFile" || !e.target.files || !e.target.files[0]) return;
     const input = e.target;
     const reader = new FileReader();
@@ -1825,7 +2007,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pflog],[data-pfsave],[data-pfacct]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pflog],[data-pfsave],[data-pfacct],[data-jsection],[data-jviewall]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -1849,6 +2031,8 @@
     else if (t.hasAttribute("data-jaddacct")) openAddAccount();
     else if (t.hasAttribute("data-jsaveacct")) saveAccount();
     else if (t.hasAttribute("data-jcash")) openCashFlow();
+    else if (t.dataset.jsection) { state.journalSection = t.dataset.jsection; state.journalAllTrades = false; renderJournal(); }
+    else if (t.hasAttribute("data-jviewall")) { state.journalAllTrades = !state.journalAllTrades; renderJournal(); }
     else if (t.hasAttribute("data-pflog")) openPropLog(t.getAttribute("data-pflog"));
     else if (t.hasAttribute("data-pfsave")) savePropEntry();
     else if (t.dataset.pfacct) openPropDetail(t.dataset.pfacct);
