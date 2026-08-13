@@ -15,6 +15,11 @@
   --fs: 1;              /* text-size multiplier (settings) */
   --radius-card: 30px;
   --radius-pill: 22px;
+  /* iOS safe areas, resolved once. The fallbacks matter: a bare env() with no
+     fallback invalidates the whole declaration on anything that doesn't
+     support it, so every inset in this file goes through these two. */
+  --sat: env(safe-area-inset-top, 0px);
+  --sab: env(safe-area-inset-bottom, 0px);
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -60,8 +65,10 @@ img { user-select: none; -webkit-user-drag: none; }
   height: 100vh;
   height: 100dvh;
   height: var(--vhpx, 100dvh);  /* JS-measured window.innerHeight, most reliable on iOS */
-  /* notch / status bar clearance in standalone mode (viewport-fit=cover) */
-  padding-top: env(safe-area-inset-top);
+  /* No top padding here on purpose: the column runs edge to edge so the wave
+     hero can bleed up behind the status bar and dynamic island. Every layer
+     that owns the top of the screen clears the notch itself — the header zone
+     grows by --sat, and the auth / video / overlay layers pad themselves. */
   background: var(--bg);
   display: flex;
   flex-direction: column;
@@ -86,10 +93,14 @@ img { user-select: none; -webkit-user-drag: none; }
 /* ===================== HEADER ZONE ===================== */
 
 /* wave-only header per the v2 target layout — action icons live in the card footer */
+/* Full-bleed: the zone starts at y=0 and grows by the top inset, so the wave
+   runs up behind the status bar and dynamic island rather than being pushed
+   below them. Nothing interactive lives in here — the action icons moved to
+   the card footer — so there is nothing to keep clear of the notch. */
 .header-zone {
   position: relative;
   flex: 0 0 auto;
-  height: clamp(76px, 12vh, 128px);
+  height: calc(clamp(76px, 12vh, 128px) + var(--sat));
   overflow: hidden;
 }
 
@@ -378,7 +389,7 @@ img { user-select: none; -webkit-user-drag: none; }
   display: flex;
   align-items: center;
   justify-content: space-around;
-  margin: 2px 4% calc(8px + env(safe-area-inset-bottom));
+  margin: 2px 4% calc(8px + var(--sab));
   height: clamp(48px, 6.2vh, 58px);
   border-radius: 999px;
 }
@@ -632,7 +643,7 @@ img { user-select: none; -webkit-user-drag: none; }
 .overlay-panel {
   width: 94%;
   max-height: 82%;
-  margin-bottom: 12px;
+  margin-bottom: calc(12px + var(--sab));   /* clear of the home indicator */
   border-radius: 26px;
   padding: 1.5px;
   background: linear-gradient(135deg, var(--cyan), var(--grad-mid), var(--magenta));
@@ -836,7 +847,8 @@ img { user-select: none; -webkit-user-drag: none; }
   flex-direction: column;
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
-  padding-top: env(safe-area-inset-top);
+  /* like .app: no top padding, so the wave portion of the background bleeds
+     behind the status bar. The spacer below carries the inset instead. */
 }
 .auth-screen.hidden { display: none; }
 /* While a field is focused, shrink the scroll area to the visible viewport
@@ -848,16 +860,19 @@ img { user-select: none; -webkit-user-drag: none; }
 }
 .auth-screen.kb-open .auth-card { padding-bottom: 96px; }
 
+/* Spacer that drops the card below the wave portion of the background. It
+   absorbs the top inset, so the card clears the notch while the wave behind
+   it does not. */
 .auth-wave {
   flex: 0 0 auto;
-  height: clamp(96px, 15vh, 160px);   /* clears the wave portion of the background */
+  height: calc(clamp(96px, 15vh, 160px) + var(--sat));
 }
 
 .auth-card-outer {
   position: relative;
   isolation: isolate;
   flex: 1 0 auto;
-  margin: 14px 5% calc(18px + env(safe-area-inset-bottom));
+  margin: 14px 5% calc(18px + var(--sab));
   border-radius: var(--radius-card);
 }
 
@@ -1878,10 +1893,10 @@ select.mt-input {
   display: flex;
   flex-direction: column;
   background: radial-gradient(130% 75% at 50% 0%, #0c1533 0%, #05070f 62%);
-  /* the layer fills .app's padding box, so it reaches under the notch —
-     clear it here the same way .app and .auth-screen do */
-  padding-top: env(safe-area-inset-top);
-  padding-bottom: calc(4px + env(safe-area-inset-bottom));
+  /* the layer fills .app edge to edge, so it reaches under the notch — the
+     close/expand bar at the top has to clear it itself */
+  padding-top: var(--sat);
+  padding-bottom: calc(4px + var(--sab));
 }
 .vplayer.hidden { display: none; }
 
@@ -2046,7 +2061,7 @@ select.mt-input {
   display: grid;
   place-items: center;
   position: absolute;
-  top: calc(14px + env(safe-area-inset-top));
+  top: calc(14px + var(--sat));
   right: 14px;
   z-index: 3;
   width: 48px;
