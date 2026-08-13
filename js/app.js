@@ -139,6 +139,7 @@
     journalMonth: 0,         // months offset from the current month
     journalSection: "calendar",   // calendar | total | net | recent
     journalRange: "1M",
+    checkinResult: null,     // { go, noCount } — result shown in place of the rows
   };
 
   /* ---------------- els ---------------- */
@@ -753,10 +754,27 @@
     $("checkinClock").innerHTML = `<span class="ci-date">${date}</span><span class="ci-time">${time}</span>`;
   }
 
+  /* The submit result takes over the question area of the card itself — the
+     seven rows and the submit button are swapped out for it, so there is no
+     overlay and the user stays on the same bordered card. */
+  function checkinResultHTML(res) {
+    return `<div class="ci-result ci-result-inline ${res.go ? "go" : "stop"}">
+      <div class="ci-result-title">${res.go ? "Start Trade Day" : "Not a Trade Day"}</div>
+      <div class="ci-result-body">${res.go
+        ? `${res.noCount} of ${CHECKIN_ITEMS.length} marked No — you're clear to trade. Next is the pre-market checklist, which applies whichever session you trade.`
+        : `${res.noCount} of ${CHECKIN_ITEMS.length} marked No. Three or more says today isn't the day. Protect the account and come back tomorrow.`}</div>
+      ${res.go
+        ? `<button class="btn-primary" data-ci-before>Continue to Before Trade</button>`
+        : `<button class="btn-primary" data-ci-exit>Back to Home</button>`}
+    </div>`;
+  }
+
   function renderCheckin() {
     barTitle.textContent = "Trade Day Checkin";
     paintClock();
+    const res = state.checkinResult;
     cardScroll.innerHTML = `
+      ${res ? checkinResultHTML(res) : `
       <h1 class="ci-heading">Check List Before Trading Day</h1>
       <div class="ci-list">
         ${CHECKIN_ITEMS.map((it) => `
@@ -773,7 +791,7 @@
         const sent = store.checkinLog[todayKey()];
         return `<button class="ci-submit${ready ? "" : " off"}"
           ${ready ? "" : "disabled"} data-ci-submit>${sent ? "Submitted" : "Submit"}</button>`;
-      })()}
+      })()}`}
       <div class="ci-actions">
         ${CHECKIN_ACTIONS.map((a) => `
           <div class="ci-action">
@@ -782,6 +800,9 @@
             <span class="ci-action-label">${esc(a.label)}</span>
           </div>`).join("")}
       </div>`;
+    // the result stretches to fill the space the rows left behind, so it sits
+    // centred in the card rather than clinging to the top of it
+    cardScroll.classList.toggle("ci-resulting", !!res);
     cardScroll.scrollTop = 0;
     cardFooter.style.display = "none";
   }
@@ -790,6 +811,8 @@
     stopAudio();
     state.view = "checkin";
     state.slideDir = 0;
+    // coming back to Check-In always lands on the questions, not a stale result
+    state.checkinResult = null;
     closeOverlay();
     render();
   }
@@ -1674,6 +1697,7 @@
     const listy = state.view === "home" || state.view === "videos"
       || state.view === "checkin" || state.view === "journal";
     $("cardOuter").classList.toggle("outline-bg", listy);
+    if (state.view !== "checkin") cardScroll.classList.remove("ci-resulting");
     syncCheckinChrome();
     syncDockActive();
     if (state.view === "home") renderHome();
@@ -2067,27 +2091,18 @@
           or New York.</div>
         <button class="btn-primary" data-close>Got it</button>`);
     }
-    else if (t.hasAttribute("data-ci-exit")) { closeOverlay(); state.homeTab = "sections"; goHome(); }
+    else if (t.hasAttribute("data-ci-exit")) { closeOverlay(); state.checkinResult = null; state.homeTab = "sections"; goHome(); }
     else if (t.hasAttribute("data-ci-submit")) {
       if (!CHECKIN_ITEMS.every((it) => store.checklist[it.id])) return;
       const answers = {};
       CHECKIN_ITEMS.forEach((it) => { answers[it.id] = store.checklist[it.id]; });
       store.checkinLog[todayKey()] = { answers, submittedAt: new Date().toISOString() };
       save();
-      renderCheckin();
       // three or more "No" answers across the seven rows calls the day off.
       // "Are you ready to trade?" is just one of the seven now, not an override.
       const noCount = CHECKIN_ITEMS.filter((it) => answers[it.id] === "no").length;
-      const go = noCount < 3;
-      openOverlay(`<div class="ci-result ${go ? "go" : "stop"}">
-        <div class="ci-result-title">${go ? "Start Trade Day" : "Not a Trade Day"}</div>
-        <div class="ci-result-body">${go
-          ? `${noCount} of ${CHECKIN_ITEMS.length} marked No — you're clear to trade. Next is the pre-market checklist, which applies whichever session you trade.`
-          : `${noCount} of ${CHECKIN_ITEMS.length} marked No. Three or more says today isn't the day. Protect the account and come back tomorrow.`}</div>
-        ${go
-          ? `<button class="btn-primary" data-ci-before>Continue to Before Trade</button>`
-          : `<button class="btn-primary" data-ci-exit>Back to Home</button>`}
-      </div>`);
+      state.checkinResult = { go: noCount < 3, noCount };
+      renderCheckin();
     }
     else if (t.dataset.grid) { state.gridItem = t.dataset.grid; render(); }
     else if (t.hasAttribute("data-grid-back")) { state.gridItem = null; render(); }

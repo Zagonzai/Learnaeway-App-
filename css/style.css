@@ -1095,6 +1095,22 @@ img { user-select: none; -webkit-user-drag: none; }
   margin-bottom: 6px;
 }
 
+/* Submitting swaps the seven rows for the result inside the same card — no
+   overlay. The result claims the space the rows left so it reads as centred,
+   with the category row still below it. */
+.card-scroll.ci-resulting { display: flex; flex-direction: column; }
+.ci-result-inline {
+  flex: 1 1 auto;
+  min-height: 240px;   /* small enough that the category row still fits on a 640px screen */
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  padding: 10px 4px;
+}
+.ci-result-inline .ci-result-body { max-width: 300px; }
+.ci-result-inline .btn-primary { width: 78%; max-width: 300px; margin-top: 18px; }
+
 /* manual trade entry form */
 .mt-label {
   display: block;
