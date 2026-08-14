@@ -42,6 +42,10 @@
   if (!store.journalActive) store.journalActive = "__all";   // "__all" = combined view
   if (!store.propLedger) store.propLedger = {};         // prop account -> [evaluation/reset/payout]
   if (!store.journalTrades) store.journalTrades = {};   // account -> [per-trade records]
+  if (store.profilePhoto === undefined) store.profilePhoto = "";  // data: URL, "" = use the default icon
+  if (!store.pickaeway) store.pickaeway = {           // Reward Battle record
+    rewardBalance: 0, wins: 0, losses: 0, draws: 0, accuracy: 0, speed: 0,
+  };
   // "Daily Bias" was renamed to "Market Awareness" — carry answers already
   // recorded under the old id, including inside submitted day logs
   let renamed = false;
@@ -125,7 +129,7 @@
   /* ---------------- state ---------------- */
 
   const state = {
-    view: "home",            // 'home' | 'screen' | 'videos' | 'checkin' | 'journal'
+    view: "home",            // 'home' | 'screen' | 'videos' | 'checkin' | 'journal' | 'pickaeway'
     homeTab: "sections",     // 'sections' | 'liked' | 'saved'
     homeModule: 0,           // module index shown on home
     expanded: null,          // section id expanded into subsection deck
@@ -815,6 +819,160 @@
     state.checkinResult = null;
     closeOverlay();
     render();
+  }
+
+  /* ---------------- Pickæway (Reward Battle) ----------------
+     The Cool Down Game's home screen. Stats come from store.pickaeway and
+     read zero until matches are actually played — the match engine itself is
+     not part of this pass, so Match Replay and Build Match are inert. */
+
+  const STREAK_DOTS = 5;
+
+  /* The ascending-bars mark from the mockup, drawn inline — there is no such
+     asset in the library and the plus/journal icons mean other things. Per
+     spec this mark belongs to Match Replay only; the dock's Battle slot gets
+     its own artwork when that lands. */
+  const ASCENDING_BARS = `<svg viewBox="0 0 40 40" width="38" height="38" aria-hidden="true">
+    <rect x="4"  y="24" width="9" height="12" rx="2.5" fill="#FFFFFF"/>
+    <rect x="15.5" y="16" width="9" height="9"  rx="2.5" fill="#FFFFFF"/>
+    <rect x="27" y="5"  width="9" height="12" rx="2.5" fill="#FFFFFF"/>
+  </svg>`;
+
+  function dayKeyOf(d) {
+    return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
+  }
+
+  /* Consecutive submitted check-in days, counting back from today. Today not
+     being done yet doesn't break the run — the day isn't over. */
+  function checkinStreak() {
+    const log = store.checkinLog || {};
+    const d = new Date();
+    if (!log[dayKeyOf(d)]) d.setDate(d.getDate() - 1);
+    let n = 0;
+    while (log[dayKeyOf(d)]) { n++; d.setDate(d.getDate() - 1); }
+    return n;
+  }
+
+  /* Which FX session is open right now, by UTC hour. */
+  function currentSession() {
+    const h = new Date().getUTCHours();
+    if (h >= 13 && h < 22) return "NEW YORK";
+    if (h >= 8 && h < 13) return "LONDON";
+    if (h < 8) return "TOKYO";
+    return "SYDNEY";
+  }
+
+  /* Five circles: filled for each day of the current run, outline for the
+     rest. Same left-to-right fill as the Discipline Streak section. */
+  function paintStreak() {
+    const run = Math.min(checkinStreak(), STREAK_DOTS);
+    const el = $("pickStreak");
+    if (!el) return;
+    el.innerHTML = Array.from({ length: STREAK_DOTS }, (_, i) =>
+      `<span class="streak-dot${i < run ? " on" : ""}"></span>`).join("");
+    el.setAttribute("aria-label", `Check-in streak: ${run} of ${STREAK_DOTS} days`);
+  }
+
+  /* session · time · date, painted onto the header video */
+  function paintWaveClock() {
+    const now = new Date();
+    $("wcSessionName").textContent = currentSession();
+    $("wcTime").textContent = now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" });
+    $("wcDate").textContent = now.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" }).toUpperCase();
+  }
+
+  function pickStats() {
+    const p = store.pickaeway;
+    const played = (p.wins || 0) + (p.losses || 0) + (p.draws || 0);
+    return {
+      reward: (p.rewardBalance || 0).toFixed(2),
+      record: `${p.wins || 0}-${p.losses || 0}-${p.draws || 0}`,
+      winRate: played ? `${Math.round((p.wins / played) * 100)}%` : "—",
+      accuracy: played ? `${Math.round(p.accuracy || 0)}%` : "—",
+      matches: String(played),
+      speed: played ? `${(p.speed || 0).toFixed(1)}s` : "—",
+    };
+  }
+
+  function renderPickaeway() {
+    const s = pickStats();
+    barTitle.textContent = "Pickæway";
+    paintStreak();
+    paintWaveClock();
+    cardScroll.innerHTML = `
+      <div class="pk-sub">Cool Down Game</div>
+      <div class="pk-reward">
+        <div class="pk-cap">Reward Balance</div>
+        <div class="pk-big">${s.reward}</div>
+        <div class="pk-note">lifetime points earned in Reward Battle</div>
+      </div>
+      <div class="pk-row pk-row-2">
+        <div class="pk-stat"><div class="pk-cap">Record</div><div class="pk-val">${s.record}</div></div>
+        <div class="pk-stat"><div class="pk-cap">Win Rate</div><div class="pk-val teal">${s.winRate}</div></div>
+      </div>
+      <div class="pk-row pk-row-3">
+        <div class="pk-stat"><div class="pk-cap">Avg Accuracy</div><div class="pk-val">${s.accuracy}</div></div>
+        <div class="pk-stat pk-mid"><div class="pk-cap">Matches</div><div class="pk-val">${s.matches}</div></div>
+        <div class="pk-stat"><div class="pk-cap">Avg Speed</div><div class="pk-val">${s.speed}</div></div>
+      </div>
+      <div class="pk-actions">
+        <button class="pk-replay" data-pk-replay aria-label="Match Replay">${ASCENDING_BARS}</button>
+        <div class="pk-replay-label">Match Replay</div>
+        <button class="pk-build" data-pk-build><span class="pk-plus">+</span> Build Match</button>
+      </div>`;
+    cardScroll.scrollTop = 0;
+    cardFooter.style.display = "none";
+  }
+
+  function openPickaeway() {
+    stopAudio();
+    state.view = "pickaeway";
+    state.slideDir = 0;
+    closeOverlay();
+    render();
+  }
+
+  /* ---------------- profile photo ----------------
+     Stored as a data: URL in the same localStorage record as everything else,
+     so it survives reloads without any backend. Downscaled hard before it is
+     saved — a phone photo straight off the camera would blow the ~5MB quota
+     the whole store shares. */
+
+  const PHOTO_PX = 240;
+
+  function syncProfilePhoto() {
+    const url = store.profilePhoto;
+    const img = $("dockProfileImg");
+    img.src = url || "assets/nav-icons/icon-user@2x.png";
+    $("navProfile").classList.toggle("has-photo", !!url);
+    document.querySelectorAll(".bar-icon img[data-profile-img]").forEach((el) => {
+      el.src = url || "assets/nav-icons/icon-user@2x.png";
+    });
+  }
+
+  function readProfilePhoto(file) {
+    if (!file || !/^image\//.test(file.type)) return;
+    const reader = new FileReader();
+    reader.onload = () => {
+      const img = new Image();
+      img.onload = () => {
+        // square centre-crop, then downscale, so the circle is never distorted
+        const side = Math.min(img.width, img.height);
+        const cv = document.createElement("canvas");
+        cv.width = cv.height = PHOTO_PX;
+        const ctx = cv.getContext("2d");
+        ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, PHOTO_PX, PHOTO_PX);
+        try {
+          store.profilePhoto = cv.toDataURL("image/jpeg", 0.82);
+          save();
+          syncProfilePhoto();
+          if (state.view === "pickaeway") render();
+        } catch (e) { /* tainted canvas or quota — keep the old photo */ }
+      };
+      img.onerror = () => { /* not a decodable image */ };
+      img.src = reader.result;
+    };
+    reader.readAsDataURL(file);
   }
 
   /* ---------------- Trade Journal ----------------
@@ -1677,25 +1835,32 @@
   function syncDockActive() {
     $("navCheckin").classList.toggle("active", state.view === "checkin");
     $("navAdd").classList.toggle("active", state.view === "journal");
+    $("navBattle").classList.toggle("active", state.view === "pickaeway");
     $("navPlay").classList.toggle("active", state.view === "videos");
   }
 
-  /* the check-in view swaps in its own date/time bar and dock */
+  /* each of these views swaps its own bar in for the progress bar */
   function syncCheckinChrome() {
     const on = state.view === "checkin";
     const jr = state.view === "journal";
+    const pk = state.view === "pickaeway";
     checkinBar.classList.toggle("hidden", !on);
     $("journalBar").classList.toggle("hidden", !jr);
-    document.querySelectorAll(".bar")[1].classList.toggle("hidden", on || jr);
+    $("pickBar").classList.toggle("hidden", !pk);
+    document.querySelectorAll(".bar")[1].classList.toggle("hidden", on || jr || pk);
+    // the session/time/date overlay belongs to the Pickæway home screen
+    $("waveClock").classList.toggle("hidden", !pk);
     clearInterval(clockTimer);
     if (on) clockTimer = setInterval(paintClock, 1000);
+    else if (pk) clockTimer = setInterval(paintWaveClock, 1000);
   }
 
   function render() {
     // navigating anywhere other than the library closes the player
     if (state.videoId && state.view !== "videos") tearDownPlayer();
     const listy = state.view === "home" || state.view === "videos"
-      || state.view === "checkin" || state.view === "journal";
+      || state.view === "checkin" || state.view === "journal"
+      || state.view === "pickaeway";
     $("cardOuter").classList.toggle("outline-bg", listy);
     if (state.view !== "checkin") cardScroll.classList.remove("ci-resulting");
     syncCheckinChrome();
@@ -1704,6 +1869,7 @@
     else if (state.view === "videos") renderVideos();
     else if (state.view === "checkin") renderCheckin();
     else if (state.view === "journal") renderJournal();
+    else if (state.view === "pickaeway") renderPickaeway();
     else renderScreen();
   }
 
@@ -1808,6 +1974,19 @@
         <div class="set-label">Text size</div>
         <div class="set-options">
           ${["S", "M", "L"].map((t) => `<button class="set-opt ${s.textSize === t ? "active" : ""}" data-set-size="${t}">${t}</button>`).join("")}
+        </div>
+      </div>
+      <div class="set-group">
+        <div class="set-label">Profile photo</div>
+        <div class="set-photo">
+          <span class="set-photo-ring">
+            <img src="${store.profilePhoto || "assets/nav-icons/icon-user@2x.png"}"
+                 class="${store.profilePhoto ? "shot" : ""}" alt="">
+          </span>
+          <div class="set-photo-btns">
+            <button class="set-opt" data-photo-pick>${store.profilePhoto ? "Change Photo" : "Upload Profile Photo"}</button>
+            ${store.profilePhoto ? `<button class="set-opt" data-photo-clear>Remove</button>` : ""}
+          </div>
         </div>
       </div>
       <div class="set-group">
@@ -2033,11 +2212,19 @@
   $("navAdd").addEventListener("click", openJournal);
   $("btnJournalHome").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
   $("btnJournalProfile").addEventListener("click", openProfile);
+  $("navBattle").addEventListener("click", openPickaeway);
+  $("navProfile").addEventListener("click", openProfile);
+  $("btnPickHome").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
+  $("btnPickProfile").addEventListener("click", openProfile);
+  $("photoInput").addEventListener("change", (e) => {
+    readProfilePhoto(e.target.files && e.target.files[0]);
+    e.target.value = "";     // same file twice in a row still fires change
+  });
 
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pflog],[data-pfsave],[data-pfacct],[data-jsection],[data-jviewall]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pflog],[data-pfsave],[data-pfacct],[data-jsection],[data-jviewall],[data-photo-pick],[data-photo-clear],[data-pk-replay],[data-pk-build]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -2089,6 +2276,21 @@
         <div class="liked-empty">The pre-market checklist is coming soon. It runs
           before the open and applies whichever session you trade — Asian, London
           or New York.</div>
+        <button class="btn-primary" data-close>Got it</button>`);
+    }
+    else if (t.hasAttribute("data-photo-pick")) $("photoInput").click();
+    else if (t.hasAttribute("data-photo-clear")) {
+      store.profilePhoto = "";
+      save();
+      syncProfilePhoto();
+      openSettings();
+    }
+    else if (t.hasAttribute("data-pk-replay") || t.hasAttribute("data-pk-build")) {
+      const build = t.hasAttribute("data-pk-build");
+      openOverlay(panelHead(build ? "Build Match" : "Match Replay") + `
+        <div class="liked-empty">${build
+          ? "Match building is coming soon — this is where you'll pick the pairs and set the round."
+          : "No matches played yet. Once you've battled, every round is replayable here."}</div>
         <button class="btn-primary" data-close>Got it</button>`);
     }
     else if (t.hasAttribute("data-ci-exit")) { closeOverlay(); state.checkinResult = null; state.homeTab = "sections"; goHome(); }
@@ -2519,6 +2721,7 @@
 
   applyTextSize();
   syncVolume();
+  syncProfilePhoto();
   render();
 
   if (window.FB && FB.user() && store.authSeen) {

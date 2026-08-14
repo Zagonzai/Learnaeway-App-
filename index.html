@@ -28,6 +28,14 @@
         <source src="assets/video/wave-header-loop.webm" type="video/webm">
       </video>
       <div class="wave-bg wave-still" aria-hidden="true"></div>
+      <!-- session · time · date, sitting directly on the video. Plain white,
+           no scrim or shadow behind it (per spec). Hidden off the Pickæway
+           home screen. -->
+      <div class="wave-clock hidden" id="waveClock">
+        <div class="wc-session"><b id="wcSessionName"></b><span>Session</span></div>
+        <div class="wc-time" id="wcTime"></div>
+        <div class="wc-date" id="wcDate"></div>
+      </div>
     </header>
 
     <!-- ============ TOP BARS (two separate pills, per corrected round-3 spec) ============ -->
@@ -60,6 +68,19 @@
       </button>
       <div id="checkinClock" class="checkin-clock"></div>
       <button id="btnCheckinHome" class="bar-icon" aria-label="Back to home">
+        <img src="assets/nav-icons/icon-home@2x.png" alt="">
+      </button>
+    </div>
+
+    <!-- Pickæway swaps the progress bar for the 5-day check-in streak. This is
+         the slot the date/time/session block used to occupy — that text now
+         sits on the header video instead. -->
+    <div class="bar bar-pick hidden" id="pickBar">
+      <button id="btnPickProfile" class="bar-icon" aria-label="Open profile">
+        <img src="assets/nav-icons/icon-user@2x.png" alt="">
+      </button>
+      <div id="pickStreak" class="pick-streak" role="img"></div>
+      <button id="btnPickHome" class="bar-icon" aria-label="Home">
         <img src="assets/nav-icons/icon-home@2x.png" alt="">
       </button>
     </div>
@@ -103,13 +124,24 @@
       </div>
     </main>
 
-    <!-- ==== BOTTOM DOCK — one pattern app-wide: Check-In · + · Play ==== -->
+    <!-- ==== BOTTOM DOCK — one pattern app-wide:
+         Check-In · + · Profile · Battle · Play ==== -->
     <nav class="bottom-nav" id="dock">
       <button id="navCheckin" class="dock-btn" aria-label="Trade Day Check-In">
         <img src="assets/nav-icons/icon-trade-day@2x.png" alt="">
       </button>
-      <button id="navAdd" class="dock-btn" aria-label="Trade Journal — coming soon">
+      <button id="navAdd" class="dock-btn" aria-label="Trade Journal">
         <img src="assets/nav-icons/icon-trade-journal@2x.png" alt="">
+      </button>
+      <!-- centre slot: the ring frame is the button's background, the photo
+           (or the default person icon) sits inside it -->
+      <button id="navProfile" class="dock-btn dock-profile" aria-label="Profile">
+        <img id="dockProfileImg" src="assets/nav-icons/icon-user@2x.png" alt="">
+      </button>
+      <!-- 4th slot: custom Battle artwork lands here when delivered. Until then
+           the slot is built and labelled but draws an empty frame. -->
+      <button id="navBattle" class="dock-btn dock-battle" aria-label="Pickæway — Reward Battle">
+        <img id="dockBattleImg" src="" alt="" hidden>
       </button>
       <button id="navPlay" class="dock-btn" aria-label="Video library">
         <img src="assets/nav-icons/icon-video-play@2x.png" alt="">
@@ -118,6 +150,9 @@
 
     <!-- ==== FULL-SCREEN VERTICAL VIDEO PLAYER (9:16, covers bars + dock) ==== -->
     <div id="videoPlayer" class="vplayer hidden" role="dialog" aria-modal="true" aria-label="Video player"></div>
+
+    <!-- profile photo picker, driven from Settings -->
+    <input type="file" id="photoInput" accept="image/*" hidden>
 
     <!-- ===================== OVERLAYS ===================== -->
     <div id="overlay" class="overlay hidden">
