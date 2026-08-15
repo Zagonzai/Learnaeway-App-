@@ -749,14 +749,8 @@
   /* ---------------- Trade Day Check-In ---------------- */
 
   const checkinBar = $("checkinBar");
-  let clockTimer = null;
+  let clockTimer = null;      // one ticking clock for the whole app
 
-  function paintClock() {
-    const now = new Date();
-    const date = now.toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" });
-    const time = now.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit", second: "2-digit" });
-    $("checkinClock").innerHTML = `<span class="ci-date">${date}</span><span class="ci-time">${time}</span>`;
-  }
 
   /* The submit result takes over the question area of the card itself — the
      seven rows and the submit button are swapped out for it, so there is no
@@ -775,7 +769,7 @@
 
   function renderCheckin() {
     barTitle.textContent = "Trade Day Checkin";
-    paintClock();
+    paintStreak();
     const res = state.checkinResult;
     cardScroll.innerHTML = `
       ${res ? checkinResultHTML(res) : `
@@ -828,14 +822,13 @@
 
   const STREAK_DOTS = 5;
 
-  /* The ascending-bars mark from the mockup, drawn inline — there is no such
-     asset in the library and the plus/journal icons mean other things. Per
-     spec this mark belongs to Match Replay only; the dock's Battle slot gets
-     its own artwork when that lands. */
-  const ASCENDING_BARS = `<svg viewBox="0 0 40 40" width="38" height="38" aria-hidden="true">
-    <rect x="4"  y="24" width="9" height="12" rx="2.5" fill="#FFFFFF"/>
-    <rect x="15.5" y="16" width="9" height="9"  rx="2.5" fill="#FFFFFF"/>
-    <rect x="27" y="5"  width="9" height="12" rx="2.5" fill="#FFFFFF"/>
+  /* The ascending-bars mark, drawn inline — there is no such asset in the
+     library. It lives in the dock's Battle slot; Match Replay uses the
+     delivered candle artwork instead, so neither is duplicated. Sized by CSS. */
+  const ASCENDING_BARS = `<svg class="bars-mark" viewBox="0 0 40 40" aria-hidden="true">
+    <rect x="4"  y="24" width="9" height="12" rx="2.5" fill="currentColor"/>
+    <rect x="15.5" y="16" width="9" height="9"  rx="2.5" fill="currentColor"/>
+    <rect x="27" y="5"  width="9" height="12" rx="2.5" fill="currentColor"/>
   </svg>`;
 
   function dayKeyOf(d) {
@@ -863,10 +856,12 @@
   }
 
   /* Five circles: filled for each day of the current run, outline for the
-     rest. Same left-to-right fill as the Discipline Streak section. */
+     rest. Same left-to-right fill as the Discipline Streak section. Lives in
+     the Trade Day Check-In bar — the one bar that shows this instead of the
+     date/time. */
   function paintStreak() {
     const run = Math.min(checkinStreak(), STREAK_DOTS);
-    const el = $("pickStreak");
+    const el = $("checkinStreak");
     if (!el) return;
     el.innerHTML = Array.from({ length: STREAK_DOTS }, (_, i) =>
       `<span class="streak-dot${i < run ? " on" : ""}"></span>`).join("");
@@ -897,10 +892,7 @@
   function renderPickaeway() {
     const s = pickStats();
     barTitle.textContent = "Pickæway";
-    paintStreak();
-    paintWaveClock();
     cardScroll.innerHTML = `
-      <div class="pk-sub">Cool Down Game</div>
       <div class="pk-reward">
         <div class="pk-cap">Reward Balance</div>
         <div class="pk-big">${s.reward}</div>
@@ -916,7 +908,9 @@
         <div class="pk-stat"><div class="pk-cap">Avg Speed</div><div class="pk-val">${s.speed}</div></div>
       </div>
       <div class="pk-actions">
-        <button class="pk-replay" data-pk-replay aria-label="Match Replay">${ASCENDING_BARS}</button>
+        <button class="pk-replay" data-pk-replay aria-label="Match Replay">
+          <img src="assets/nav-icons/icon-match-replay@2x.png" alt="">
+        </button>
         <div class="pk-replay-label">Match Replay</div>
         <button class="pk-build" data-pk-build><span class="pk-plus">+</span> Build Match</button>
       </div>`;
@@ -953,26 +947,156 @@
   function readProfilePhoto(file) {
     if (!file || !/^image\//.test(file.type)) return;
     const reader = new FileReader();
-    reader.onload = () => {
-      const img = new Image();
-      img.onload = () => {
-        // square centre-crop, then downscale, so the circle is never distorted
-        const side = Math.min(img.width, img.height);
-        const cv = document.createElement("canvas");
-        cv.width = cv.height = PHOTO_PX;
-        const ctx = cv.getContext("2d");
-        ctx.drawImage(img, (img.width - side) / 2, (img.height - side) / 2, side, side, 0, 0, PHOTO_PX, PHOTO_PX);
-        try {
-          store.profilePhoto = cv.toDataURL("image/jpeg", 0.82);
-          save();
-          syncProfilePhoto();
-          if (state.view === "pickaeway") render();
-        } catch (e) { /* tainted canvas or quota — keep the old photo */ }
-      };
-      img.onerror = () => { /* not a decodable image */ };
-      img.src = reader.result;
-    };
+    reader.onload = () => openPhotoCrop(String(reader.result));
     reader.readAsDataURL(file);
+  }
+
+  /* ---------------- circular crop ----------------
+     The picked image is laid over a square stage and can be dragged and
+     zoomed; the circle drawn on top is exactly the stage inscribed, so
+     saving the square and displaying it round gives what was framed.
+     Scale is clamped so the image always covers the stage — pan can never
+     expose a gap at the edge of the circle. */
+
+  const CROP_STAGE = 260;      // CSS px, matches .crop-stage
+  const crop = { url: "", w: 0, h: 0, base: 1, zoom: 1, x: 0, y: 0 };
+
+  function cropScale() { return crop.base * crop.zoom; }
+
+  /* keep the image covering the stage after any pan or zoom */
+  function clampCrop() {
+    const s = cropScale();
+    const minX = CROP_STAGE - crop.w * s, minY = CROP_STAGE - crop.h * s;
+    crop.x = Math.min(0, Math.max(minX, crop.x));
+    crop.y = Math.min(0, Math.max(minY, crop.y));
+  }
+
+  function paintCrop() {
+    const img = document.getElementById("cropImg");
+    if (!img) return;
+    const s = cropScale();
+    img.style.width = `${crop.w * s}px`;
+    img.style.height = `${crop.h * s}px`;
+    img.style.transform = `translate(${crop.x}px, ${crop.y}px)`;
+  }
+
+  function openPhotoCrop(url) {
+    const probe = new Image();
+    probe.onload = () => {
+      crop.url = url;
+      crop.w = probe.naturalWidth;
+      crop.h = probe.naturalHeight;
+      crop.base = Math.max(CROP_STAGE / crop.w, CROP_STAGE / crop.h);   // cover
+      crop.zoom = 1;
+      // start centred
+      crop.x = (CROP_STAGE - crop.w * crop.base) / 2;
+      crop.y = (CROP_STAGE - crop.h * crop.base) / 2;
+      openOverlay(panelHead("Position Your Photo") + `
+        <div class="crop-wrap">
+          <div class="crop-stage" id="cropStage">
+            <img id="cropImg" src="${esc(url)}" alt="" draggable="false">
+            <div class="crop-mask" aria-hidden="true"></div>
+          </div>
+        </div>
+        <div class="crop-hint">Drag to reposition · pinch or use the slider to zoom</div>
+        <input class="crop-zoom" id="cropZoom" type="range" min="1" max="3" step="0.01" value="1"
+               aria-label="Zoom">
+        <button class="btn-primary" data-crop-save>Use Photo</button>
+        <button class="btn-secondary" data-close>Cancel</button>`);
+      wireCrop();
+      paintCrop();
+    };
+    probe.onerror = () => {
+      openOverlay(panelHead("Couldn't read that file") + `
+        <div class="liked-empty">That image couldn't be opened. Try a JPG or PNG.</div>
+        <button class="btn-primary" data-close>OK</button>`);
+    };
+    probe.src = url;
+  }
+
+  function wireCrop() {
+    const stage = document.getElementById("cropStage");
+    const zoom = document.getElementById("cropZoom");
+    if (!stage) return;
+    const pts = new Map();
+    let pinchStart = 0, zoomStart = 1, last = null;
+
+    const dist = () => {
+      const [a, b] = [...pts.values()];
+      return Math.hypot(a.x - b.x, a.y - b.y);
+    };
+
+    stage.addEventListener("pointerdown", (e) => {
+      stage.setPointerCapture(e.pointerId);
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pts.size === 2) { pinchStart = dist(); zoomStart = crop.zoom; }
+      else last = { x: e.clientX, y: e.clientY };
+      e.preventDefault();
+    });
+
+    stage.addEventListener("pointermove", (e) => {
+      if (!pts.has(e.pointerId)) return;
+      pts.set(e.pointerId, { x: e.clientX, y: e.clientY });
+      if (pts.size >= 2) {
+        // pinch: zoom about the stage centre
+        const ratio = dist() / (pinchStart || 1);
+        const next = Math.min(3, Math.max(1, zoomStart * ratio));
+        zoomAbout(next, CROP_STAGE / 2, CROP_STAGE / 2);
+        zoom.value = String(next);
+      } else if (last) {
+        crop.x += e.clientX - last.x;
+        crop.y += e.clientY - last.y;
+        last = { x: e.clientX, y: e.clientY };
+        clampCrop();
+        paintCrop();
+      }
+      e.preventDefault();
+    });
+
+    const release = (e) => {
+      pts.delete(e.pointerId);
+      if (pts.size < 2) pinchStart = 0;
+      last = pts.size === 1 ? { ...[...pts.values()][0] } : null;
+    };
+    stage.addEventListener("pointerup", release);
+    stage.addEventListener("pointercancel", release);
+
+    zoom.addEventListener("input", () => zoomAbout(+zoom.value, CROP_STAGE / 2, CROP_STAGE / 2));
+  }
+
+  /* zoom keeping the stage point (ax, ay) pinned, so the framing doesn't jump */
+  function zoomAbout(next, ax, ay) {
+    const before = cropScale();
+    crop.zoom = next;
+    const after = cropScale();
+    crop.x = ax - (ax - crop.x) * (after / before);
+    crop.y = ay - (ay - crop.y) * (after / before);
+    clampCrop();
+    paintCrop();
+  }
+
+  function savePhotoCrop() {
+    const img = document.getElementById("cropImg");
+    if (!img) return;
+    const s = cropScale();
+    const cv = document.createElement("canvas");
+    cv.width = cv.height = PHOTO_PX;
+    const ctx = cv.getContext("2d");
+    // the stage maps back to this square of the source image
+    const sx = -crop.x / s, sy = -crop.y / s, side = CROP_STAGE / s;
+    ctx.drawImage(img, sx, sy, side, side, 0, 0, PHOTO_PX, PHOTO_PX);
+    try {
+      store.profilePhoto = cv.toDataURL("image/jpeg", 0.82);
+      save();
+      syncProfilePhoto();
+      closeOverlay();
+      if (state.view === "pickaeway") render();
+    } catch (e) {
+      // quota is the realistic failure here — the store is shared
+      openOverlay(panelHead("Couldn't save") + `
+        <div class="liked-empty">There wasn't room to store that photo. Try a smaller image.</div>
+        <button class="btn-primary" data-close>OK</button>`);
+    }
   }
 
   /* ---------------- Trade Journal ----------------
@@ -1848,11 +1972,9 @@
     $("journalBar").classList.toggle("hidden", !jr);
     $("pickBar").classList.toggle("hidden", !pk);
     document.querySelectorAll(".bar")[1].classList.toggle("hidden", on || jr || pk);
-    // the session/time/date overlay belongs to the Pickæway home screen
-    $("waveClock").classList.toggle("hidden", !pk);
-    clearInterval(clockTimer);
-    if (on) clockTimer = setInterval(paintClock, 1000);
-    else if (pk) clockTimer = setInterval(paintWaveClock, 1000);
+    // date/time runs on every screen, so the timer is never torn down; only
+    // Check-In needs its streak repainted as the run changes
+    if (on) paintStreak();
   }
 
   function render() {
@@ -2212,6 +2334,7 @@
   $("navAdd").addEventListener("click", openJournal);
   $("btnJournalHome").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
   $("btnJournalProfile").addEventListener("click", openProfile);
+  $("navBattle").innerHTML = ASCENDING_BARS;
   $("navBattle").addEventListener("click", openPickaeway);
   $("navProfile").addEventListener("click", openProfile);
   $("btnPickHome").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
@@ -2224,7 +2347,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pflog],[data-pfsave],[data-pfacct],[data-jsection],[data-jviewall],[data-photo-pick],[data-photo-clear],[data-pk-replay],[data-pk-build]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pflog],[data-pfsave],[data-pfacct],[data-jsection],[data-jviewall],[data-photo-pick],[data-photo-clear],[data-pk-replay],[data-pk-build],[data-crop-save]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -2279,6 +2402,7 @@
         <button class="btn-primary" data-close>Got it</button>`);
     }
     else if (t.hasAttribute("data-photo-pick")) $("photoInput").click();
+    else if (t.hasAttribute("data-crop-save")) savePhotoCrop();
     else if (t.hasAttribute("data-photo-clear")) {
       store.profilePhoto = "";
       save();
@@ -2722,6 +2846,9 @@
   applyTextSize();
   syncVolume();
   syncProfilePhoto();
+  // the header clock runs on every screen, so it starts once and never stops
+  paintWaveClock();
+  clockTimer = setInterval(paintWaveClock, 1000);
   render();
 
   if (window.FB && FB.user() && store.authSeen) {

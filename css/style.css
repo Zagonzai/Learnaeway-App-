@@ -481,20 +481,10 @@ img { user-select: none; -webkit-user-drag: none; }
 /* 4th slot: reserved for the Battle artwork. Until it lands the slot holds a
    neutral dashed placeholder — deliberately not the ascending-bars mark, which
    belongs to Match Replay, so the two never read as the same thing. */
-.dock-battle img[hidden] { display: none; }
-/* the placeholder is drawn inside the button, not on it, so the slot keeps the
-   same 52px tap target as its neighbours (.dock-btn pins the width later in
-   this file, and a 26px button would be too small to hit anyway) */
-.dock-battle::before {
-  content: "";
-  width: 26px;
-  height: 26px;
-  border-radius: 7px;
-  border: 1.5px dashed rgba(199,236,244,.45);
-}
-/* once the artwork is dropped in, the placeholder goes away */
-.dock-battle.has-icon::before { display: none; }
-.dock-battle.active::before { border-color: var(--cyan); box-shadow: 0 0 8px rgba(61,223,255,.6); }
+/* the mark is sized here, not in the markup, so it matches the 24px icons
+   either side of it while the button keeps its full 52px tap target */
+.dock-battle .bars-mark { width: 24px; height: 24px; color: #EAF6FF; }
+.dock-battle.active .bars-mark { color: #FFFFFF; filter: drop-shadow(0 0 8px rgba(61,223,255,.85)); }
 
 /* ===================== HOME / OUTLINE ===================== */
 
@@ -1677,24 +1667,6 @@ select.mt-input {
    need a hide rule — this stylesheet has no generic .hidden */
 .bar.hidden { display: none; }
 .bottom-nav.hidden { display: none; }
-.checkin-clock {
-  flex: 1 1 auto;
-  display: flex;
-  align-items: baseline;
-  justify-content: center;
-  gap: 14px;
-  min-width: 0;
-  white-space: nowrap;
-  overflow: hidden;
-}
-.ci-date, .ci-time {
-  font-size: calc(14.5px * var(--fs));
-  font-weight: 600;
-  color: #EAF6FF;
-  text-shadow: 0 0 10px rgba(61,223,255,.4);
-}
-.ci-time { font-variant-numeric: tabular-nums; }
-
 .ci-heading {
   text-align: center;
   font-size: calc(19px * var(--fs));
@@ -2220,16 +2192,28 @@ select.mt-input {
 
 /* ===================== PICKÆWAY (Reward Battle) ===================== */
 
-/* 5-day check-in streak, in the bar slot the date/time block used to hold.
-   Filled days use the delivered disc; the rest use the same thin outline ring
-   as the profile frame. Fills left to right. */
-.pick-streak {
+/* 5-day check-in streak. Lives in the Trade Day Check-In bar, the one bar that
+   shows this instead of the date/time. Filled days use the delivered disc; the
+   rest use the same thin outline ring as the profile frame, left to right. */
+.streak-row {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
   gap: 10px;
+}
+/* Pickæway's second bar carries the game name where the streak used to sit */
+.pick-name {
+  flex: 1 1 auto;
+  min-width: 0;
+  text-align: center;
+  font-size: calc(15px * var(--fs));
+  font-weight: 700;
+  color: #F2FBFF;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
 }
 .streak-dot {
   width: 18px;
@@ -2241,14 +2225,6 @@ select.mt-input {
   border: none;
   background: url("../assets/buttons-icon/streak-filled@2x.png") center / contain no-repeat;
   filter: drop-shadow(0 0 6px rgba(0, 209, 178, .6));
-}
-
-.pk-sub {
-  text-align: center;
-  font-size: calc(15px * var(--fs));
-  font-weight: 700;
-  color: #C7D9EF;
-  margin: 0 0 14px;
 }
 
 /* stat cards: thin gradient-bordered plates, same family as the journal's */
@@ -2304,7 +2280,8 @@ select.mt-input {
   border-radius: 50%;
   background: url("../assets/buttons-icon/icon-button-frame@2x.png") center / contain no-repeat;
 }
-.pk-replay svg { filter: drop-shadow(0 0 6px rgba(61,223,255,.5)); }
+/* the artwork carries its own glow, so no drop-shadow on top of it */
+.pk-replay img { width: 62px; height: 62px; object-fit: contain; }
 .pk-replay:active { transform: scale(.94); filter: brightness(1.3); }
 .pk-replay-label {
   margin-top: 8px;
@@ -2345,3 +2322,49 @@ select.mt-input {
 .set-photo-ring img { width: 28px; height: 28px; object-fit: contain; }
 .set-photo-ring img.shot { width: 50px; height: 50px; border-radius: 50%; object-fit: cover; }
 .set-photo-btns { display: flex; flex-wrap: wrap; gap: 8px; }
+
+/* ---------------- circular photo crop ---------------- */
+
+.crop-wrap { display: flex; justify-content: center; margin-bottom: 10px; }
+.crop-stage {
+  position: relative;
+  width: 260px;
+  height: 260px;
+  max-width: 100%;
+  overflow: hidden;
+  border-radius: 50%;
+  background: #05070F;
+  touch-action: none;          /* the stage handles its own pan/pinch */
+  cursor: grab;
+}
+.crop-stage:active { cursor: grabbing; }
+.crop-stage img {
+  position: absolute;
+  top: 0;
+  left: 0;
+  transform-origin: 0 0;
+  max-width: none;             /* the transform sizes it, not the container */
+  user-select: none;
+  -webkit-user-drag: none;
+}
+/* the ring frame drawn over the image, matching the profile frame in use */
+.crop-mask {
+  position: absolute;
+  inset: 0;
+  border-radius: 50%;
+  pointer-events: none;
+  border: 2px solid rgba(199,236,244,.85);
+  box-shadow: 0 0 18px rgba(61,223,255,.45), inset 0 0 22px rgba(5,7,15,.55);
+}
+.crop-hint {
+  text-align: center;
+  font-size: calc(12px * var(--fs));
+  color: #9FC0E0;
+  margin-bottom: 10px;
+}
+.crop-zoom {
+  display: block;
+  width: 78%;
+  margin: 0 auto 16px;
+  accent-color: var(--cyan);
+}

@@ -29,9 +29,8 @@
       </video>
       <div class="wave-bg wave-still" aria-hidden="true"></div>
       <!-- session · time · date, sitting directly on the video. Plain white,
-           no scrim or shadow behind it (per spec). Hidden off the Pickæway
-           home screen. -->
-      <div class="wave-clock hidden" id="waveClock">
+           no scrim or shadow behind it (per spec). Shown on every screen. -->
+      <div class="wave-clock" id="waveClock">
         <div class="wc-session"><b id="wcSessionName"></b><span>Session</span></div>
         <div class="wc-time" id="wcTime"></div>
         <div class="wc-date" id="wcDate"></div>
@@ -61,25 +60,25 @@
       </button>
     </div>
 
-    <!-- Trade Day Check-In swaps the progress bar for a live date/time bar -->
+    <!-- Trade Day Check-In is the one screen whose second bar carries the
+         5-day streak instead of the date/time (which lives on the header
+         video everywhere, this screen included). -->
     <div class="bar bar-checkin hidden" id="checkinBar">
       <button id="btnCheckinProfile" class="bar-icon" aria-label="Open profile">
         <img src="assets/nav-icons/icon-user@2x.png" alt="">
       </button>
-      <div id="checkinClock" class="checkin-clock"></div>
+      <div id="checkinStreak" class="streak-row" role="img"></div>
       <button id="btnCheckinHome" class="bar-icon" aria-label="Back to home">
         <img src="assets/nav-icons/icon-home@2x.png" alt="">
       </button>
     </div>
 
-    <!-- Pickæway swaps the progress bar for the 5-day check-in streak. This is
-         the slot the date/time/session block used to occupy — that text now
-         sits on the header video instead. -->
+    <!-- Pickæway's second bar carries the game name, per the mockup -->
     <div class="bar bar-pick hidden" id="pickBar">
       <button id="btnPickProfile" class="bar-icon" aria-label="Open profile">
         <img src="assets/nav-icons/icon-user@2x.png" alt="">
       </button>
-      <div id="pickStreak" class="pick-streak" role="img"></div>
+      <div class="pick-name">Cool Down Game</div>
       <button id="btnPickHome" class="bar-icon" aria-label="Home">
         <img src="assets/nav-icons/icon-home@2x.png" alt="">
       </button>
@@ -138,11 +137,8 @@
       <button id="navProfile" class="dock-btn dock-profile" aria-label="Profile">
         <img id="dockProfileImg" src="assets/nav-icons/icon-user@2x.png" alt="">
       </button>
-      <!-- 4th slot: custom Battle artwork lands here when delivered. Until then
-           the slot is built and labelled but draws an empty frame. -->
-      <button id="navBattle" class="dock-btn dock-battle" aria-label="Pickæway — Reward Battle">
-        <img id="dockBattleImg" src="" alt="" hidden>
-      </button>
+      <!-- 4th slot: the ascending-bars mark (injected by app.js) -->
+      <button id="navBattle" class="dock-btn dock-battle" aria-label="Pickæway — Reward Battle"></button>
       <button id="navPlay" class="dock-btn" aria-label="Video library">
         <img src="assets/nav-icons/icon-video-play@2x.png" alt="">
       </button>
