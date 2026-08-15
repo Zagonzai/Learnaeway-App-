@@ -1626,28 +1626,18 @@
         <span class="${change < 0 ? "neg" : "pos"}">${money(change, true)} (${pct}%)</span>
       </span>`;
 
+    /* Live Account · chevron · Prop Account, one line. The account list that
+       used to sit inline under these pills now opens as the Select Account
+       sheet from the chevron in the middle. */
     const tabs = `
-      <div class="j-tabs">
-        ${["personal", "prop"].map((k) => `
-          <button class="home-tab ${state.journalTab === k ? "active" : ""}" data-jtab="${k}">${
-            k === "personal" ? "Personal Account" : "Prop Firms"}</button>`).join("")}
+      <div class="j-selector">
+        <button class="j-acct-pill ${state.journalTab === "personal" ? "on" : ""}" data-jtab="personal">Live Account</button>
+        <button class="j-drop" data-jpick aria-label="Select account" aria-haspopup="dialog">
+          <img src="assets/nav-icons/icon-chevron-down@2x.png" alt="">
+        </button>
+        <button class="j-acct-pill ${state.journalTab === "prop" ? "on" : ""}" data-jtab="prop">Prop Account</button>
       </div>`;
-
-    const list = accountsIn(state.journalTab);
-    const picker = `
-      <div class="j-accounts">
-        ${accountsIn(state.journalTab).length ? `
-          <button class="j-acct j-acct-all ${isCombined() ? "on" : ""}" data-jacct="__all">
-            <span class="j-acct-name">All ${esc(catName)} Accounts</span>
-            <span class="j-acct-bal">${plainMoney(scopeBalance(accountsIn(state.journalTab)))}</span>
-          </button>` : ""}
-        ${list.map((a) => `
-          <button class="j-acct ${acct && a.id === acct.id ? "on" : ""}" data-jacct="${esc(a.id)}">
-            <span class="j-acct-name">${esc(accountLabel(a))}</span>
-            <span class="j-acct-bal">${plainMoney(accountBalance(a))}</span>
-          </button>`).join("")}
-        <button class="j-acct j-acct-add" data-jaddacct>+ Add Account</button>
-      </div>`;
+    const picker = "";
 
     const propCard = state.journalTab === "prop" ? propCardHTML() : "";
     if (!scope.length) {
@@ -1734,6 +1724,170 @@
   }
 
   /* ---- add an account ---- */
+  /* ---------------- Select Account sheet ----------------
+     Opened from the chevron between the two pills. Lists the accounts in the
+     category on screen with their balance and today's change, and carries the
+     Add / Edit / Delete actions that used to have nowhere to live. */
+
+  function acctDayChange(a) {
+    const t = new Date();
+    const info = scopeDay([a], t.getFullYear(), t.getMonth(), t.getDate());
+    return info ? info.pnl : 0;
+  }
+
+  function acctRowHTML(a, selected) {
+    const bal = accountBalance(a);
+    const ch = acctDayChange(a);
+    const prev = bal - ch;
+    const pct = prev !== 0 ? Math.round((10000 * ch) / prev) / 100 : 0;
+    return `<button class="sa-row ${selected ? "on" : ""}" data-jacct="${esc(a.id)}">
+      <span class="sa-tile" aria-hidden="true">${esc((a.platform || "?").slice(0, 1).toUpperCase())}</span>
+      <span class="sa-id">
+        <span class="sa-name"><span class="sa-nametext">${esc(accountLabel(a))}</span>${
+          selected ? `<span class="sa-current">Current</span>` : ""}</span>
+        <span class="sa-kind">${a.category === "prop" ? "Prop Firm Account" : "Personal Account"}</span>
+      </span>
+      <span class="sa-figs">
+        <span class="sa-bal">${plainMoney(bal)}</span>
+        <span class="sa-chlabel">Daily Change</span>
+        <span class="sa-ch ${ch < 0 ? "neg" : "pos"}">${money(ch, true)} (${pct}%)</span>
+      </span>
+      <span class="sa-radio" aria-hidden="true"></span>
+    </button>`;
+  }
+
+  function openAccountSheet() {
+    const list = accountsIn(state.journalTab);
+    const catName = state.journalTab === "personal" ? "Live" : "Prop";
+    const acct = activeAccount();
+    openOverlay(panelHead("Select Account") + `
+      <div class="sa-list">
+        ${list.length ? `
+          <button class="sa-row sa-all ${isCombined() ? "on" : ""}" data-jacct="__all">
+            <span class="sa-tile" aria-hidden="true">∑</span>
+            <span class="sa-id">
+              <span class="sa-name"><span class="sa-nametext">All ${esc(catName)} Accounts</span>${
+                isCombined() ? `<span class="sa-current">Current</span>` : ""}</span>
+              <span class="sa-kind">${list.length} account${list.length === 1 ? "" : "s"} combined</span>
+            </span>
+            <span class="sa-figs"><span class="sa-bal">${plainMoney(scopeBalance(list))}</span></span>
+            <span class="sa-radio" aria-hidden="true"></span>
+          </button>` : ""}
+        ${list.map((a) => acctRowHTML(a, !!acct && a.id === acct.id)).join("")}
+        ${list.length ? "" : `<div class="liked-empty">No ${esc(catName.toLowerCase())} accounts yet.</div>`}
+      </div>
+      <div class="sa-actions">
+        <button class="sa-act" data-jaddacct><span class="sa-act-ico">+</span>Add Account</button>
+        <button class="sa-act ${list.length ? "" : "off"}" ${list.length ? "" : "disabled"} data-jeditlist>
+          <span class="sa-act-ico">✎</span>Edit Accounts</button>
+        <button class="sa-act danger ${list.length ? "" : "off"}" ${list.length ? "" : "disabled"} data-jdellist>
+          <span class="sa-act-ico">🗑</span>Delete Accounts</button>
+        <button class="sa-act" data-close><span class="sa-act-ico">✕</span>Close</button>
+      </div>`);
+  }
+
+  /* pick which account to edit / delete, then act on the one chosen */
+  function openAccountPickList(mode) {
+    const list = accountsIn(state.journalTab);
+    const del = mode === "delete";
+    openOverlay(panelHead(del ? "Delete Accounts" : "Edit Accounts") + `
+      <div class="notes-hint" style="margin:0 0 14px">${del
+        ? "Removing an account also removes its trades, imports and cash ledger. This can't be undone."
+        : "Pick the account to edit."}</div>
+      <div class="sa-list">
+        ${list.map((a) => `
+          <button class="sa-row" data-j${del ? "del" : "edit"}acct="${esc(a.id)}">
+            <span class="sa-tile" aria-hidden="true">${esc((a.platform || "?").slice(0, 1).toUpperCase())}</span>
+            <span class="sa-id">
+              <span class="sa-name"><span class="sa-nametext">${esc(accountLabel(a))}</span></span>
+              <span class="sa-kind">${plainMoney(accountBalance(a))}</span>
+            </span>
+            <span class="sa-go ${del ? "danger" : ""}">${del ? "Delete" : "Edit"}</span>
+          </button>`).join("")}
+      </div>
+      <button class="btn-secondary" data-jpick>Back</button>`);
+  }
+
+  function openEditAccount(id) {
+    const a = (store.journalAccounts || []).find((x) => x.id === id);
+    if (!a) return;
+    const known = PLATFORMS.indexOf(a.platform) >= 0;
+    openOverlay(panelHead("Edit Account") + `
+      <form id="acctForm" autocomplete="off" novalidate data-edit="${esc(id)}">
+        <label class="mt-label">Platform
+          <select class="mt-input" name="platform">
+            ${PLATFORMS.map((x) => `<option ${x === a.platform ? "selected" : ""}>${esc(x)}</option>`).join("")}
+            <option value="__custom" ${known ? "" : "selected"}>Other (type it in)</option>
+          </select>
+        </label>
+        <label class="mt-label mt-custom ${known ? "hidden" : ""}">Platform name
+          <input class="mt-input" name="custom" type="text" value="${known ? "" : esc(a.platform)}"></label>
+        <label class="mt-label">Nickname (optional)
+          <input class="mt-input" name="nickname" type="text" value="${esc(a.nickname || "")}"></label>
+        <label class="mt-label">Starting balance ($)
+          <input class="mt-input" name="start" type="text" inputmode="decimal" value="${a.start}"></label>
+        <label class="mt-label">Category
+          <select class="mt-input" name="category">
+            <option value="personal" ${a.category === "personal" ? "selected" : ""}>Live Account</option>
+            <option value="prop" ${a.category === "prop" ? "selected" : ""}>Prop Account</option>
+          </select>
+        </label>
+        <div class="notes-hint" style="margin:2px 0 14px">Starting balance is what the account
+          opened at — trades and cash moves are added on top, so editing it shifts the balance
+          by the difference and leaves the history alone.</div>
+        <div id="acctError" class="gate-error hidden"></div>
+        <button type="button" class="btn-primary" data-jsaveedit>Save Changes</button>
+        <button type="button" class="btn-secondary" data-jeditlist>Cancel</button>
+      </form>`);
+    const sel = document.querySelector('#acctForm [name="platform"]');
+    const custom = document.querySelector("#acctForm .mt-custom");
+    sel.addEventListener("change", () => custom.classList.toggle("hidden", sel.value !== "__custom"));
+  }
+
+  function saveEditedAccount() {
+    const f = $("acctForm");
+    if (!f) return;
+    const a = (store.journalAccounts || []).find((x) => x.id === f.dataset.edit);
+    if (!a) return;
+    const get = (n) => (new FormData(f).get(n) || "").toString().trim();
+    const err = $("acctError");
+    const platform = get("platform") === "__custom" ? get("custom") : get("platform");
+    if (!platform) { err.textContent = "Name the platform."; err.classList.remove("hidden"); return; }
+    const startRaw = get("start").replace(/[^0-9.\-]/g, "");
+    const start = startRaw === "" ? 0 : parseFloat(startRaw);
+    if (isNaN(start)) { err.textContent = "Starting balance must be a number."; err.classList.remove("hidden"); return; }
+    a.platform = platform;
+    a.nickname = get("nickname");
+    a.start = Math.round(start * 100) / 100;
+    a.category = get("category") || "personal";
+    state.journalTab = a.category;      // follow it if the category changed
+    save();
+    closeOverlay();
+    renderJournal();
+  }
+
+  function confirmDeleteAccount(id) {
+    const a = (store.journalAccounts || []).find((x) => x.id === id);
+    if (!a) return;
+    openOverlay(panelHead("Delete Account") + `
+      <div class="liked-empty">Delete <b>${esc(accountLabel(a))}</b>?<br>
+        Its trades, imports and cash ledger go with it. This can't be undone.</div>
+      <button class="btn-primary" data-jdelconfirm="${esc(id)}">Delete Account</button>
+      <button class="btn-secondary" data-jdellist>Cancel</button>`);
+  }
+
+  function deleteAccount(id) {
+    store.journalAccounts = (store.journalAccounts || []).filter((a) => a.id !== id);
+    delete store.journalImport[id];
+    delete store.journalManual[id];
+    delete store.journalTrades[id];
+    delete store.propLedger[id];
+    if (store.journalActive === id) store.journalActive = "__all";
+    save();
+    closeOverlay();
+    renderJournal();
+  }
+
   function openAddAccount() {
     openOverlay(panelHead("Add Account") + `
       <div class="notes-hint" style="margin:0 0 14px">Manual tracking only — you type the
@@ -1753,8 +1907,8 @@
           <input class="mt-input" name="start" type="text" inputmode="decimal" placeholder="0.00"></label>
         <label class="mt-label">Category
           <select class="mt-input" name="category">
-            <option value="personal">Personal Account</option>
-            <option value="prop">Prop Firms</option>
+            <option value="personal">Live Account</option>
+            <option value="prop">Prop Account</option>
           </select>
         </label>
         <div id="acctError" class="gate-error hidden"></div>
@@ -2347,7 +2501,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pflog],[data-pfsave],[data-pfacct],[data-jsection],[data-jviewall],[data-photo-pick],[data-photo-clear],[data-pk-replay],[data-pk-build],[data-crop-save]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pflog],[data-pfsave],[data-pfacct],[data-jsection],[data-jviewall],[data-photo-pick],[data-photo-clear],[data-pk-replay],[data-pk-build],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -2366,8 +2520,16 @@
       const sel = activeAccount();
       if (sel) state.journalTab = sel.category;
       save();
+      closeOverlay();          // the picker is a sheet now, so dismiss it
       renderJournal();
     }
+    else if (t.hasAttribute("data-jpick")) openAccountSheet();
+    else if (t.hasAttribute("data-jeditlist")) openAccountPickList("edit");
+    else if (t.hasAttribute("data-jdellist")) openAccountPickList("delete");
+    else if (t.dataset.jeditacct) openEditAccount(t.dataset.jeditacct);
+    else if (t.dataset.jdelacct) confirmDeleteAccount(t.dataset.jdelacct);
+    else if (t.dataset.jdelconfirm) deleteAccount(t.dataset.jdelconfirm);
+    else if (t.hasAttribute("data-jsaveedit")) saveEditedAccount();
     else if (t.hasAttribute("data-jaddacct")) openAddAccount();
     else if (t.hasAttribute("data-jsaveacct")) saveAccount();
     else if (t.hasAttribute("data-jcash")) openCashFlow();
