@@ -1076,47 +1076,43 @@ img { user-select: none; -webkit-user-drag: none; }
 #surveyStep .auth-wordmark { width: min(62%, 260px); margin: 2px auto 22px; }
 
 .sv-intro {
-  font-size: calc(13px * var(--fs));
-  line-height: 1.5;
+  font-size: calc(13.5px * var(--fs));
+  line-height: 1.55;
   color: #9FC0E0;
   text-align: center;
-  margin: -10px 0 24px;
 }
 
 #surveyForm {
   width: 100%;
   display: flex;
   flex-direction: column;
-  gap: 24px;
+  align-items: center;
+  gap: 22px;
 }
-
-.sv-q { display: flex; flex-direction: column; gap: 11px; }
-
-.sv-label {
-  display: flex;
-  gap: 9px;
-  align-items: baseline;
-  font-size: calc(14px * var(--fs));
-  font-weight: 700;
-  line-height: 1.4;
-  color: #DDEFFF;
-}
-.sv-num {
-  flex: 0 0 auto;
-  width: 21px;
-  height: 21px;
-  display: inline-grid;
-  place-items: center;
-  border-radius: 50%;
-  border: 1px solid rgba(61,223,255,.45);
-  font-size: 11.5px;
+/* deliberately not .gate-title's shouty small-caps treatment — a welcome
+   message reads friendlier at a normal case, matching the tone of the intro
+   paragraph beneath it rather than "BETA ACCESS" up top */
+.sv-intro-title {
+  text-align: center;
+  font-size: calc(20px * var(--fs));
   font-weight: 800;
   color: var(--cyan);
-  text-shadow: 0 0 8px rgba(61,223,255,.6);
+  text-shadow: 0 0 16px rgba(61,223,255,.5);
+}
+
+.sv-q { width: 100%; display: flex; flex-direction: column; align-items: center; gap: 16px; }
+
+.sv-label {
+  font-size: calc(19px * var(--fs));
+  font-weight: 800;
+  line-height: 1.35;
+  color: #EAF6FF;
+  text-align: center;
+  text-shadow: 0 0 12px rgba(61,223,255,.25);
 }
 .sv-multi {
   display: block;
-  margin-top: 3px;
+  margin-top: 6px;
   font-size: 11px;
   font-weight: 600;
   letter-spacing: .07em;
@@ -1124,7 +1120,7 @@ img { user-select: none; -webkit-user-drag: none; }
   color: #8FB4D8;
 }
 
-.sv-opts { display: flex; flex-wrap: wrap; gap: 8px; padding-left: 30px; }
+.sv-opts { width: 100%; display: flex; flex-wrap: wrap; justify-content: center; gap: 9px; }
 .sv-opt {
   padding: 9px 15px;
   border-radius: 999px;
@@ -1151,15 +1147,74 @@ img { user-select: none; -webkit-user-drag: none; }
 .sv-date::-webkit-date-and-time-value { text-align: left; }
 
 .sv-other {
-  width: calc(100% - 30px);
+  width: 100%;
   height: 48px;
-  margin: 10px 0 0 30px;
+  margin-top: 10px;
   padding: 0 18px;
   border: 1px solid rgba(61,223,255,.3);
   border-radius: 999px;
   background: rgba(10,16,34,.72);
 }
 .sv-other.hidden { display: none; }
+
+/* progress: "Question X of 12", the same pill-track-with-label language as
+   the course progress bar in the top chrome — duplicated rather than shared,
+   since that one is a flex-row item (flex:1 1 auto) and this sits in a flex
+   column, where flex:1 1 auto would fight the column's other children for
+   height instead of just taking the full width. */
+.sv-progress-track {
+  position: relative;
+  width: 100%;
+  height: 20px;
+  border-radius: 11px;
+  background: rgba(2,4,14,.85);
+  border: 1px solid rgba(61,223,255,.30);
+  box-shadow: inset 0 2px 6px rgba(0,0,0,.6);
+  overflow: hidden;
+}
+.sv-progress-fill {
+  position: absolute;
+  inset: 2px auto 2px 2px;
+  min-width: 12px;
+  border-radius: 10px;
+  background: linear-gradient(90deg, #14907e, var(--teal));
+  box-shadow: 0 0 10px rgba(47,230,194,.75);
+  transition: width .3s ease;
+}
+.sv-progress-label {
+  position: absolute;
+  right: 10px;
+  top: 50%;
+  transform: translateY(-50%);
+  font-size: 12px;
+  font-weight: 700;
+  color: #CFE9FF;
+  text-shadow: 0 1px 3px rgba(0,0,0,.8);
+  letter-spacing: .03em;
+}
+
+/* Back / Next share a row; Next carries .auth-submit for the same bold pill
+   look as every other primary action on this screen, so its own width/margin
+   are overridden here to sit correctly beside Back instead of centered alone. */
+.sv-nav { width: 100%; display: flex; align-items: center; gap: 12px; }
+.sv-back {
+  flex: 0 0 auto;
+  height: 54px;
+  padding: 0 20px;
+  font-size: calc(13px * var(--fs));
+  font-weight: 700;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #9FC0E0;
+}
+.sv-back:active { filter: brightness(1.3); transform: scale(.97); }
+.sv-next {
+  flex: 1 1 auto;
+  width: auto;
+  margin-top: 0;
+}
+/* same disabled treatment as the Trade Day Check-In submit button */
+.sv-next.off { opacity: .4; color: #9FC0E0; cursor: default; }
 
 /* Start Day result */
 .ci-result { text-align: center; padding: 4px 0 2px; }

@@ -210,7 +210,11 @@
   /* ---------------- rendering: learning screen ---------------- */
 
   function esc(s) {
-    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;");
+    // quotes escaped too: several call sites drop user-typed text (survey
+    // "Other" answers, the settings name field) into a value="${esc(x)}"
+    // attribute, and an unescaped " there breaks out of the attribute.
+    return s.replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;")
+      .replace(/"/g, "&quot;").replace(/'/g, "&#39;");
   }
 
   // paragraphs shaped like "Term — definition" get teal-term styling
@@ -2867,7 +2871,7 @@
   function showAuthStep() {
     const onGate = !store.gatePassed;
     const onSurvey = !onGate && !store.surveyDone;
-    if (onSurvey && !surveyRendered) renderSurvey();
+    if (onSurvey && !surveyRendered) { surveyStep = 0; renderSurveyStep(); surveyRendered = true; }
     $("gateStep").classList.toggle("hidden", !onGate);
     $("surveyStep").classList.toggle("hidden", !onSurvey);
     $("loginStep").classList.toggle("hidden", onGate || onSurvey);
@@ -2990,90 +2994,191 @@
 
   const surveyForm = $("surveyForm");
   let surveyRendered = false;
+  // 0 = intro panel; 1..SURVEY.length = that question (1-based, matches the
+  // "Question X of 12" copy). Not persisted — a reload restarts at the intro,
+  // same as the old form restarted blank on reload.
+  let surveyStep = 0;
+  // qid -> final answer, in the exact shape collectSurvey() used to produce
+  // (string for text/date/single, array for multi) — unchanged so the
+  // Firestore payload this feeds is unchanged.
+  const surveyAnswers = {};
 
-  function renderSurvey() {
-    surveyForm.innerHTML = SURVEY.map((q, i) => {
-      const label = `<div class="sv-label"><span class="sv-num">${i + 1}</span><span>${esc(q.q)}` +
-        (q.type === "multi" ? `<span class="sv-multi">select all that apply</span>` : "") +
-        `</span></div>`;
-      if (q.type === "text" || q.type === "date") {
-        const ph = q.placeholder ? ` placeholder="${esc(q.placeholder)}"` : "";
-        const cls = q.type === "date" ? "sv-input sv-date" : "sv-input";
-        return `<div class="sv-q" data-q="${q.id}" data-qtype="${q.type}">${label}
-          <input class="g-pill auth-input ${cls}" name="${q.id}" type="${q.type === "date" ? "date" : "text"}"${ph} autocomplete="off"></div>`;
-      }
-      const chips = q.options.map((o) =>
-        `<button type="button" class="sv-opt" data-sv-opt data-val="${esc(o)}">${esc(o)}</button>`).join("");
-      const otherChip = q.other
-        ? `<button type="button" class="sv-opt" data-sv-opt data-other="1" data-val="Other">Other</button>` : "";
-      const otherInput = q.other
-        ? `<input class="auth-input sv-other hidden" name="${q.id}__other" type="text" placeholder="Tell us more" autocomplete="off">` : "";
+  function renderSurveyStep() {
+    if (surveyStep === 0) {
+      surveyForm.innerHTML = `
+        <div class="sv-intro-title">Welcome to Learnæway</div>
+        <div class="sv-intro">A few questions — this helps us build the right app for you.
+          It takes about a minute.</div>
+        <button type="button" class="g-pill auth-submit" data-sv-start>Get Started</button>`;
+      return;
+    }
+    const i = surveyStep - 1;
+    const q = SURVEY[i];
+    const total = SURVEY.length;
+    const isLast = i === total - 1;
+    const pct = Math.round((100 * (i + 1)) / total);
+    surveyForm.innerHTML = `
+      <div class="sv-progress-track">
+        <div class="sv-progress-fill" style="width:${pct}%"></div>
+        <span class="sv-progress-label">Question ${i + 1} of ${total}</span>
+      </div>
+      ${surveyQuestionHTML(q)}
+      <div id="surveyError" class="gate-error hidden"></div>
+      <div class="sv-nav">
+        <button type="button" class="g-pill sv-back" data-sv-back>Back</button>
+        <button type="button" class="g-pill auth-submit sv-next off" data-sv-next disabled>${isLast ? "Continue" : "Next"}</button>
+      </div>`;
+    // Prior values are set via the .value property, not an HTML attribute —
+    // property assignment can't be broken out of by any character the user
+    // typed (a quote, an angle bracket), unlike interpolating into a
+    // value="..." string, which is why this happens as a second pass instead
+    // of inside surveyQuestionHTML's template literal.
+    const val = surveyAnswers[q.id];
+    if ((q.type === "text" || q.type === "date") && val) {
+      surveyForm.querySelector(`[name="${q.id}"]`).value = val;
+    } else if (q.other) {
+      const storedArr = q.type === "multi" ? (Array.isArray(val) ? val : []) : (val ? [val] : []);
+      const otherEntry = storedArr.find((v) => typeof v === "string" && v.indexOf("Other: ") === 0);
+      if (otherEntry) surveyForm.querySelector(`[name="${q.id}__other"]`).value = otherEntry.slice(7);
+    }
+    updateSurveyNextState(q);
+  }
+
+  function surveyQuestionHTML(q) {
+    const label = `<div class="sv-label">${esc(q.q)}` +
+      (q.type === "multi" ? `<span class="sv-multi">select all that apply</span>` : "") +
+      `</div>`;
+    if (q.type === "text" || q.type === "date") {
+      const ph = q.placeholder ? ` placeholder="${esc(q.placeholder)}"` : "";
+      const cls = q.type === "date" ? "sv-input sv-date" : "sv-input";
       return `<div class="sv-q" data-q="${q.id}" data-qtype="${q.type}">${label}
-        <div class="sv-opts">${chips}${otherChip}</div>${otherInput}</div>`;
-    }).join("") +
-      `<div id="surveyError" class="gate-error hidden"></div>
-       <button type="submit" class="g-pill auth-submit">Continue</button>`;
-    surveyRendered = true;
+        <input class="g-pill auth-input ${cls}" name="${q.id}" type="${q.type === "date" ? "date" : "text"}"${ph} autocomplete="off"></div>`;
+    }
+    // stored answer may be a raw option string, "Other", or "Other: <text>"
+    const stored = surveyAnswers[q.id];
+    const storedArr = q.type === "multi" ? (Array.isArray(stored) ? stored : []) : (stored ? [stored] : []);
+    const otherEntry = storedArr.find((v) => v === "Other" || (typeof v === "string" && v.indexOf("Other: ") === 0));
+    const otherVal = otherEntry && otherEntry.indexOf("Other: ") === 0 ? otherEntry.slice(7) : "";
+    const chips = q.options.map((o) =>
+      `<button type="button" class="sv-opt ${storedArr.includes(o) ? "on" : ""}" data-sv-opt data-val="${esc(o)}">${esc(o)}</button>`).join("");
+    const otherChip = q.other
+      ? `<button type="button" class="sv-opt ${otherEntry ? "on" : ""}" data-sv-opt data-other="1" data-val="Other">Other</button>` : "";
+    const otherInput = q.other
+      ? `<input class="auth-input sv-other ${otherEntry ? "" : "hidden"}" name="${q.id}__other" type="text" placeholder="Tell us more" autocomplete="off">` : "";
+    return `<div class="sv-q" data-q="${q.id}" data-qtype="${q.type}">${label}
+      <div class="sv-opts">${chips}${otherChip}</div>${otherInput}</div>`;
+  }
+
+  function updateSurveyNextState(q) {
+    const btn = surveyForm.querySelector("[data-sv-next]");
+    const wrap = surveyForm.querySelector(`.sv-q[data-q="${q.id}"]`);
+    if (!btn || !wrap) return;
+    const answered = q.type === "text" || q.type === "date"
+      ? !!(wrap.querySelector(`[name="${q.id}"]`).value || "").trim()
+      : wrap.querySelectorAll("[data-sv-opt].on").length > 0;
+    btn.disabled = !answered;
+    btn.classList.toggle("off", !answered);
+  }
+
+  /* mirrors the old collectSurvey(), just scoped to the one question on
+     screen right now instead of the whole form */
+  function captureSurveyAnswer(q) {
+    const wrap = surveyForm.querySelector(`.sv-q[data-q="${q.id}"]`);
+    if (!wrap) return;
+    if (q.type === "text" || q.type === "date") {
+      surveyAnswers[q.id] = (wrap.querySelector(`[name="${q.id}"]`).value || "").trim();
+      return;
+    }
+    const otherInput = wrap.querySelector(".sv-other");
+    const otherTxt = otherInput && !otherInput.classList.contains("hidden")
+      ? otherInput.value.trim() : "";
+    const picked = Array.from(wrap.querySelectorAll("[data-sv-opt].on"))
+      .map((b) => (b.hasAttribute("data-other") && otherTxt ? `Other: ${otherTxt}` : b.dataset.val));
+    surveyAnswers[q.id] = q.type === "multi" ? picked : (picked[0] || "");
   }
 
   surveyForm.addEventListener("click", (e) => {
-    const btn = e.target.closest("[data-sv-opt]");
-    if (!btn) return;
-    const wrap = btn.closest(".sv-q");
-    if (wrap.dataset.qtype === "single") {
-      wrap.querySelectorAll("[data-sv-opt]").forEach((b) => b.classList.toggle("on", b === btn));
-    } else {
-      btn.classList.toggle("on");
+    if (e.target.closest("[data-sv-start]")) { surveyStep = 1; renderSurveyStep(); return; }
+
+    if (e.target.closest("[data-sv-back]")) {
+      captureSurveyAnswer(SURVEY[surveyStep - 1]);
+      surveyStep -= 1;   // from question 1 this returns to the intro panel
+      renderSurveyStep();
+      return;
     }
-    const otherBtn = wrap.querySelector('[data-other="1"]');
-    const otherInput = wrap.querySelector(".sv-other");
-    if (otherInput) {
-      const show = !!otherBtn && otherBtn.classList.contains("on");
-      otherInput.classList.toggle("hidden", !show);
-      if (show) otherInput.focus();
+
+    if (e.target.closest("[data-sv-next]")) {
+      const btn = e.target.closest("[data-sv-next]");
+      if (btn.disabled) return;
+      const q = SURVEY[surveyStep - 1];
+      captureSurveyAnswer(q);
+      if (surveyStep < SURVEY.length) { surveyStep += 1; renderSurveyStep(); }
+      else submitSurvey(btn);
+      return;
+    }
+
+    const optBtn = e.target.closest("[data-sv-opt]");
+    if (optBtn) {
+      const wrap = optBtn.closest(".sv-q");
+      if (wrap.dataset.qtype === "single") {
+        wrap.querySelectorAll("[data-sv-opt]").forEach((b) => b.classList.toggle("on", b === optBtn));
+      } else {
+        optBtn.classList.toggle("on");
+      }
+      const otherBtn = wrap.querySelector('[data-other="1"]');
+      const otherInput = wrap.querySelector(".sv-other");
+      if (otherInput) {
+        const show = !!otherBtn && otherBtn.classList.contains("on");
+        otherInput.classList.toggle("hidden", !show);
+        if (show) otherInput.focus();
+      }
+      updateSurveyNextState(SURVEY[surveyStep - 1]);
     }
   });
 
-  function collectSurvey() {
-    const out = {};
-    SURVEY.forEach((q) => {
-      const wrap = surveyForm.querySelector(`.sv-q[data-q="${q.id}"]`);
-      if (q.type === "text" || q.type === "date") {
-        out[q.id] = (wrap.querySelector(`[name="${q.id}"]`).value || "").trim();
-        return;
-      }
-      const otherInput = wrap.querySelector(".sv-other");
-      const otherTxt = otherInput && !otherInput.classList.contains("hidden")
-        ? otherInput.value.trim() : "";
-      const picked = Array.from(wrap.querySelectorAll("[data-sv-opt].on"))
-        .map((b) => (b.hasAttribute("data-other") && otherTxt ? `Other: ${otherTxt}` : b.dataset.val));
-      out[q.id] = q.type === "multi" ? picked : (picked[0] || "");
-    });
-    return out;
-  }
+  // live-update Next as the user types (text/date questions, and the
+  // free-text "Other" box on choice questions)
+  surveyForm.addEventListener("input", (e) => {
+    if (surveyStep === 0 || !e.target.matches(".sv-input, .sv-other")) return;
+    updateSurveyNextState(SURVEY[surveyStep - 1]);
+  });
 
-  surveyForm.addEventListener("submit", async (e) => {
+  // Enter in a text/date question advances, same convenience the old
+  // single-page form got for free from being a real <form> with a submit
+  // button; there's no submit button now, so this replaces it deliberately.
+  surveyForm.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || !e.target.matches(".sv-input")) return;
     e.preventDefault();
-    const btn = surveyForm.querySelector(".auth-submit");
-    const answers = collectSurvey();
+    const btn = surveyForm.querySelector("[data-sv-next]");
+    if (btn && !btn.disabled) btn.click();
+  });
+
+  async function submitSurvey(btn) {
     const identity = store.gateIdentity || {};
-    store.survey = Object.assign({}, answers, { submittedAt: new Date().toISOString() });
+    store.survey = Object.assign({}, surveyAnswers, { submittedAt: new Date().toISOString() });
     store.surveyDone = true;
-    save();
+    save();     // answers are safe locally regardless of what the network does below
     btn.disabled = true;
     btn.classList.add("pending");
     btn.textContent = "Saving…";
     if (window.FB && identity.email) {
-      await FB.saveLead(identity.email, {
-        survey: answers,
-        surveyCompletedAt: store.survey.submittedAt,
-      });
+      // saveLead() already resolves false instead of throwing on a fast
+      // network failure, but a connection that hangs rather than fails
+      // (a stalled request, a dead proxy) leaves this awaiting forever with
+      // no error to catch — and the user's answers are already saved
+      // locally at this point, so nothing downstream is actually worth
+      // blocking Continue on. Race it against a timeout so the flow always
+      // reaches Login.
+      await Promise.race([
+        FB.saveLead(identity.email, {
+          survey: surveyAnswers,
+          surveyCompletedAt: store.survey.submittedAt,
+        }),
+        new Promise((resolve) => setTimeout(resolve, 6000)),
+      ]);
     }
-    btn.disabled = false;
-    btn.classList.remove("pending");
-    btn.textContent = "Continue";
     showAuthStep();
-  });
+  }
 
   if (!store.authSeen) {
     renderAuthForm();
