@@ -822,15 +822,6 @@
 
   const STREAK_DOTS = 5;
 
-  /* The ascending-bars mark, drawn inline — there is no such asset in the
-     library. It lives in the dock's Battle slot; Match Replay uses the
-     delivered candle artwork instead, so neither is duplicated. Sized by CSS. */
-  const ASCENDING_BARS = `<svg class="bars-mark" viewBox="0 0 40 40" aria-hidden="true">
-    <rect x="4"  y="24" width="9" height="12" rx="2.5" fill="currentColor"/>
-    <rect x="15.5" y="16" width="9" height="9"  rx="2.5" fill="currentColor"/>
-    <rect x="27" y="5"  width="9" height="12" rx="2.5" fill="currentColor"/>
-  </svg>`;
-
   function dayKeyOf(d) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   }
@@ -2612,7 +2603,6 @@
   $("navAdd").addEventListener("click", openJournal);
   $("btnJournalHome").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
   $("btnJournalProfile").addEventListener("click", openProfile);
-  $("navBattle").innerHTML = ASCENDING_BARS;
   $("navBattle").addEventListener("click", openPickaeway);
   $("navProfile").addEventListener("click", openProfile);
   $("btnPickHome").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
