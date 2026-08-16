@@ -2503,3 +2503,185 @@ select.mt-input {
   .sa-current { padding: 2px 5px; font-size: 8.5px; }
   .sa-act { padding: 10px 2px; }
 }
+
+/* ===================== BUILD MATCH ===================== */
+
+/* the two stat cards: duration reads warm, bank roll cyan, per the mockup */
+.bm-stats { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-bottom: 12px; }
+.bm-stat {
+  padding: 10px 8px 12px;
+  border-radius: 16px;
+  border: 1px solid rgba(61,223,255,.4);
+  background: rgba(5,9,22,.55);
+  text-align: center;
+}
+.bm-stat-dur { border-color: rgba(255,110,60,.55); }
+.bm-cap {
+  font-size: calc(10px * var(--fs));
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--cyan);
+  margin-bottom: 5px;
+}
+.bm-stat-dur .bm-cap { color: #FF8A4C; }
+.bm-val {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+  font-size: calc(21px * var(--fs));
+  font-weight: 800;
+  color: #F2FBFF;
+  font-variant-numeric: tabular-nums;
+}
+.bm-bankicon { display: inline-flex; width: 24px; color: var(--cyan); }
+.bm-bankicon svg { width: 100%; height: auto; }
+
+.bm-reward { display: flex; justify-content: center; margin-bottom: 16px; }
+.bm-reward-tag {
+  padding: 6px 20px;
+  border-radius: 999px;
+  border: 1px solid rgba(61,223,255,.55);
+  background: rgba(61,223,255,.08);
+  font-size: calc(11px * var(--fs));
+  font-weight: 800;
+  letter-spacing: .16em;
+  text-transform: uppercase;
+  color: var(--cyan);
+}
+
+.bm-label {
+  font-size: calc(10.5px * var(--fs));
+  font-weight: 800;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: #8FA9C6;
+  margin: 0 0 8px 2px;
+}
+
+.bm-row { display: grid; gap: 8px; margin-bottom: 16px; }
+.bm-row-4 { grid-template-columns: repeat(4, 1fr); }
+.bm-row-5 { grid-template-columns: repeat(5, 1fr); }
+
+/* instruments stay circular; everything else is the rounded-rect system */
+.bm-circle {
+  aspect-ratio: 1;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1.5px solid rgba(120,150,180,.35);
+  background: rgba(5,9,22,.5);
+  font-size: calc(15px * var(--fs));
+  font-weight: 700;
+  color: #7D93AC;
+}
+.bm-circle.on {
+  border-color: var(--cyan);
+  color: var(--cyan);
+  box-shadow: 0 0 14px -2px rgba(61,223,255,.7), inset 0 0 12px -6px rgba(61,223,255,.9);
+}
+.bm-circle:active, .bm-rect:active { filter: brightness(1.3); transform: scale(.96); }
+
+.bm-rect {
+  min-height: 46px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 6px;
+  padding: 8px 4px;
+  border-radius: 12px;
+  border: 1.5px solid rgba(120,150,180,.3);
+  background: rgba(5,9,22,.5);
+  font-size: calc(13px * var(--fs));
+  font-weight: 700;
+  color: #7D93AC;
+  white-space: nowrap;
+}
+.bm-rect.on {
+  border-color: var(--cyan);
+  color: var(--cyan);
+  box-shadow: 0 0 14px -3px rgba(61,223,255,.65);
+}
+
+/* difficulty: two buttons with the shared "to react" label between them */
+.bm-diff { display: grid; grid-template-columns: 1fr auto 1fr; gap: 8px; align-items: center; margin-bottom: 14px; }
+.bm-diff-btn { min-height: 54px; justify-content: space-between; padding: 8px 14px; }
+.bm-diff-name { font-size: calc(15px * var(--fs)); font-weight: 800; }
+.bm-diff-secs { font-size: calc(14px * var(--fs)); font-weight: 700; }
+.bm-diff-mid {
+  font-size: calc(10px * var(--fs));
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: #7D93AC;
+  text-align: center;
+}
+/* hard reads warm when chosen, matching the duration card */
+.bm-diff-btn.hard.on { border-color: #FF6B3D; color: #FF8A4C; box-shadow: 0 0 14px -3px rgba(255,107,61,.6); }
+
+.bm-rule { height: 1px; background: rgba(120,150,180,.22); margin: 4px 0 16px; }
+
+/* MATCH OVERVIEW — rounded rectangles, not circles, using the delivered neon
+   frame as a 9-slice so the corners stay crisp while the middle stretches */
+.bm-overview { display: grid; grid-template-columns: repeat(6, 1fr); gap: 5px; margin-bottom: 20px; }
+.bm-badge { display: flex; flex-direction: column; align-items: center; gap: 5px; min-width: 0; }
+.bm-badge-box {
+  width: 100%;
+  min-height: 42px;
+  display: grid;
+  place-items: center;
+  border-style: solid;
+  /* small borders on purpose: at six across a badge is only ~46px wide, and
+     wider slices would round the corners into an oval */
+  border-width: 10px;
+  border-image: url("../assets/backgrounds/frame-rect-neon@2x.png") 24 fill / 10px stretch;
+}
+.bm-badge-val {
+  font-size: calc(12px * var(--fs));
+  font-weight: 800;
+  color: #F2FBFF;
+  text-align: center;
+  line-height: 1.05;
+}
+.bm-badge-lbl {
+  font-size: calc(8.5px * var(--fs));
+  font-weight: 600;
+  line-height: 1.15;
+  color: #9FC0E0;
+  text-align: center;
+}
+
+/* full-width CTA using the delivered pill asset */
+.bm-start {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  width: 100%;
+  height: 62px;
+  margin-bottom: 10px;
+  border-style: solid;
+  border-width: 26px 30px;
+  border-image: url("../assets/buttons-pill/button-start-match@2x.png") 53 60 fill / 26px 30px stretch;
+  font-size: calc(17px * var(--fs));
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: #FFFFFF;
+}
+.bm-start:active { filter: brightness(1.3); transform: scale(.985); }
+.bm-note {
+  text-align: center;
+  font-size: calc(11.5px * var(--fs));
+  color: #8FA9C6;
+  margin-bottom: 4px;
+}
+
+/* narrow phones: six badges across is the tightest row on the screen */
+@media (max-width: 370px) {
+  .bm-overview { gap: 4px; }
+  .bm-badge-box { border-width: 9px; border-image-width: 9px; min-height: 38px; }
+  .bm-badge-val { font-size: calc(11px * var(--fs)); }
+  .bm-badge-lbl { font-size: calc(8px * var(--fs)); }
+  .bm-rect { font-size: calc(12px * var(--fs)); }
+}

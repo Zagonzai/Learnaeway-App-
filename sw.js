@@ -3,7 +3,7 @@
  * deploys show up immediately; only falls back to cache when offline.
  * Heavy binary assets (images) are cache-first since they rarely change.
  */
-const CACHE = "learnaeway-v46";
+const CACHE = "learnaeway-v47";
 
 const SHELL = [
   "./",
@@ -31,6 +31,8 @@ const SHELL = [
   "./assets/buttons-pill/button-gradient-blue@2x.png",
   "./assets/buttons-pill/button-gradient-pink@2x.png",
   "./assets/buttons-pill/button-gradient-long@2x.png",
+  "./assets/buttons-pill/button-start-match@2x.png",
+  "./assets/backgrounds/frame-rect-neon@2x.png",
   "./assets/buttons-icon/btn-ask-aeway-v2@2x.png",
   "./assets/buttons-icon/btn-play@2x.png",
   "./assets/buttons-icon/btn-pause@2x.png",

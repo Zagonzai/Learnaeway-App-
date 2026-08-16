@@ -129,7 +129,7 @@
   /* ---------------- state ---------------- */
 
   const state = {
-    view: "home",            // 'home' | 'screen' | 'videos' | 'checkin' | 'journal' | 'pickaeway'
+    view: "home",            // 'home' | 'screen' | 'videos' | 'checkin' | 'journal' | 'pickaeway' | 'buildmatch'
     homeTab: "sections",     // 'sections' | 'liked' | 'saved'
     homeModule: 0,           // module index shown on home
     expanded: null,          // section id expanded into subsection deck
@@ -892,6 +892,8 @@
   function renderPickaeway() {
     const s = pickStats();
     barTitle.textContent = "Pickæway";
+    const pickName = document.querySelector("#pickBar .pick-name");
+    if (pickName) pickName.textContent = "Cool Down Game";
     cardScroll.innerHTML = `
       <div class="pk-reward">
         <div class="pk-cap">Reward Balance</div>
@@ -916,6 +918,127 @@
       </div>`;
     cardScroll.scrollTop = 0;
     cardFooter.style.display = "none";
+  }
+
+  /* ---------------- Build Match ----------------
+     Picks the settings for a Reward Battle round. Everything on the screen is
+     a setting or something derived from one; the match engine itself does not
+     exist yet, so Start Match only confirms the build. */
+
+  const BM_INSTRUMENTS = ["ES", "NQ", "YM", "RTY"];
+  const BM_TIMEFRAMES = [1, 2, 3, 5];
+  const BM_CANDLES = [3, 5, 7, 9, 15];
+  const BM_DIFFICULTY = { hard: 10, easy: 15 };   // seconds to react
+  const BM_DURATION = 60;                          // seconds per match
+  const BM_BANKROLL = 100;
+
+  function bmSettings() {
+    const b = store.buildMatch || {};
+    return {
+      instrument: BM_INSTRUMENTS.indexOf(b.instrument) >= 0 ? b.instrument : "ES",
+      timeframe: BM_TIMEFRAMES.indexOf(b.timeframe) >= 0 ? b.timeframe : 1,
+      candles: BM_CANDLES.indexOf(b.candles) >= 0 ? b.candles : 3,
+      difficulty: b.difficulty === "easy" ? "easy" : "hard",
+    };
+  }
+
+  function bmSet(key, value) {
+    store.buildMatch = Object.assign(bmSettings(), { [key]: value });
+    save();
+    renderBuildMatch();
+  }
+
+  function bmDurationLabel() {
+    return `${Math.floor(BM_DURATION / 60)}m ${BM_DURATION % 60}s`;
+  }
+  /* the round is a fixed minute split evenly across the candles you chose */
+  function bmPerCandle(s) { return Math.round(BM_DURATION / s.candles); }
+
+  function bmOverview(s) {
+    return [
+      { v: s.instrument, l: "Instrument" },
+      { v: `${s.timeframe}m`, l: "Time Frame" },
+      { v: String(s.candles), l: "Candles" },
+      { v: `${BM_DIFFICULTY[s.difficulty]}s`, l: "Reaction Window" },
+      { v: s.difficulty.toUpperCase(), l: "Difficulty" },
+      { v: `${bmPerCandle(s)}s`, l: "Per Candle" },
+    ];
+  }
+
+  function renderBuildMatch() {
+    const s = bmSettings();
+    barTitle.textContent = "Pickæway";
+    const pickName = document.querySelector("#pickBar .pick-name");
+    if (pickName) pickName.textContent = "Build Match";
+    cardScroll.innerHTML = `
+      <div class="bm-stats">
+        <div class="bm-stat bm-stat-dur">
+          <div class="bm-cap">Match Duration</div>
+          <div class="bm-val">${bmDurationLabel()}</div>
+        </div>
+        <div class="bm-stat bm-stat-bank">
+          <div class="bm-cap">Bank Roll</div>
+          <div class="bm-val">${plainMoney(BM_BANKROLL)}
+            <span class="bm-bankicon" aria-hidden="true">
+              <svg viewBox="0 0 24 18"><rect x="1.2" y="1.2" width="21.6" height="15.6" rx="4"
+                fill="none" stroke="currentColor" stroke-width="1.6"/>
+                <circle cx="12" cy="9" r="3.4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
+            </span>
+          </div>
+        </div>
+      </div>
+      <div class="bm-reward"><span class="bm-reward-tag">Reward</span></div>
+
+      <div class="bm-label">Instrument</div>
+      <div class="bm-row bm-row-4">
+        ${BM_INSTRUMENTS.map((x) => `
+          <button class="bm-circle ${s.instrument === x ? "on" : ""}" data-bmins="${x}">${x}</button>`).join("")}
+      </div>
+
+      <div class="bm-label">Timeframe</div>
+      <div class="bm-row bm-row-4">
+        ${BM_TIMEFRAMES.map((x) => `
+          <button class="bm-rect ${s.timeframe === x ? "on" : ""}" data-bmtf="${x}">${x} MIN</button>`).join("")}
+      </div>
+
+      <div class="bm-label">Candles</div>
+      <div class="bm-row bm-row-5">
+        ${BM_CANDLES.map((x) => `
+          <button class="bm-rect ${s.candles === x ? "on" : ""}" data-bmcd="${x}">${x}</button>`).join("")}
+      </div>
+
+      <div class="bm-diff">
+        <button class="bm-rect bm-diff-btn hard ${s.difficulty === "hard" ? "on" : ""}" data-bmdiff="hard">
+          <span class="bm-diff-name">Hard</span><span class="bm-diff-secs">${BM_DIFFICULTY.hard}s</span>
+        </button>
+        <span class="bm-diff-mid">To React</span>
+        <button class="bm-rect bm-diff-btn easy ${s.difficulty === "easy" ? "on" : ""}" data-bmdiff="easy">
+          <span class="bm-diff-secs">${BM_DIFFICULTY.easy}s</span><span class="bm-diff-name">Easy</span>
+        </button>
+      </div>
+
+      <div class="bm-rule" aria-hidden="true"></div>
+      <div class="bm-label">Match Overview</div>
+      <div class="bm-overview">
+        ${bmOverview(s).map((o) => `
+          <div class="bm-badge">
+            <span class="bm-badge-box"><span class="bm-badge-val">${esc(o.v)}</span></span>
+            <span class="bm-badge-lbl">${esc(o.l)}</span>
+          </div>`).join("")}
+      </div>
+
+      <button class="bm-start" data-bmstart>Start Match</button>
+      <div class="bm-note">Matched only against players with the exact same settings</div>`;
+    cardScroll.scrollTop = 0;
+    cardFooter.style.display = "none";
+  }
+
+  function openBuildMatch() {
+    stopAudio();
+    state.view = "buildmatch";
+    state.slideDir = 0;
+    closeOverlay();
+    render();
   }
 
   function openPickaeway() {
@@ -2113,7 +2236,7 @@
   function syncDockActive() {
     $("navCheckin").classList.toggle("active", state.view === "checkin");
     $("navAdd").classList.toggle("active", state.view === "journal");
-    $("navBattle").classList.toggle("active", state.view === "pickaeway");
+    $("navBattle").classList.toggle("active", state.view === "pickaeway" || state.view === "buildmatch");
     $("navPlay").classList.toggle("active", state.view === "videos");
   }
 
@@ -2121,7 +2244,7 @@
   function syncCheckinChrome() {
     const on = state.view === "checkin";
     const jr = state.view === "journal";
-    const pk = state.view === "pickaeway";
+    const pk = state.view === "pickaeway" || state.view === "buildmatch";
     checkinBar.classList.toggle("hidden", !on);
     $("journalBar").classList.toggle("hidden", !jr);
     $("pickBar").classList.toggle("hidden", !pk);
@@ -2136,7 +2259,7 @@
     if (state.videoId && state.view !== "videos") tearDownPlayer();
     const listy = state.view === "home" || state.view === "videos"
       || state.view === "checkin" || state.view === "journal"
-      || state.view === "pickaeway";
+      || state.view === "pickaeway" || state.view === "buildmatch";
     $("cardOuter").classList.toggle("outline-bg", listy);
     if (state.view !== "checkin") cardScroll.classList.remove("ci-resulting");
     syncCheckinChrome();
@@ -2146,6 +2269,7 @@
     else if (state.view === "checkin") renderCheckin();
     else if (state.view === "journal") renderJournal();
     else if (state.view === "pickaeway") renderPickaeway();
+    else if (state.view === "buildmatch") renderBuildMatch();
     else renderScreen();
   }
 
@@ -2501,7 +2625,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pflog],[data-pfsave],[data-pfacct],[data-jsection],[data-jviewall],[data-photo-pick],[data-photo-clear],[data-pk-replay],[data-pk-build],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pflog],[data-pfsave],[data-pfacct],[data-jsection],[data-jviewall],[data-photo-pick],[data-photo-clear],[data-pk-replay],[data-pk-build],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -2571,12 +2695,24 @@
       syncProfilePhoto();
       openSettings();
     }
-    else if (t.hasAttribute("data-pk-replay") || t.hasAttribute("data-pk-build")) {
-      const build = t.hasAttribute("data-pk-build");
-      openOverlay(panelHead(build ? "Build Match" : "Match Replay") + `
-        <div class="liked-empty">${build
-          ? "Match building is coming soon — this is where you'll pick the pairs and set the round."
-          : "No matches played yet. Once you've battled, every round is replayable here."}</div>
+    else if (t.hasAttribute("data-pk-build")) openBuildMatch();
+    else if (t.hasAttribute("data-pk-replay")) {
+      openOverlay(panelHead("Match Replay") + `
+        <div class="liked-empty">No matches played yet. Once you've battled, every round is
+          replayable here.</div>
+        <button class="btn-primary" data-close>Got it</button>`);
+    }
+    else if (t.dataset.bmins) bmSet("instrument", t.dataset.bmins);
+    else if (t.dataset.bmtf) bmSet("timeframe", +t.dataset.bmtf);
+    else if (t.dataset.bmcd) bmSet("candles", +t.dataset.bmcd);
+    else if (t.dataset.bmdiff) bmSet("difficulty", t.dataset.bmdiff);
+    else if (t.hasAttribute("data-bmstart")) {
+      const s = bmSettings();
+      openOverlay(panelHead("Start Match") + `
+        <div class="liked-empty">Your match is built —
+          <b>${esc(s.instrument)} · ${s.timeframe}m · ${s.candles} candles ·
+          ${BM_DIFFICULTY[s.difficulty]}s to react</b>.<br>
+          Matchmaking goes live once the battle engine ships; nothing is queued yet.</div>
         <button class="btn-primary" data-close>Got it</button>`);
     }
     else if (t.hasAttribute("data-ci-exit")) { closeOverlay(); state.checkinResult = null; state.homeTab = "sections"; goHome(); }
