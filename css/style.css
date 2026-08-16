@@ -2431,44 +2431,118 @@ select.mt-input {
   accent-color: var(--cyan);
 }
 
-/* ---------------- Select Account sheet ---------------- */
+/* ---------------- Select Account: inline dropdown ----------------
+   Expands between the Live/Prop pills and the calendar, pushing the page
+   below it down. Not an overlay: nothing here is fixed, nothing dims or
+   blurs what is behind it. */
 
-.sa-list { display: flex; flex-direction: column; gap: 10px; margin-bottom: 14px; }
-.sa-row {
+.ad-panel {
+  margin: 0 0 16px;
+  padding: 10px 6px 8px;
+  border-style: solid;
+  /* kept narrow on purpose: the frame is decorative, and every px it takes is
+     a px the account rows inside don't get on a 390px phone */
+  border-width: 20px 16px;
+  border-image: url("../assets/dropdown/panel@2x.png") 150 170 fill / 20px 16px stretch;
+}
+
+.ad-head {
   display: flex;
   align-items: center;
+  justify-content: space-between;
   gap: 10px;
-  width: 100%;
-  padding: 11px 10px;
-  border-radius: 18px;
-  border: 1px solid rgba(61,223,255,.22);
-  background: rgba(9,13,30,.6);
-  text-align: left;
+  margin-bottom: 12px;
 }
-.sa-row.on {
-  border-color: transparent;
-  background:
-    linear-gradient(rgba(9,13,30,.92), rgba(9,13,30,.92)) padding-box,
-    linear-gradient(120deg, var(--cyan), var(--grad-mid), var(--magenta)) border-box;
-  border: 1.5px solid transparent;
-  box-shadow: 0 0 16px -3px rgba(61,223,255,.55);
-}
-.sa-row:active { filter: brightness(1.2); }
-.sa-tile {
-  flex: 0 0 auto;
-  width: 38px;
-  height: 38px;
-  display: grid;
-  place-items: center;
-  border-radius: 12px;
-  border: 1px solid rgba(61,223,255,.3);
-  background: rgba(5,9,22,.8);
+.ad-title {
   font-size: calc(17px * var(--fs));
   font-weight: 800;
-  color: var(--cyan);
+  color: #EAF6FF;
+  text-shadow: 0 0 12px rgba(61,223,255,.45);
 }
-.sa-id { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 3px; }
-.sa-name {
+.ad-linkall {
+  display: flex;
+  align-items: center;
+  gap: 9px;
+  font-size: calc(14px * var(--fs));
+  font-weight: 700;
+  color: #C7D9EF;
+}
+.ad-linkall:disabled { opacity: .4; }
+.ad-linkall:active { filter: brightness(1.3); }
+/* the two delivered circle assets are the toggle's two states */
+.ad-linkicon {
+  width: 30px;
+  height: 30px;
+  background: url("../assets/dropdown/link-all@2x.png") center / contain no-repeat;
+}
+.ad-linkall.on .ad-linkicon { background-image: url("../assets/dropdown/unlink-all@2x.png"); }
+
+/* the list scrolls on its own once there are more accounts than fit, so the
+   action row underneath stays reachable without scrolling the whole page */
+.ad-list {
+  display: flex;
+  flex-direction: column;
+  gap: 9px;
+  max-height: 264px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+  scrollbar-width: thin;
+  scrollbar-color: rgba(61,223,255,.45) transparent;
+  margin-bottom: 12px;
+  padding-right: 2px;
+}
+
+.ad-row {
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+  width: 100%;
+  padding: 8px;
+  border-radius: 16px;
+  text-align: left;
+  /* gradient ring, drawn in CSS so it stays crisp at any row height */
+  border: 1.5px solid transparent;
+  background:
+    linear-gradient(rgba(8,12,28,.92), rgba(8,12,28,.92)) padding-box,
+    linear-gradient(115deg, var(--cyan), var(--grad-mid), var(--magenta)) border-box;
+  /* unselected rows sit back at 50%, per the reference */
+  opacity: .5;
+  transition: opacity .18s ease, box-shadow .2s ease;
+}
+.ad-row.on {
+  opacity: 1;
+  box-shadow: 0 0 18px -4px rgba(61,223,255,.7), 0 0 18px -4px rgba(255,61,154,.5);
+}
+.ad-row:active { filter: brightness(1.25); }
+
+/* logo frame is the delivered asset; the brand mark is a separate layer on
+   top of it, never baked in */
+.ad-logo {
+  flex: 0 0 auto;
+  width: 42px;
+  height: 42px;
+  display: grid;
+  place-items: center;
+  background: url("../assets/dropdown/logo-box@2x.png") center / contain no-repeat;
+}
+.ad-logo img {
+  /* The delivered logos run from 0.61 to 2.03 aspect, so anything that fills
+     the square would visibly squash the wide ones. Bounding both axes and
+     leaving width/height auto lets each mark keep its own proportions and
+     sit centred with even padding, whatever shape it is. */
+  /* px, not %: a percentage max-height resolves against an indefinite grid
+     row here and gets dropped, which let the tall marks overshoot the box */
+  max-width: 28px;
+  max-height: 28px;
+  width: auto;
+  height: auto;
+  object-fit: contain;
+}
+.ad-logo-txt { font-size: calc(15px * var(--fs)); font-weight: 800; color: var(--cyan); }
+
+.ad-id { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 2px; }
+.ad-name {
   display: flex;
   align-items: center;
   gap: 6px;
@@ -2477,84 +2551,104 @@ select.mt-input {
   font-weight: 800;
   color: #F2FBFF;
 }
-/* only the name itself truncates — the badge next to it must stay whole */
-.sa-nametext { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-.sa-current {
+.ad-nametext { min-width: 0; overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.ad-current {
   flex: 0 0 auto;
   padding: 2px 6px;
   border-radius: 999px;
-  border: 1px solid rgba(61,223,255,.45);
+  border: 1px solid rgba(61,223,255,.55);
   background: rgba(61,223,255,.14);
-  font-size: 9px;
+  font-size: 8.5px;
   font-weight: 700;
-  letter-spacing: .04em;
   color: var(--cyan);
-  text-transform: none;
 }
-.sa-kind { font-size: calc(11.5px * var(--fs)); color: #9FC0E0; }
-.sa-figs { flex: 0 0 auto; display: flex; flex-direction: column; align-items: flex-end; gap: 1px; }
-.sa-bal { font-size: calc(14px * var(--fs)); font-weight: 800; color: #F2FBFF; }
-.sa-chlabel { font-size: 9.5px; font-weight: 600; color: #9FC0E0; }
-.sa-ch { font-size: calc(11.5px * var(--fs)); font-weight: 800; }
-.sa-ch.pos { color: var(--teal); }
-.sa-ch.neg { color: #FF6B9D; }
-/* radio: empty ring by default, filled tick when this is the selected account */
-.sa-radio {
+.ad-kind { font-size: calc(11px * var(--fs)); color: #9FC0E0; white-space: nowrap; }
+.ad-bal {
   flex: 0 0 auto;
-  width: 22px;
-  height: 22px;
-  border-radius: 50%;
-  border: 1.5px solid rgba(199,236,244,.5);
+  font-size: calc(14px * var(--fs));
+  font-weight: 800;
+  color: #F2FBFF;
+  white-space: nowrap;
 }
-.sa-row.on .sa-radio {
-  border-color: #FFFFFF;
-  background: #FFFFFF;
-  position: relative;
+/* the two delivered indicator assets */
+.ad-check {
+  flex: 0 0 auto;
+  width: 26px;
+  height: 26px;
+  background: url("../assets/dropdown/check-off@2x.png") center / contain no-repeat;
 }
-.sa-row.on .sa-radio::after {
-  content: "";
-  position: absolute;
-  left: 6px;
-  top: 3px;
-  width: 6px;
-  height: 11px;
-  border: solid #0B1226;
-  border-width: 0 2.5px 2.5px 0;
-  transform: rotate(45deg);
-}
-.sa-go { flex: 0 0 auto; font-size: calc(12px * var(--fs)); font-weight: 800; color: var(--cyan); }
-.sa-go.danger { color: #FF6B9D; }
+.ad-row.on .ad-check { background-image: url("../assets/dropdown/check-on@2x.png"); }
 
-.sa-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin-bottom: 4px; }
-.sa-act {
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 6px;
-  padding: 12px 4px;
-  border-radius: 14px;
-  border: 1px solid rgba(61,223,255,.25);
-  background: rgba(9,13,30,.6);
-  font-size: calc(10.5px * var(--fs));
-  font-weight: 700;
-  line-height: 1.15;
+.ad-go { flex: 0 0 auto; font-size: calc(12px * var(--fs)); font-weight: 800; color: var(--cyan); }
+.ad-go.danger { color: #FF6B9D; }
+.ad-row[data-jeditacct], .ad-row[data-jdelacct] { opacity: 1; }
+
+/* four icon-only buttons, each its own delivered asset — no text labels */
+.ad-actions { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; }
+.ad-act {
+  height: 46px;
+  border-radius: 12px;
+  background: center / contain no-repeat;
+}
+.ad-act-add    { background-image: url("../assets/dropdown/btn-add@2x.png"); }
+.ad-act-edit   { background-image: url("../assets/dropdown/btn-edit@2x.png"); }
+.ad-act-del    { background-image: url("../assets/dropdown/btn-delete@2x.png"); }
+.ad-act-close  { background-image: url("../assets/dropdown/btn-close@2x.png"); }
+.ad-act.off { opacity: .35; }
+.ad-act:active { filter: brightness(1.3); transform: scale(.96); }
+
+.ad-note {
+  font-size: calc(12px * var(--fs));
+  line-height: 1.5;
+  color: #8FB4D8;
+  margin-bottom: 12px;
+}
+.ad-empty {
+  padding: 16px 8px;
   text-align: center;
+  font-size: calc(13px * var(--fs));
+  color: #9FC0E0;
+}
+.ad-confirm {
+  font-size: calc(13.5px * var(--fs));
+  line-height: 1.55;
+  color: #D9EAFB;
+  margin-bottom: 14px;
+}
+.ad-panel .mt-label { margin-bottom: 12px; }
+.ad-save, .ad-back, .ad-danger {
+  display: block;
+  width: 100%;
+  margin-top: 10px;
+  padding: 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(61,223,255,.4);
+  background: rgba(10,16,34,.7);
+  font-size: calc(14px * var(--fs));
+  font-weight: 800;
+  letter-spacing: .05em;
   color: #EAF6FF;
 }
-.sa-act-ico { font-size: calc(18px * var(--fs)); line-height: 1; }
-.sa-act.danger { border-color: rgba(255,61,154,.4); color: #FF6B9D; }
-.sa-act.off { opacity: .4; }
-.sa-act:active { filter: brightness(1.3); }
+.ad-back { border-color: rgba(120,150,180,.35); color: #9FC0E0; font-weight: 700; }
+.ad-danger { border-color: rgba(255,61,154,.5); color: #FF6B9D; }
+.ad-save:active, .ad-back:active, .ad-danger:active { filter: brightness(1.3); transform: scale(.98); }
 
-/* narrowest phones: tighten the row so a long platform name still fits
-   beside its Current badge instead of ellipsing */
+/* the chevron flips when its panel is open */
+.j-drop.open img { transform: rotate(180deg); }
+.j-drop img { transition: transform .2s ease; }
+
 @media (max-width: 370px) {
-  .sa-row { gap: 8px; padding: 10px 8px; }
-  .sa-tile { width: 34px; height: 34px; }
-  .sa-chlabel { font-size: 9px; }
-  .sa-current { padding: 2px 5px; font-size: 8.5px; }
-  .sa-act { padding: 10px 2px; }
+  /* claw back frame and padding rather than adding to it — every px here is
+     name width, and three names ellipsed at 360px without this */
+  .ad-panel { padding: 8px 2px 6px; border-width: 18px 12px; border-image-width: 18px 12px; }
+  .ad-row { gap: 7px; padding: 7px 6px; }
+  .ad-logo { width: 36px; height: 36px; }
+  .ad-logo img { max-width: 24px; max-height: 24px; }
+  .ad-name { font-size: calc(13px * var(--fs)); }
+  .ad-bal { font-size: calc(13px * var(--fs)); }
+  .ad-check { width: 23px; height: 23px; }
+  .ad-current { padding: 2px 5px; font-size: 8px; }
+  .ad-actions { gap: 6px; }
 }
 
 /* ===================== BUILD MATCH ===================== */

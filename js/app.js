@@ -143,6 +143,8 @@
     journalMonth: 0,         // months offset from the current month
     journalSection: "calendar",   // calendar | total | net | recent
     journalRange: "1M",
+    journalPicker: null,     // null | 'list' | 'add' | 'edit' | 'delete' (inline)
+    journalPickerId: null,   // account being edited/deleted inside the panel
     checkinResult: null,     // { go, noCount } — result shown in place of the rows
   };
 
@@ -1351,9 +1353,49 @@
         </button>`).join("")}
     </div>`;
   }
-  const PLATFORMS = ["Robinhood", "Tradovate", "ThinkorSwim", "Interactive Brokers",
-                     "Webull", "TastyTrade", "NinjaTrader", "Apex Trader Funding",
-                     "Topstep", "MetaTrader"];
+  /* The delivered logo set, with the category each brand belongs to taken from
+     the "Live"/"Prop" suffix on its filename. MetaTrader has no logo but is
+     kept on the list so accounts already created under it don't fall back to
+     "Other" on edit. */
+  const BROKERS = [
+    { name: "Robinhood",           category: "personal", logo: "robinhood" },
+    { name: "Webull",              category: "personal", logo: "webull" },
+    { name: "NinjaTrader",         category: "personal", logo: "ninjatrader" },
+    { name: "Tradovate",           category: "personal", logo: "tradovate" },
+    { name: "Coinbase",            category: "personal", logo: "coinbase" },
+    { name: "Public",              category: "personal", logo: "public" },
+    { name: "Interactive Brokers", category: "personal", logo: "interactive-brokers" },
+    { name: "ThinkorSwim",         category: "personal", logo: "thinkorswim" },
+    { name: "TastyTrade",          category: "personal", logo: "tastytrade" },
+    { name: "Topstep",             category: "prop",     logo: "topstep" },
+    { name: "Take Profit Trader",  category: "prop",     logo: "take-profit-trader" },
+    { name: "Tradeify",            category: "prop",     logo: "tradeify" },
+    { name: "Apex Trader Funding", category: "prop",     logo: "apex" },
+    { name: "Lucid",               category: "prop",     logo: "lucid" },
+    { name: "My Funded Future",    category: "prop",     logo: "my-funded-future" },
+    { name: "MetaTrader",          category: "personal", logo: "" },
+  ];
+  const PLATFORMS = BROKERS.map((b) => b.name);
+
+  /* Match a stored platform string to its logo. Compared on letters only, so
+     spelling drift between the asset filenames, the picker and anything a user
+     typed by hand still lands on the right brand — "Think or Swim",
+     "ThinkorSwim" and "thinkorswim" are all the same key. */
+  function brandKey(s) { return String(s || "").toLowerCase().replace(/[^a-z]/g, ""); }
+  const LOGO_BY_KEY = {};
+  BROKERS.forEach((b) => { if (b.logo) LOGO_BY_KEY[brandKey(b.name)] = b.logo; });
+  // spellings seen in the delivered artwork and in earlier builds
+  Object.assign(LOGO_BY_KEY, {
+    tradeovate: "tradovate",
+    apex: "apex",
+    interactivebroker: "interactive-brokers",
+    tastytrades: "tastytrade",
+    topstepx: "topstep",
+  });
+  function logoFor(platform) {
+    const slug = LOGO_BY_KEY[brandKey(platform)];
+    return slug ? `assets/logos/${slug}@2x.png` : "";
+  }
 
   function accountsIn(category) {
     return (store.journalAccounts || []).filter((a) => a.category === category);
@@ -1722,11 +1764,17 @@
     return "$" + n.toLocaleString("en-US", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
   }
 
+  /* declared above renderJournal on purpose: it reads these, and a `let`
+     further down the file would still be in its dead zone if anything ever
+     renders the journal during module setup */
+  let journalKeepScroll = false;
+  let journalScrollTop = 0;
+
   function renderJournal() {
     const all = store.journalAccounts || [];
     const acct = activeAccount();
     const scope = scopeAccounts();
-    const catName = state.journalTab === "personal" ? "Personal" : "Prop Firm";
+    const catName = state.journalTab === "personal" ? "Live" : "Prop";
     barTitle.textContent = acct ? `${accountLabel(acct)} Journal` : `All ${catName} Accounts Journal`;
 
     const balance = scopeBalance(scope);
@@ -1750,12 +1798,15 @@
     const tabs = `
       <div class="j-selector">
         <button class="j-acct-pill ${state.journalTab === "personal" ? "on" : ""}" data-jtab="personal">Live Account</button>
-        <button class="j-drop" data-jpick aria-label="Select account" aria-haspopup="dialog">
+        <button class="j-drop ${state.journalPicker ? "open" : ""}" data-jpicktoggle
+                aria-label="Select account" aria-expanded="${state.journalPicker ? "true" : "false"}">
           <img src="assets/nav-icons/icon-chevron-down@2x.png" alt="">
         </button>
         <button class="j-acct-pill ${state.journalTab === "prop" ? "on" : ""}" data-jtab="prop">Prop Account</button>
       </div>`;
-    const picker = "";
+    // expands in place between the pills and the calendar, pushing everything
+    // below it further down the page
+    const picker = accountPanelHTML();
 
     const propCard = state.journalTab === "prop" ? propCardHTML() : "";
     if (!scope.length) {
@@ -1763,6 +1814,9 @@
         <div class="liked-empty">No accounts yet.<br>
           Add one to start logging trades — it begins at the balance you enter, with an empty
           calendar. Everything here is typed in by you; nothing connects to a real broker.</div>`;
+      cardScroll.scrollTop = journalKeepScroll ? journalScrollTop : 0;
+      journalKeepScroll = false;
+      fillAcctForm();
       cardFooter.style.display = "none";
       return;
     }
@@ -1837,15 +1891,24 @@
       <input id="jCsvFile" class="j-file" type="file" accept=".csv,text/csv">
       <button class="j-cash" data-jcash>Deposit / Withdraw</button>
       ${statRowHTML()}`;
-    cardScroll.scrollTop = 0;
+    // Opening the journal starts at the top, but re-rendering it in place —
+    // expanding the account panel, switching modes inside it — must not yank
+    // the page back to the top under the user's finger.
+    cardScroll.scrollTop = journalKeepScroll ? journalScrollTop : 0;
+    journalKeepScroll = false;
+    fillAcctForm();
     cardFooter.style.display = "none";
   }
 
   /* ---- add an account ---- */
-  /* ---------------- Select Account sheet ----------------
-     Opened from the chevron between the two pills. Lists the accounts in the
-     category on screen with their balance and today's change, and carries the
-     Add / Edit / Delete actions that used to have nowhere to live. */
+  /* ---------------- Select Account: inline dropdown ----------------
+     Expands in place under the Live/Prop pills and pushes the calendar and
+     everything below it down the page — deliberately not an overlay. Nothing
+     in this app floats over a blurred backdrop any more.
+
+     state.journalPicker is the panel's mode:
+       null | "list" | "add" | "edit" | "delete"
+     with state.journalPickerId naming the account being edited or deleted. */
 
   function acctDayChange(a) {
     const t = new Date();
@@ -1853,113 +1916,195 @@
     return info ? info.pnl : 0;
   }
 
+  /* The logo box: the delivered frame is the container's background and the
+     brand mark is a separate <img> laid inside it, composited at render time
+     rather than pre-flattened. object-fit:contain is what keeps Top Step (very
+     wide) and TastyTrade (square) both undistorted inside the same square. */
+  function logoBoxHTML(platform) {
+    const src = logoFor(platform);
+    return `<span class="ad-logo" aria-hidden="true">${src
+      ? `<img src="${esc(src)}" alt="">`
+      : `<span class="ad-logo-txt">${esc((platform || "?").slice(0, 1).toUpperCase())}</span>`}</span>`;
+  }
+
+  /* whole dollars in the dropdown, matching the reference — the exact figure
+     to the cent is always on the bar above */
+  function dropMoney(n) {
+    return (n < 0 ? "-$" : "$") + Math.round(Math.abs(n)).toLocaleString("en-US");
+  }
+
   function acctRowHTML(a, selected) {
-    const bal = accountBalance(a);
-    const ch = acctDayChange(a);
-    const prev = bal - ch;
-    const pct = prev !== 0 ? Math.round((10000 * ch) / prev) / 100 : 0;
-    return `<button class="sa-row ${selected ? "on" : ""}" data-jacct="${esc(a.id)}">
-      <span class="sa-tile" aria-hidden="true">${esc((a.platform || "?").slice(0, 1).toUpperCase())}</span>
-      <span class="sa-id">
-        <span class="sa-name"><span class="sa-nametext">${esc(accountLabel(a))}</span>${
-          selected ? `<span class="sa-current">Current</span>` : ""}</span>
-        <span class="sa-kind">${a.category === "prop" ? "Prop Firm Account" : "Personal Account"}</span>
+    return `<button class="ad-row ${selected ? "on" : ""}" data-jacct="${esc(a.id)}">
+      ${logoBoxHTML(a.platform)}
+      <span class="ad-id">
+        <span class="ad-name"><span class="ad-nametext">${esc(accountLabel(a))}</span>${
+          selected ? `<span class="ad-current">Current</span>` : ""}</span>
+        <span class="ad-kind">${a.category === "prop" ? "Prop Account" : "Live Account"}</span>
       </span>
-      <span class="sa-figs">
-        <span class="sa-bal">${plainMoney(bal)}</span>
-        <span class="sa-chlabel">Daily Change</span>
-        <span class="sa-ch ${ch < 0 ? "neg" : "pos"}">${money(ch, true)} (${pct}%)</span>
-      </span>
-      <span class="sa-radio" aria-hidden="true"></span>
+      <span class="ad-bal">${dropMoney(accountBalance(a))}</span>
+      <span class="ad-check" aria-hidden="true"></span>
     </button>`;
   }
 
-  function openAccountSheet() {
+  /* The whole inline panel, in whichever mode it is currently in. Returns ""
+     when closed, so the journal simply has nothing between the pills and the
+     calendar and the page collapses back up. */
+  function accountPanelHTML() {
+    if (!state.journalPicker) return "";
+    const mode = state.journalPicker;
     const list = accountsIn(state.journalTab);
+    const inner = mode === "add" ? acctFormHTML(null)
+      : mode === "edit" ? acctEditHTML(list)
+      : mode === "delete" ? acctDeleteHTML(list)
+      : acctListHTML(list);
+    return `<div class="ad-panel" id="acctPanel">${inner}</div>`;
+  }
+
+  function acctListHTML(list) {
     const catName = state.journalTab === "personal" ? "Live" : "Prop";
     const acct = activeAccount();
-    openOverlay(panelHead("Select Account") + `
-      <div class="sa-list">
+    const linked = isCombined() && list.length > 0;
+    return `
+      <div class="ad-head">
+        <span class="ad-title">Select Account</span>
+        <button class="ad-linkall ${linked ? "on" : ""}" data-jlinkall
+                ${list.length ? "" : "disabled"}>
+          <span>${linked ? "Unlink All" : "Link All"}</span>
+          <span class="ad-linkicon" aria-hidden="true"></span>
+        </button>
+      </div>
+      <div class="ad-list">
         ${list.length ? `
-          <button class="sa-row sa-all ${isCombined() ? "on" : ""}" data-jacct="__all">
-            <span class="sa-tile" aria-hidden="true">∑</span>
-            <span class="sa-id">
-              <span class="sa-name"><span class="sa-nametext">All ${esc(catName)} Accounts</span>${
-                isCombined() ? `<span class="sa-current">Current</span>` : ""}</span>
-              <span class="sa-kind">${list.length} account${list.length === 1 ? "" : "s"} combined</span>
+          <button class="ad-row ad-all ${linked ? "on" : ""}" data-jacct="__all">
+            <span class="ad-logo ad-logo-all" aria-hidden="true"><span class="ad-logo-txt">∑</span></span>
+            <span class="ad-id">
+              <span class="ad-name"><span class="ad-nametext">All ${esc(catName)} Accounts</span>${
+                linked ? `<span class="ad-current">Current</span>` : ""}</span>
+              <span class="ad-kind">${list.length} account${list.length === 1 ? "" : "s"} combined</span>
             </span>
-            <span class="sa-figs"><span class="sa-bal">${plainMoney(scopeBalance(list))}</span></span>
-            <span class="sa-radio" aria-hidden="true"></span>
+            <span class="ad-bal">${dropMoney(scopeBalance(list))}</span>
+            <span class="ad-check" aria-hidden="true"></span>
           </button>` : ""}
         ${list.map((a) => acctRowHTML(a, !!acct && a.id === acct.id)).join("")}
-        ${list.length ? "" : `<div class="liked-empty">No ${esc(catName.toLowerCase())} accounts yet.</div>`}
+        ${list.length ? "" : `<div class="ad-empty">No ${esc(catName.toLowerCase())} accounts yet — add one below.</div>`}
       </div>
-      <div class="sa-actions">
-        <button class="sa-act" data-jaddacct><span class="sa-act-ico">+</span>Add Account</button>
-        <button class="sa-act ${list.length ? "" : "off"}" ${list.length ? "" : "disabled"} data-jeditlist>
-          <span class="sa-act-ico">✎</span>Edit Accounts</button>
-        <button class="sa-act danger ${list.length ? "" : "off"}" ${list.length ? "" : "disabled"} data-jdellist>
-          <span class="sa-act-ico">🗑</span>Delete Accounts</button>
-        <button class="sa-act" data-close><span class="sa-act-ico">✕</span>Close</button>
-      </div>`);
+      ${acctActionsHTML(list.length)}`;
   }
 
-  /* pick which account to edit / delete, then act on the one chosen */
-  function openAccountPickList(mode) {
-    const list = accountsIn(state.journalTab);
-    const del = mode === "delete";
-    openOverlay(panelHead(del ? "Delete Accounts" : "Edit Accounts") + `
-      <div class="notes-hint" style="margin:0 0 14px">${del
-        ? "Removing an account also removes its trades, imports and cash ledger. This can't be undone."
-        : "Pick the account to edit."}</div>
-      <div class="sa-list">
+  function acctActionsHTML(count) {
+    const off = count ? "" : " off";
+    const dis = count ? "" : " disabled";
+    return `<div class="ad-actions">
+      <button class="ad-act ad-act-add" data-jaddacct aria-label="Add account"></button>
+      <button class="ad-act ad-act-edit${off}"${dis} data-jeditlist aria-label="Edit accounts"></button>
+      <button class="ad-act ad-act-del${off}"${dis} data-jdellist aria-label="Delete accounts"></button>
+      <button class="ad-act ad-act-close" data-jpickclose aria-label="Close account selector"></button>
+    </div>`;
+  }
+
+  function acctEditHTML(list) {
+    if (state.journalPickerId) {
+      const a = (store.journalAccounts || []).find((x) => x.id === state.journalPickerId);
+      if (a) return acctFormHTML(a);
+    }
+    return `
+      <div class="ad-head"><span class="ad-title">Edit Accounts</span></div>
+      <div class="ad-note">Pick the account to edit.</div>
+      <div class="ad-list">
         ${list.map((a) => `
-          <button class="sa-row" data-j${del ? "del" : "edit"}acct="${esc(a.id)}">
-            <span class="sa-tile" aria-hidden="true">${esc((a.platform || "?").slice(0, 1).toUpperCase())}</span>
-            <span class="sa-id">
-              <span class="sa-name"><span class="sa-nametext">${esc(accountLabel(a))}</span></span>
-              <span class="sa-kind">${plainMoney(accountBalance(a))}</span>
+          <button class="ad-row" data-jeditacct="${esc(a.id)}">
+            ${logoBoxHTML(a.platform)}
+            <span class="ad-id">
+              <span class="ad-name"><span class="ad-nametext">${esc(accountLabel(a))}</span></span>
+              <span class="ad-kind">${plainMoney(accountBalance(a))}</span>
             </span>
-            <span class="sa-go ${del ? "danger" : ""}">${del ? "Delete" : "Edit"}</span>
+            <span class="ad-go">Edit</span>
           </button>`).join("")}
       </div>
-      <button class="btn-secondary" data-jpick>Back</button>`);
+      <button class="ad-back" data-jpick>Back</button>`;
   }
 
-  function openEditAccount(id) {
-    const a = (store.journalAccounts || []).find((x) => x.id === id);
-    if (!a) return;
-    const known = PLATFORMS.indexOf(a.platform) >= 0;
-    openOverlay(panelHead("Edit Account") + `
-      <form id="acctForm" autocomplete="off" novalidate data-edit="${esc(id)}">
+  function acctDeleteHTML(list) {
+    if (state.journalPickerId) {
+      const a = (store.journalAccounts || []).find((x) => x.id === state.journalPickerId);
+      if (a) return `
+        <div class="ad-head"><span class="ad-title">Delete Account</span></div>
+        <div class="ad-confirm">Delete <b>${esc(accountLabel(a))}</b>?<br>
+          Its trades, imports and cash ledger go with it. This can't be undone.</div>
+        <button class="ad-danger" data-jdelconfirm="${esc(a.id)}">Delete Account</button>
+        <button class="ad-back" data-jdellist>Cancel</button>`;
+    }
+    return `
+      <div class="ad-head"><span class="ad-title">Delete Accounts</span></div>
+      <div class="ad-note">Removing an account also removes its trades, imports and cash ledger.</div>
+      <div class="ad-list">
+        ${list.map((a) => `
+          <button class="ad-row" data-jdelacct="${esc(a.id)}">
+            ${logoBoxHTML(a.platform)}
+            <span class="ad-id">
+              <span class="ad-name"><span class="ad-nametext">${esc(accountLabel(a))}</span></span>
+              <span class="ad-kind">${plainMoney(accountBalance(a))}</span>
+            </span>
+            <span class="ad-go danger">Delete</span>
+          </button>`).join("")}
+      </div>
+      <button class="ad-back" data-jpick>Back</button>`;
+  }
+
+  /* One form for both add and edit — `a` null means add. */
+  function acctFormHTML(a) {
+    const known = a ? PLATFORMS.indexOf(a.platform) >= 0 : true;
+    const cat = a ? a.category : state.journalTab;
+    return `
+      <div class="ad-head"><span class="ad-title">${a ? "Edit Account" : "Add Account"}</span></div>
+      <div class="ad-note">Manual tracking only — you type the name and the balance.
+        Nothing links to a real brokerage.</div>
+      <form id="acctForm" autocomplete="off" novalidate ${a ? `data-edit="${esc(a.id)}"` : ""}>
         <label class="mt-label">Platform
           <select class="mt-input" name="platform">
-            ${PLATFORMS.map((x) => `<option ${x === a.platform ? "selected" : ""}>${esc(x)}</option>`).join("")}
-            <option value="__custom" ${known ? "" : "selected"}>Other (type it in)</option>
+            ${BROKERS.map((b) => `<option value="${esc(b.name)}" ${a && b.name === a.platform ? "selected" : ""}>${esc(b.name)}</option>`).join("")}
+            <option value="__custom" ${a && !known ? "selected" : ""}>Other (type it in)</option>
           </select>
         </label>
-        <label class="mt-label mt-custom ${known ? "hidden" : ""}">Platform name
-          <input class="mt-input" name="custom" type="text" value="${known ? "" : esc(a.platform)}"></label>
+        <label class="mt-label mt-custom ${a && !known ? "" : "hidden"}">Platform name
+          <input class="mt-input" name="custom" type="text" placeholder="Your platform"></label>
         <label class="mt-label">Nickname (optional)
-          <input class="mt-input" name="nickname" type="text" value="${esc(a.nickname || "")}"></label>
+          <input class="mt-input" name="nickname" type="text" placeholder="Main Account, Swing Account…"></label>
         <label class="mt-label">Starting balance ($)
-          <input class="mt-input" name="start" type="text" inputmode="decimal" value="${a.start}"></label>
+          <input class="mt-input" name="start" type="text" inputmode="decimal" placeholder="0.00"></label>
         <label class="mt-label">Category
           <select class="mt-input" name="category">
-            <option value="personal" ${a.category === "personal" ? "selected" : ""}>Live Account</option>
-            <option value="prop" ${a.category === "prop" ? "selected" : ""}>Prop Account</option>
+            <option value="personal" ${cat === "personal" ? "selected" : ""}>Live Account</option>
+            <option value="prop" ${cat === "prop" ? "selected" : ""}>Prop Account</option>
           </select>
         </label>
-        <div class="notes-hint" style="margin:2px 0 14px">Starting balance is what the account
-          opened at — trades and cash moves are added on top, so editing it shifts the balance
-          by the difference and leaves the history alone.</div>
+        ${a ? `<div class="ad-note">Starting balance is what the account opened at — trades and
+          cash moves are added on top, so editing it shifts the balance by the difference and
+          leaves the history alone.</div>` : ""}
         <div id="acctError" class="gate-error hidden"></div>
-        <button type="button" class="btn-primary" data-jsaveedit>Save Changes</button>
-        <button type="button" class="btn-secondary" data-jeditlist>Cancel</button>
-      </form>`);
-    const sel = document.querySelector('#acctForm [name="platform"]');
-    const custom = document.querySelector("#acctForm .mt-custom");
-    sel.addEventListener("change", () => custom.classList.toggle("hidden", sel.value !== "__custom"));
+        <button type="button" class="ad-save" data-${a ? "jsaveedit" : "jsaveacct"}>${a ? "Save Changes" : "Add Account"}</button>
+        <button type="button" class="ad-back" data-${a ? "jeditlist" : "jpick"}>Cancel</button>
+      </form>`;
+  }
+
+  /* Values that came from the user go in as properties after the markup is
+     live, never interpolated into a value="..." attribute. */
+  function fillAcctForm() {
+    const f = $("acctForm");
+    if (!f || !f.dataset.edit) return;
+    const a = (store.journalAccounts || []).find((x) => x.id === f.dataset.edit);
+    if (!a) return;
+    if (PLATFORMS.indexOf(a.platform) < 0) f.querySelector('[name="custom"]').value = a.platform;
+    f.querySelector('[name="nickname"]').value = a.nickname || "";
+    f.querySelector('[name="start"]').value = a.start;
+  }
+
+  function setPicker(mode, id) {
+    journalScrollTop = cardScroll.scrollTop;
+    journalKeepScroll = true;
+    state.journalPicker = mode;
+    state.journalPickerId = id || null;
+    renderJournal();
   }
 
   function saveEditedAccount() {
@@ -1980,18 +2125,7 @@
     a.category = get("category") || "personal";
     state.journalTab = a.category;      // follow it if the category changed
     save();
-    closeOverlay();
-    renderJournal();
-  }
-
-  function confirmDeleteAccount(id) {
-    const a = (store.journalAccounts || []).find((x) => x.id === id);
-    if (!a) return;
-    openOverlay(panelHead("Delete Account") + `
-      <div class="liked-empty">Delete <b>${esc(accountLabel(a))}</b>?<br>
-        Its trades, imports and cash ledger go with it. This can't be undone.</div>
-      <button class="btn-primary" data-jdelconfirm="${esc(id)}">Delete Account</button>
-      <button class="btn-secondary" data-jdellist>Cancel</button>`);
+    setPicker("list");
   }
 
   function deleteAccount(id) {
@@ -2002,40 +2136,7 @@
     delete store.propLedger[id];
     if (store.journalActive === id) store.journalActive = "__all";
     save();
-    closeOverlay();
-    renderJournal();
-  }
-
-  function openAddAccount() {
-    openOverlay(panelHead("Add Account") + `
-      <div class="notes-hint" style="margin:0 0 14px">Manual tracking only — you type the
-        name and the balance. Nothing links to a real brokerage.</div>
-      <form id="acctForm" autocomplete="off" novalidate>
-        <label class="mt-label">Platform
-          <select class="mt-input" name="platform">
-            ${PLATFORMS.map((x) => `<option>${esc(x)}</option>`).join("")}
-            <option value="__custom">Other (type it in)</option>
-          </select>
-        </label>
-        <label class="mt-label mt-custom hidden">Platform name
-          <input class="mt-input" name="custom" type="text" placeholder="Your platform"></label>
-        <label class="mt-label">Nickname (optional)
-          <input class="mt-input" name="nickname" type="text" placeholder="Main Account, Swing Account…"></label>
-        <label class="mt-label">Starting balance ($)
-          <input class="mt-input" name="start" type="text" inputmode="decimal" placeholder="0.00"></label>
-        <label class="mt-label">Category
-          <select class="mt-input" name="category">
-            <option value="personal">Live Account</option>
-            <option value="prop">Prop Account</option>
-          </select>
-        </label>
-        <div id="acctError" class="gate-error hidden"></div>
-        <button type="button" class="btn-primary" data-jsaveacct>Add Account</button>
-      </form>`);
-    const sel = document.querySelector('#acctForm [name="platform"]');
-    const custom = document.querySelector("#acctForm .mt-custom");
-    document.querySelector('#acctForm [name="category"]').value = state.journalTab;
-    sel.addEventListener("change", () => custom.classList.toggle("hidden", sel.value !== "__custom"));
+    setPicker("list");
   }
 
   function saveAccount() {
@@ -2056,8 +2157,7 @@
     store.journalActive = id;
     state.journalTab = get("category") || "personal";
     save();
-    closeOverlay();
-    renderJournal();
+    setPicker("list");
   }
 
   /* ---- deposits and withdrawals ---- */
@@ -2186,6 +2286,13 @@
     if (e.target && e.target.classList && e.target.classList.contains("j-range")) {
       state.journalRange = e.target.value;
       renderJournal();
+      return;
+    }
+    // the account form lives inside a panel that re-renders, so this can't be
+    // a listener bound at build time the way it was on the old overlay
+    if (e.target && e.target.name === "platform" && e.target.closest("#acctForm")) {
+      const custom = e.target.closest("#acctForm").querySelector(".mt-custom");
+      if (custom) custom.classList.toggle("hidden", e.target.value !== "__custom");
       return;
     }
     if (!e.target || e.target.id !== "jCsvFile" || !e.target.files || !e.target.files[0]) return;
@@ -2619,7 +2726,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pflog],[data-pfsave],[data-pfacct],[data-jsection],[data-jviewall],[data-photo-pick],[data-photo-clear],[data-pk-replay],[data-pk-build],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pflog],[data-pfsave],[data-pfacct],[data-jsection],[data-jviewall],[data-photo-pick],[data-photo-clear],[data-pk-replay],[data-pk-build],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -2638,17 +2745,29 @@
       const sel = activeAccount();
       if (sel) state.journalTab = sel.category;
       save();
-      closeOverlay();          // the picker is a sheet now, so dismiss it
-      renderJournal();
+      setPicker(null);         // picking an account collapses the dropdown
     }
-    else if (t.hasAttribute("data-jpick")) openAccountSheet();
-    else if (t.hasAttribute("data-jeditlist")) openAccountPickList("edit");
-    else if (t.hasAttribute("data-jdellist")) openAccountPickList("delete");
-    else if (t.dataset.jeditacct) openEditAccount(t.dataset.jeditacct);
-    else if (t.dataset.jdelacct) confirmDeleteAccount(t.dataset.jdelacct);
+    // the chevron toggles: tapping it again closes the panel it opened
+    else if (t.hasAttribute("data-jpicktoggle")) setPicker(state.journalPicker ? null : "list");
+    else if (t.hasAttribute("data-jpick")) setPicker("list");
+    else if (t.hasAttribute("data-jpickclose")) setPicker(null);
+    else if (t.hasAttribute("data-jeditlist")) setPicker("edit");
+    else if (t.hasAttribute("data-jdellist")) setPicker("delete");
+    else if (t.dataset.jeditacct) setPicker("edit", t.dataset.jeditacct);
+    else if (t.dataset.jdelacct) setPicker("delete", t.dataset.jdelacct);
     else if (t.dataset.jdelconfirm) deleteAccount(t.dataset.jdelconfirm);
     else if (t.hasAttribute("data-jsaveedit")) saveEditedAccount();
-    else if (t.hasAttribute("data-jaddacct")) openAddAccount();
+    else if (t.hasAttribute("data-jaddacct")) setPicker("add");
+    else if (t.hasAttribute("data-jlinkall")) {
+      // Link All puts every account in the category into the combined view;
+      // Unlink All drops back to a single account so per-account figures return
+      const list = accountsIn(state.journalTab);
+      store.journalActive = (isCombined() && list.length) ? list[0].id : "__all";
+      save();
+      journalScrollTop = cardScroll.scrollTop;
+      journalKeepScroll = true;
+      renderJournal();
+    }
     else if (t.hasAttribute("data-jsaveacct")) saveAccount();
     else if (t.hasAttribute("data-jcash")) openCashFlow();
     else if (t.dataset.jsection) { state.journalSection = t.dataset.jsection; state.journalAllTrades = false; renderJournal(); }
