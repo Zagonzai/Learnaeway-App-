@@ -24,6 +24,14 @@
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
 
+/* Scrollbars are hidden everywhere, scrolling itself is untouched. The panels
+   set scrollbar-width: thin and a themed colour, which Firefox honours but
+   which older Chrome ignored entirely — leaving a default grey track down the
+   course list and any other scrollable panel. Applied globally rather than
+   per-panel so a new scroll container can't reintroduce it. */
+* { scrollbar-width: none; -ms-overflow-style: none; }
+*::-webkit-scrollbar { width: 0; height: 0; display: none; }
+
 html, body {
   height: 100%;
   overflow: hidden;             /* the app manages its own scrolling */
@@ -313,8 +321,6 @@ img { user-select: none; -webkit-user-drag: none; }
   overflow-y: auto;
   overflow-x: hidden;
   padding: 14px 18px 6px;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(61,223,255,.35) transparent;
   touch-action: pan-y;
 }
 
@@ -728,7 +734,6 @@ img { user-select: none; -webkit-user-drag: none; }
   max-height: calc(82vh - 20px);
   max-height: calc(82dvh - 20px);
   overflow-y: auto;
-  scrollbar-width: thin;
 }
 
 .panel-head {
@@ -2486,8 +2491,6 @@ select.mt-input {
   max-height: 264px;
   overflow-y: auto;
   overscroll-behavior: contain;
-  scrollbar-width: thin;
-  scrollbar-color: rgba(61,223,255,.45) transparent;
   margin-bottom: 12px;
   padding-right: 2px;
 }
@@ -2849,11 +2852,14 @@ select.mt-input {
         strip  |s1|  s2   |  s3   |  s4   |s5|
         below  |   left   | app   |  right   |                              */
   body {
+    --dt-head: clamp(76px, 12vh, 128px);
+    --dt-barh: clamp(40px, 5.3vh, 48px);   /* == .bar height */
+    --dt-dock: clamp(48px, 6.2vh, 58px);   /* == .bottom-nav height */
     display: grid;
     grid-template-columns: repeat(8, 1fr);
     /* the same expression .header-zone uses, so row 1 is exactly as tall as
        the app's own header video sitting inside it */
-    grid-template-rows: clamp(76px, 12vh, 128px) 1fr;
+    grid-template-rows: var(--dt-head) 1fr;
     height: 100vh;
     gap: 0;
     padding: 0;
@@ -2912,33 +2918,68 @@ select.mt-input {
      outer edges land mid-frame — which is the point. */
   .dt-seg-2 video, .dt-seg-4 video { transform: scaleX(-1); }
 
-  /* ---- columns ---- */
+  /* ---- columns ----
+     The side columns mirror the centre column's own vertical rhythm exactly,
+     expressed with the same values .bar / .card-outer / .bottom-nav use, so
+     the bars and panels line up with the app shell instead of approximately
+     matching it:
+       .bar        margin-top 5px, height clamp(40px, 5.3vh, 48px)  x2
+       .card-outer margin 8px top / 6px bottom
+       .bottom-nav margin 2px top / 8px bottom, height clamp(48px, 6.2vh, 58px)
+     so a side bar spans both centre bars (2 x height + the 5px between them),
+     and the panels below start where the card starts and end where it ends. */
   .dt-col {
     grid-row: 2;
     display: flex;
     flex-direction: column;
-    gap: 14px;
+    gap: 8px;                                   /* == .card-outer's top margin */
     min-height: 0;
-    padding: 14px 16px 16px;
+    padding: 5px 14px calc(16px + var(--dt-dock));
   }
   .dt-left  { grid-column: 1 / 4; }
   .dt-right { grid-column: 6 / 9; }
 
+  /* one bar, as tall as the centre column's two stacked bars together */
   .dt-bar {
     flex: 0 0 auto;
-    height: 76px;
+    height: calc(2 * var(--dt-barh) + 5px);
     border-style: solid;
-    border-width: 34px 40px;
-    border-image: url("../assets/desktop/bar@2x.png") 276 190 fill / 34px 40px stretch;
+    border-width: 30px 44px;
+    border-image: url("../assets/desktop/bar@2x.png") 276 190 fill / 30px 44px stretch;
   }
+
   .dt-panel {
-    flex: 0 0 auto;
+    min-height: 0;
     border-style: solid;
-    border-width: 30px;
-    border-image: url("../assets/desktop/panel@2x.png") 120 fill / 30px stretch;
+    border-width: 26px;
   }
-  /* the mockup alternates the gradient's direction down the page; one asset
-     flipped gives that without a second export */
-  .dt-panel-flip { transform: scaleY(-1); }
-  .dt-grow { flex: 1 1 0; min-height: 0; }
+  /* left: one large panel filling everything under the bar */
+  .dt-panel-square {
+    flex: 1 1 0;
+    border-image: url("../assets/desktop/square@2x.png") 185 fill / 26px stretch;
+  }
+  /* right: two stacked, split ~1.8 : 1 as in the reference, so the pair spans
+     exactly what the single left panel does */
+  .dt-panel-chart {
+    flex: 1.8 1 0;
+    border-image: url("../assets/desktop/chart@2x.png") 181 fill / 26px stretch;
+  }
+  .dt-panel-wide {
+    flex: 1 1 0;
+    border-image: url("../assets/desktop/wide@2x.png") 152 fill / 26px stretch;
+  }
+
+  /* the login screen must not cover the header strip: at desktop it starts
+     below it, so all five segments stay visible and playing while logged out.
+     Its own wave spacer is redundant here — the strip above is the header. */
+  .auth-screen {
+    top: var(--dt-head);
+    /* its single full-page wave image belongs to the mobile layout, where the
+       auth screen owns the top of the screen. Here the strip above is the
+       header, so the image would show as a second, static wave under a live
+       one. */
+    background: transparent;
+  }
+  .auth-wave { display: none; }
+  .auth-card-outer { margin: 8px 14px calc(16px + var(--dt-dock)); }
 }
