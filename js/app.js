@@ -128,6 +128,11 @@
 
   /* ---------------- state ---------------- */
 
+  /* Declared up here, not beside the desktop strip code that also uses it:
+     showAuthStep() consults it during module setup, which is well before that
+     section runs, and a `const` further down would still be in its dead zone. */
+  const DESKTOP_MQ = "(min-width: 1200px)";
+
   const state = {
     view: "home",            // 'home' | 'screen' | 'videos' | 'checkin' | 'journal' | 'pickaeway' | 'buildmatch'
     homeTab: "sections",     // 'sections' | 'liked' | 'saved'
@@ -2943,6 +2948,13 @@
     renderAuthForm();
   }
 
+  document.addEventListener("click", (e) => {
+    const t = e.target.closest("[data-intro]");
+    if (!t) return;
+    setAuthMode(t.dataset.intro === "signup" ? "signup" : "login");
+    setIntroStage("form");
+  });
+
   $("authTabLogin").addEventListener("click", () => setAuthMode("login"));
   $("authTabSignup").addEventListener("click", () => setAuthMode("signup"));
 
@@ -2986,14 +2998,79 @@
      LEARNAEWAY_CONFIG.attemptsWebhookUrl is set, POSTed to that webhook
      (e.g. Zapier -> Google Sheet). */
   const CFG = window.LEARNAEWAY_CONFIG || {};
-  /* three steps: access gate -> intake questionnaire -> login */
+  /* ---------------- desktop pre-login flow ----------------
+     Desktop shows an intro video first, then a Sign Up / Log In CTA, and only
+     then the login form. Mobile is unchanged: the form is still the default
+     there, so introStage is only ever consulted past the breakpoint.
+
+     The intro asset has not been delivered yet. Rather than block the flow on
+     it, a missing or unplayable file resolves straight to the CTA — so the
+     page works today, and dropping the file in at either INTRO_SOURCES path
+     turns state 1 on with no further change. */
+  /* Both formats, like the header video: a browser built without proprietary
+     codecs cannot decode the H.264 mp4 and needs the webm fallback. Offering
+     only one silently drops such a browser straight to the CTA. */
+  const INTRO_SOURCES = [
+    ["assets/video/intro.mp4", "video/mp4"],
+    ["assets/video/intro.webm", "video/webm"],
+  ];
+  let introStage = "video";        // 'video' | 'cta' | 'form'
+  let introWired = false;
+
+  function introDesktop() { return window.matchMedia(DESKTOP_MQ).matches; }
+
+  function setIntroStage(stage) {
+    introStage = stage;
+    showAuthStep();
+  }
+
+  function wireIntroVideo() {
+    if (introWired) return;
+    introWired = true;
+    const v = $("introVideo");
+    // muted is set as a property as well as an attribute: the attribute alone
+    // is not always enough for autoplay policy
+    v.muted = true;
+    v.addEventListener("loadeddata", () => {
+      if (introStage === "video") v.classList.remove("hidden");
+    });
+    v.addEventListener("ended", () => setIntroStage("cta"));
+    v.addEventListener("error", () => setIntroStage("cta"));
+    v.innerHTML = INTRO_SOURCES
+      .map(([src, type]) => `<source src="${src}" type="${type}">`).join("");
+    /* A <video> with <source> children does NOT fire error on the element when
+       the sources fail — each <source> errors instead — so the element-level
+       handler above never sees a missing asset. Count the source failures, and
+       keep a timer as a backstop for a source that hangs rather than fails. */
+    let dead = 0;
+    v.querySelectorAll("source").forEach((sourceEl) => {
+      sourceEl.addEventListener("error", () => {
+        if (++dead >= INTRO_SOURCES.length && introStage === "video") setIntroStage("cta");
+      });
+    });
+    setTimeout(() => {
+      if (introStage === "video" && v.readyState < 3) setIntroStage("cta");
+    }, 5000);
+    v.load();
+    v.play().catch(() => setIntroStage("cta"));   // autoplay refused -> show the CTA
+  }
+
+  /* steps: access gate -> questionnaire -> (desktop: intro video -> CTA) -> login */
   function showAuthStep() {
     const onGate = !store.gatePassed;
     const onSurvey = !onGate && !store.surveyDone;
+    const past = !onGate && !onSurvey;
+    const onIntro = past && introDesktop() && introStage !== "form";
     if (onSurvey && !surveyRendered) { surveyStep = 0; renderSurveyStep(); surveyRendered = true; }
     $("gateStep").classList.toggle("hidden", !onGate);
     $("surveyStep").classList.toggle("hidden", !onSurvey);
-    $("loginStep").classList.toggle("hidden", onGate || onSurvey);
+    $("introStep").classList.toggle("hidden", !onIntro);
+    $("loginStep").classList.toggle("hidden", !past || onIntro);
+    // the Log In shortcut sits in the dock slot through every pre-login state
+    $("introDock").classList.toggle("hidden", !(past && introDesktop()));
+    $("introVideo").classList.toggle("hidden", !(onIntro && introStage === "video"));
+    $("introCta").classList.toggle("hidden", !(onIntro && introStage === "cta"));
+    if (onIntro && introStage === "video") wireIntroVideo();
   }
   function logGateAttempt(attempt) {
     if (!store.gateAttempts) store.gateAttempts = [];
@@ -3323,6 +3400,12 @@
      scroll the active input into view. */
   const vv = window.visualViewport;
   let kbFocused = null;
+  /* Desktop has no on-screen keyboard, and this handling actively harms it:
+     scrollIntoView() scrolls the nearest scrollable ancestor, and .app is
+     overflow:hidden — which is still programmatically scrollable — so focusing
+     the password field scrolled the whole centre column, header video and all.
+     Measured 0 -> 38 -> 108px of .app scrollTop before this guard. */
+  const isTouchLayout = () => !window.matchMedia(DESKTOP_MQ).matches;
   function applyKbHeight() {
     if (!kbFocused || !vv) return;
     authScreen.style.setProperty("--kbvh", Math.round(vv.height) + "px");
@@ -3331,6 +3414,7 @@
     if (kbFocused) kbFocused.scrollIntoView({ block: "center", behavior: "smooth" });
   }
   authScreen.addEventListener("focusin", (e) => {
+    if (!isTouchLayout()) return;
     if (!e.target.classList || !e.target.classList.contains("auth-input")) return;
     kbFocused = e.target;
     authScreen.classList.add("kb-open");
@@ -3339,6 +3423,7 @@
     setTimeout(() => { applyKbHeight(); scrollFocusedIntoView(); }, 320);
   });
   authScreen.addEventListener("focusout", (e) => {
+    if (!isTouchLayout()) return;
     if (!e.target.classList || !e.target.classList.contains("auth-input")) return;
     setTimeout(() => {
       if (authScreen.contains(document.activeElement) &&
@@ -3347,7 +3432,10 @@
       authScreen.classList.remove("kb-open");
     }, 60);
   });
-  if (vv) vv.addEventListener("resize", () => { applyKbHeight(); scrollFocusedIntoView(); });
+  if (vv) vv.addEventListener("resize", () => {
+    if (!isTouchLayout()) return;
+    applyKbHeight(); scrollFocusedIntoView();
+  });
 
   const waveVideo = $("waveVideo");
   if (waveVideo) {
@@ -3370,7 +3458,6 @@
      because hard-seeking every segment produces a visible stutter across the
      whole strip. A hard seek is kept only for gross desync, which is what a
      backgrounded tab or a stalled decode leaves behind. */
-  const DESKTOP_MQ = "(min-width: 1200px)";
   let dtSegments = [];
 
   function buildDesktopStrip() {
@@ -3405,6 +3492,8 @@
 
   function syncDesktopChrome() {
     if (window.matchMedia(DESKTOP_MQ).matches) buildDesktopStrip();
+    // crossing the breakpoint changes which pre-login step applies
+    if (!store.authSeen) showAuthStep();
   }
   syncDesktopChrome();
   window.matchMedia(DESKTOP_MQ).addEventListener("change", syncDesktopChrome);

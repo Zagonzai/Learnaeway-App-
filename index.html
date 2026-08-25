@@ -191,6 +191,21 @@
         </div>
       </div>
 
+      <!-- Step 1.75 (desktop only): intro video, then a Sign Up / Log In CTA.
+           The login form below is no longer the default state on desktop — it
+           is reached from here, or from the dock's Log In shortcut. -->
+      <div id="introStep" class="auth-card-outer hidden">
+        <div class="auth-card intro-card">
+          <video id="introVideo" class="intro-video hidden" muted playsinline
+                 webkit-playsinline preload="auto"></video>
+          <div id="introCta" class="intro-cta hidden">
+            <img class="auth-wordmark" src="assets/logo/logo-wordmark@3x.png" alt="Learnæway">
+            <button type="button" class="g-pill auth-tab intro-btn" data-intro="signup">Sign Up</button>
+            <button type="button" class="g-pill auth-tab intro-btn" data-intro="login">Log In</button>
+          </div>
+        </div>
+      </div>
+
       <!-- Step 2: login (existing screen, unchanged) -->
       <div id="loginStep" class="auth-card-outer">
         <div class="auth-card">
@@ -204,6 +219,16 @@
             <!-- fields injected by app.js based on active tab -->
           </form>
         </div>
+      </div>
+
+      <!-- desktop pre-login dock: the five app icons are post-login only, so
+           while logged out the centre column's dock carries one Log In
+           shortcut instead, available in every pre-login state. -->
+      <div id="introDock" class="intro-dock hidden">
+        <button type="button" class="intro-dock-btn" data-intro="login">
+          <img src="assets/nav-icons/icon-user@2x.png" alt="">
+          <span>Log In</span>
+        </button>
       </div>
     </div>
   </div>
