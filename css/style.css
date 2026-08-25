@@ -2876,6 +2876,10 @@ select.mt-input {
     height: 100%;
     border: 0;
     box-shadow: none;
+    /* the mobile shell paints itself --bg (#050614); against the black desktop
+       page that reads as a lighter panel behind the centre column, which is
+       the seam. Everything sits on the one black surface here. */
+    background: transparent;
   }
 
   /* ---- header strip ---- */
@@ -2934,18 +2938,48 @@ select.mt-input {
     flex-direction: column;
     gap: 8px;                                   /* == .card-outer's top margin */
     min-height: 0;
-    padding: 5px 14px calc(16px + var(--dt-dock));
+    padding: 5px 14px 8px;   /* 8px == .bottom-nav's own bottom margin */
   }
   .dt-left  { grid-column: 1 / 4; }
   .dt-right { grid-column: 6 / 9; }
 
-  /* one bar, as tall as the centre column's two stacked bars together */
+  /* One bar, as tall as the centre column's two stacked bars together.
+     The border width is not arbitrary. A 9-slice scales the corner arc
+     independently on each axis, so a circular corner needs the horizontal and
+     vertical slice-to-border ratios to match — which is why all three desktop
+     bar assets were re-cut with an identical 40px margin on every side. Each
+     then has one square slice, and the rendered radius is simply
+     arc x border/slice: 91 x 16/131 = 11px here, 70 x 17/110 and 74 x 17/114
+     on the lower bars. The centre .bar renders 24 x 24/53 = 11px from its own
+     asset. The exact border widths were then tuned against a pixel measurement
+     of the rendered corners rather than the arithmetic alone, because what
+     reads as the radius is where the drawn stroke settles, not the geometric
+     arc — all six desktop bars and both centre bars land within a pixel of
+     each other. */
   .dt-bar {
     flex: 0 0 auto;
     height: calc(2 * var(--dt-barh) + 5px);
     border-style: solid;
-    border-width: 30px 44px;
-    border-image: url("../assets/desktop/bar@2x.png") 276 190 fill / 30px 44px stretch;
+    border-width: 19px;
+    border-image: url("../assets/desktop/bar@2x.png") 131 fill / 19px stretch;
+  }
+
+  /* placeholder bars under each column, holding a row of icons later. They
+     take the dock's slot, so the panels above still end level with the card
+     and these sit level with the centre dock. Present in both the logged-out
+     and logged-in states, since the desktop shell is not tied to auth. */
+  .dt-lower {
+    flex: 0 0 auto;
+    height: var(--dt-dock);
+    border-style: solid;
+  }
+  .dt-lower-left {
+    border-width: 19px;
+    border-image: url("../assets/desktop/lower-left@2x.png") 110 fill / 19px stretch;
+  }
+  .dt-lower-right {
+    border-width: 19px;
+    border-image: url("../assets/desktop/lower-right@2x.png") 114 fill / 19px stretch;
   }
 
   .dt-panel {
@@ -2974,11 +3008,12 @@ select.mt-input {
      Its own wave spacer is redundant here — the strip above is the header. */
   .auth-screen {
     top: var(--dt-head);
-    /* its single full-page wave image belongs to the mobile layout, where the
-       auth screen owns the top of the screen. Here the strip above is the
-       header, so the image would show as a second, static wave under a live
-       one. */
-    background: transparent;
+    /* Opaque black, not transparent: its own full-page wave image belongs to
+       the mobile layout (here the strip above is the header, so it would show
+       as a second static wave under a live one), but going fully transparent
+       let the app's own bars and card peek out around the login panel's
+       edges. Black hides them and matches the page. */
+    background: #000;
   }
   .auth-wave { display: none; }
   .auth-card-outer { margin: 8px 14px calc(16px + var(--dt-dock)); }
