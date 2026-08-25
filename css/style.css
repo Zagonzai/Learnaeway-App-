@@ -2830,3 +2830,115 @@ select.mt-input {
   .bm-badge-lbl { font-size: calc(8px * var(--fs)); }
   .bm-rect { font-size: calc(12px * var(--fs)); }
 }
+
+/* ===================== DESKTOP WEB LAYOUT (phase 1) =====================
+   Everything below is scoped to >=1200px. Nothing here applies to the mobile
+   PWA, which keeps its single-column, single-video-header layout untouched. */
+
+.dt-shell { display: none; }
+
+@media (min-width: 1200px) {
+  /* Solid black behind everything — the mobile build's ambient corner glows
+     would fight the header strip and the panel glows on a wide screen. */
+  html, body { background: #000; }
+
+  /* One 8-column grid drives both bands, which is what keeps them aligned:
+     the header segments split 1|2|2|2|1 and the columns split 3|2|3, so every
+     segment boundary lands exactly on a column boundary.
+        cols   1   2   3   4   5   6   7   8
+        strip  |s1|  s2   |  s3   |  s4   |s5|
+        below  |   left   | app   |  right   |                              */
+  body {
+    display: grid;
+    grid-template-columns: repeat(8, 1fr);
+    /* the same expression .header-zone uses, so row 1 is exactly as tall as
+       the app's own header video sitting inside it */
+    grid-template-rows: clamp(76px, 12vh, 128px) 1fr;
+    height: 100vh;
+    gap: 0;
+    padding: 0;
+  }
+  .dt-shell { display: contents; }
+
+  /* the app shell is the centre column, spanning both bands: its own header
+     video is segment 3 of the strip */
+  .app {
+    grid-column: 4 / 6;
+    grid-row: 1 / 3;
+    max-width: none;
+    width: 100%;
+    height: 100%;
+    border: 0;
+    box-shadow: none;
+  }
+
+  /* ---- header strip ---- */
+  .dt-seg {
+    grid-row: 1;
+    position: relative;
+    overflow: hidden;
+    background: #000;
+  }
+  .dt-seg-1 { grid-column: 1 / 2; }
+  .dt-seg-2 { grid-column: 2 / 4; }
+  .dt-seg-4 { grid-column: 6 / 8; }
+  .dt-seg-5 { grid-column: 8 / 9; }
+
+  .dt-seg video {
+    position: absolute;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    object-fit: cover;
+    /* identical crop to .wave-video, so all five segments frame the loop the
+       same way and the strip reads as one continuous piece */
+    object-position: center 40%;
+    opacity: .95;
+  }
+  /* The outer two are half-width crops, so the wave runs off the edge of the
+     page instead of ending on a clean frame boundary. */
+  .dt-seg-1 video { width: 200%; left: -100%; }   /* shows the frame's right half */
+  .dt-seg-5 video { width: 200%; left: 0; }       /* shows the frame's left half  */
+
+  /* Five copies of one clip laid side by side would break at every boundary,
+     where the frame's right edge butts against its own left edge. Mirroring
+     the two flanking segments turns all four joins into reflections instead:
+       seg1 ends frame-right | seg2 (mirrored) starts frame-right
+       seg2 ends frame-left  | seg3 starts frame-left
+       seg3 ends frame-right | seg4 (mirrored) starts frame-right
+       seg4 ends frame-left  | seg5 starts frame-left
+     so the wave runs unbroken across the whole strip, and only the page's
+     outer edges land mid-frame — which is the point. */
+  .dt-seg-2 video, .dt-seg-4 video { transform: scaleX(-1); }
+
+  /* ---- columns ---- */
+  .dt-col {
+    grid-row: 2;
+    display: flex;
+    flex-direction: column;
+    gap: 14px;
+    min-height: 0;
+    padding: 14px 16px 16px;
+  }
+  .dt-left  { grid-column: 1 / 4; }
+  .dt-right { grid-column: 6 / 9; }
+
+  .dt-bar {
+    flex: 0 0 auto;
+    height: 76px;
+    border-style: solid;
+    border-width: 34px 40px;
+    border-image: url("../assets/desktop/bar@2x.png") 276 190 fill / 34px 40px stretch;
+  }
+  .dt-panel {
+    flex: 0 0 auto;
+    border-style: solid;
+    border-width: 30px;
+    border-image: url("../assets/desktop/panel@2x.png") 120 fill / 30px stretch;
+  }
+  /* the mockup alternates the gradient's direction down the page; one asset
+     flipped gives that without a second export */
+  .dt-panel-flip { transform: scaleY(-1); }
+  .dt-grow { flex: 1 1 0; min-height: 0; }
+}

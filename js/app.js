@@ -3355,6 +3355,61 @@
     waveVideo.play().catch(() => { /* autoplay blocked — poster image shows until a user gesture */ });
   }
 
+  /* ---------------- desktop header strip ----------------
+     The desktop layout's header is five segments of the same loop. Segment 3
+     is the app's own header video (it already carries the clock); the other
+     four are built here.
+
+     Built in JS and only past the breakpoint, so a phone never downloads or
+     decodes four extra videos for markup it will never show.
+
+     Keeping them in step is the whole job: five independent <video> elements
+     playing the same file drift apart within a minute, and a strip that drifts
+     stops reading as one continuous piece. Sync is a soft correction — the
+     playback rate is nudged a few percent to let a lagging segment catch up —
+     because hard-seeking every segment produces a visible stutter across the
+     whole strip. A hard seek is kept only for gross desync, which is what a
+     backgrounded tab or a stalled decode leaves behind. */
+  const DESKTOP_MQ = "(min-width: 1200px)";
+  let dtSegments = [];
+
+  function buildDesktopStrip() {
+    if (dtSegments.length || !waveVideo) return;
+    const sources = Array.from(waveVideo.querySelectorAll("source"))
+      .map((s) => `<source src="${s.getAttribute("src")}" type="${s.getAttribute("type")}">`).join("");
+    document.querySelectorAll("#dtShell .dt-seg").forEach((seg) => {
+      seg.innerHTML = `<video muted loop playsinline webkit-playsinline preload="auto"
+        poster="assets/backgrounds/wave-header@2x.png">${sources}</video>`;
+      const v = seg.querySelector("video");
+      v.muted = true;                       // set as a property too: the attribute alone
+      v.play().catch(() => {});             // isn't always enough for autoplay policy
+      dtSegments.push(v);
+    });
+  }
+
+  function syncDesktopStrip() {
+    if (!dtSegments.length || !waveVideo || waveVideo.readyState < 2) return;
+    const master = waveVideo.currentTime;
+    const dur = waveVideo.duration;
+    dtSegments.forEach((v) => {
+      if (v.readyState < 2) return;
+      let drift = v.currentTime - master;
+      // the loop wraps, so a drift near ±duration is really a tiny one
+      if (dur && Math.abs(drift) > dur / 2) drift -= Math.sign(drift) * dur;
+      if (Math.abs(drift) > 0.35) { v.currentTime = master; v.playbackRate = 1; }
+      else if (Math.abs(drift) > 0.02) v.playbackRate = drift > 0 ? 0.97 : 1.03;
+      else v.playbackRate = 1;
+      if (v.paused) v.play().catch(() => {});
+    });
+  }
+
+  function syncDesktopChrome() {
+    if (window.matchMedia(DESKTOP_MQ).matches) buildDesktopStrip();
+  }
+  syncDesktopChrome();
+  window.matchMedia(DESKTOP_MQ).addEventListener("change", syncDesktopChrome);
+  setInterval(syncDesktopStrip, 1000);
+
   applyTextSize();
   syncVolume();
   syncProfilePhoto();

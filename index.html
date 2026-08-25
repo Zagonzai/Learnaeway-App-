@@ -208,6 +208,33 @@
     </div>
   </div>
 
+  <!-- ============ DESKTOP-ONLY SHELL (>=1200px) ============
+       A sibling of #app, never a wrapper around it: below the breakpoint this
+       whole block is display:none and the mobile PWA renders exactly as it
+       always has. At desktop width `display: contents` dissolves this div so
+       its children land directly in the body grid alongside #app, which is how
+       the header segments and the column panels stay pixel-aligned with the
+       app shell between them.
+
+       Segments 1, 2, 4 and 5 are filled with <video> by app.js, and only at
+       the desktop breakpoint — so a phone never downloads or decodes them.
+       Segment 3 is the app's own header video, already carrying the clock. -->
+  <div class="dt-shell" id="dtShell" aria-hidden="true">
+    <div class="dt-seg dt-seg-1" data-dtseg="1"></div>
+    <div class="dt-seg dt-seg-2" data-dtseg="2"></div>
+    <div class="dt-seg dt-seg-4" data-dtseg="4"></div>
+    <div class="dt-seg dt-seg-5" data-dtseg="5"></div>
+    <div class="dt-col dt-left">
+      <div class="dt-bar"></div>
+      <div class="dt-panel dt-grow"></div>
+    </div>
+    <div class="dt-col dt-right">
+      <div class="dt-bar"></div>
+      <div class="dt-panel dt-grow"></div>
+      <div class="dt-panel dt-panel-flip dt-grow"></div>
+    </div>
+  </div>
+
   <script src="js/config.js"></script>
   <script src="js/firebase.js"></script>
   <script src="data/course-data.js"></script>
