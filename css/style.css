@@ -3003,18 +3003,24 @@ select.mt-input {
      take the dock's slot, so the panels above still end level with the card
      and these sit level with the centre dock. Present in both the logged-out
      and logged-in states, since the desktop shell is not tied to auth. */
+  /* Same bar as the centre dock's Log In pill — background-bar-pill 9-sliced
+     at the same height and the same border widths, so all three read as one
+     component. Drawn straight on the element rather than through a ::before
+     the way .intro-dock and .bottom-nav do; those need the pseudo-element to
+     sit behind their icons, and these are empty. Deliberately empty: they are
+     placeholder containers, content lands in a later step.
+
+     Width comes for free — they are flex children of .dt-col alongside the
+     panels, so each spans exactly the panel above it. */
   .dt-lower {
     flex: 0 0 auto;
     height: var(--dt-dock);
+    border-radius: 999px;
     border-style: solid;
-  }
-  .dt-lower-left {
-    border-width: 19px;
-    border-image: url("../assets/desktop/lower-left@2x.png") 110 fill / 19px stretch;
-  }
-  .dt-lower-right {
-    border-width: 19px;
-    border-image: url("../assets/desktop/lower-right@2x.png") 114 fill / 19px stretch;
+    border-width: 24px;
+    border-left-width: 27px;
+    border-right-width: 27px;
+    border-image: url("../assets/bars/background-bar-pill@2x.png") 54 60 fill / 24px 27px stretch;
   }
 
   .dt-panel {
