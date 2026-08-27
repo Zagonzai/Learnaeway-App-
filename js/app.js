@@ -46,6 +46,14 @@
   if (!store.pickaeway) store.pickaeway = {           // Reward Battle record
     rewardBalance: 0, wins: 0, losses: 0, draws: 0, accuracy: 0, speed: 0,
   };
+  // ledger entries used to be anonymous positions in an array; edit and delete
+  // need to name one, so backfill an id on anything written before that
+  let stamped = false;
+  Object.keys(store.propLedger || {}).forEach((acctId) => {
+    (store.propLedger[acctId] || []).forEach((e, i) => {
+      if (!e.id) { e.id = `pfe-${acctId}-${i}-${Date.now().toString(36)}`; stamped = true; }
+    });
+  });
   // "Daily Bias" was renamed to "Market Awareness" — carry answers already
   // recorded under the old id, including inside submitted day logs
   let renamed = false;
@@ -60,7 +68,7 @@
   });
   // written straight out rather than through save(): the cloud-sync timer it
   // touches is declared further down and would still be in its dead zone here
-  if (renamed) { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) { /* quota */ } }
+  if (renamed || stamped) { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) { /* quota */ } }
   function todayKey() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -152,6 +160,9 @@
     journalPickerId: null,   // account being edited/deleted inside the panel
     checkinResult: null,     // { go, noCount } — result shown in place of the rows
     rtExpand: true,          // round history open on the result/replay screens
+    propOpen: false,         // prop firm P&L pill expanded (collapsed by default)
+    propMode: null,          // null | 'add' | 'edit' | 'delete' inside that pill
+    propEntryId: null,       // ledger entry being edited or deleted
   };
 
   /* ---------------- els ---------------- */
@@ -2490,86 +2501,182 @@
       return t;
     }, { spent: 0, earned: 0 });
   }
-  function propNet(id) {
-    const t = propTotals(id);
-    return Math.round((t.earned - t.spent) * 100) / 100;
+  let pfSeq = 0;
+  function propEntryId() { return `pfe-${Date.now().toString(36)}-${(pfSeq++).toString(36)}`; }
+
+  function propKindLabel(kind) {
+    return (PROP_KINDS.find((k) => k.id === kind) || {}).label || kind;
   }
-  function propTotalsAll() {
-    return accountsIn("prop").reduce((t, a) => {
+
+  /* Which prop accounts the summary covers: the one picked in the Select
+     Account dropdown, or every prop account when "All" is selected. The firm
+     selector is that same dropdown — the prop section doesn't get one of its
+     own. */
+  function propSelected() {
+    const a = activeAccount();
+    return (!isCombined() && a && a.category === "prop") ? a : null;
+  }
+  function propScope() {
+    const one = propSelected();
+    return one ? [one] : accountsIn("prop");
+  }
+  function propScopeLabel() {
+    const one = propSelected();
+    return one ? accountLabel(one) : "All Prop Firms";
+  }
+
+  /* every entry in scope, newest first, each carrying the account it belongs to */
+  function propEntries(scope) {
+    const rows = [];
+    scope.forEach((a) => {
+      (store.propLedger[a.id] || []).forEach((e) => rows.push({ e, acct: a }));
+    });
+    return rows.sort((x, y) => (y.e.date || "").localeCompare(x.e.date || ""));
+  }
+
+  function propScopeTotals(scope) {
+    return scope.reduce((t, a) => {
       const x = propTotals(a.id);
       t.spent += x.spent; t.earned += x.earned;
       return t;
     }, { spent: 0, earned: 0 });
   }
 
-  function propCardHTML() {
-    const accts = accountsIn("prop");
-    const all = propTotalsAll();
-    const net = Math.round((all.earned - all.spent) * 100) / 100;
+  /* find an entry by id across every prop account */
+  function propFind(entryId) {
+    const ids = Object.keys(store.propLedger || {});
+    for (const acctId of ids) {
+      const list = store.propLedger[acctId] || [];
+      const i = list.findIndex((e) => e.id === entryId);
+      if (i >= 0) return { acctId, index: i, entry: list[i] };
+    }
+    return null;
+  }
+
+  /* ---- the collapsed summary ----
+     One full-width pill under the Live/Prop row carrying the P&L for whatever
+     the account dropdown has selected. The pill is the expand control: the
+     itemised entries live inside it and stay collapsed until it is tapped. */
+
+  function propSummaryHTML() {
+    if (state.journalTab !== "prop") return "";
+    const scope = propScope();
+    const t = propScopeTotals(scope);
+    const net = Math.round((t.earned - t.spent) * 100) / 100;
+    const open = !!state.propOpen;
     return `
-      <div class="pf-card">
-        <div class="pf-head">Prop Firm Net P&amp;L</div>
-        <div class="pf-net ${net < 0 ? "neg" : "pos"}">${money(net, true)}</div>
-        <div class="pf-sub">across ${accts.length} prop ${accts.length === 1 ? "account" : "accounts"} — real money spent vs. returned</div>
-        <div class="pf-split">
-          <span><span class="pf-k">Spent</span><span class="pf-v neg">${plainMoney(all.spent)}</span></span>
-          <span><span class="pf-k">Earned</span><span class="pf-v pos">${plainMoney(all.earned)}</span></span>
-        </div>
-        ${accts.length ? `<div class="pf-rows">
-          ${accts.map((a) => {
-            const t = propTotals(a.id);
-            const n = Math.round((t.earned - t.spent) * 100) / 100;
-            return `<button class="pf-row" data-pfacct="${esc(a.id)}">
-              <span class="pf-row-name">${esc(accountLabel(a))}</span>
-              <span class="pf-row-nums">
-                <span class="neg">-${plainMoney(t.spent).slice(1)}</span>
-                <span class="pos">+${plainMoney(t.earned).slice(1)}</span>
-                <span class="pf-row-net ${n < 0 ? "neg" : "pos"}">${money(n, true)}</span>
-              </span>
-            </button>`;
-          }).join("")}
-        </div>` : `<div class="pf-empty">Add a prop firm account to start logging evaluations, resets and payouts.</div>`}
-        ${accts.length ? `<button class="pf-log" data-pflog>Log Evaluation / Reset / Payout</button>` : ""}
+      <div class="pf-summary">
+        <button class="pf-pill ${open ? "open" : ""}" data-pfpill
+                aria-expanded="${open ? "true" : "false"}">
+          <span class="pf-pill-lbl">${esc(propScopeLabel())}</span>
+          <span class="pf-pill-val ${net < 0 ? "neg" : "pos"}">${money(net, true)}</span>
+          <span class="pf-pill-caret" aria-hidden="true">
+            <img src="assets/nav-icons/icon-chevron-down@2x.png" alt="">
+          </span>
+        </button>
+        ${open ? `<div class="pf-panel">${propPanelHTML(scope, t, net)}</div>` : ""}
       </div>`;
   }
 
-  function openPropLog(preId) {
+  function propPanelHTML(scope, t, net) {
+    if (state.propMode === "add" || state.propMode === "edit") return propFormHTML();
+    if (state.propMode === "delete") return propDeleteHTML();
+    const rows = propEntries(scope);
+    const many = !propSelected();   // combined view names the firm on every row
+    return `
+      <div class="pf-split">
+        <span><span class="pf-k">Spent</span><span class="pf-v neg">${plainMoney(t.spent)}</span></span>
+        <span><span class="pf-k">Earned</span><span class="pf-v pos">${plainMoney(t.earned)}</span></span>
+        <span><span class="pf-k">Net</span><span class="pf-v ${net < 0 ? "neg" : "pos"}">${money(net, true)}</span></span>
+      </div>
+      ${scope.length ? "" : `<div class="pf-empty">Add a prop firm account to start logging
+        evaluations, resets and payouts.</div>`}
+      ${rows.length ? `<div class="pf-list">
+        ${rows.map(({ e, acct }) => `
+          <div class="pf-item">
+            <button class="pf-item-main" data-pfedit="${esc(e.id)}">
+              <span class="pf-item-txt">
+                <span class="pf-item-kind ${esc(e.kind)}">${esc(propKindLabel(e.kind))}</span>
+                <span class="pf-item-meta">${esc(propDateLabel(e.date))}${
+                  many ? " · " + esc(accountLabel(acct)) : (e.firm ? " · " + esc(e.firm) : "")}</span>
+              </span>
+              <span class="pf-item-amt ${e.kind === "payout" ? "pos" : "neg"}">${
+                e.kind === "payout" ? "+" : "-"}${plainMoney(e.amount)}</span>
+            </button>
+            <button class="pf-item-del" data-pfdel="${esc(e.id)}"
+                    aria-label="Delete this entry"></button>
+          </div>`).join("")}
+      </div>` : (scope.length ? `<div class="pf-empty">Nothing logged yet — evaluations and resets
+        count as spend, payouts as income.</div>` : "")}
+      ${scope.length ? `<button class="pf-add" data-pfadd>Log Evaluation / Reset / Payout</button>` : ""}`;
+  }
+
+  /* "2026-03-04" reads as a date, not a key, once it is in a list */
+  function propDateLabel(iso) {
+    const p = String(iso || "").split("-");
+    if (p.length !== 3) return iso || "";
+    const d = new Date(+p[0], +p[1] - 1, +p[2]);
+    if (isNaN(d)) return iso;
+    return d.toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" });
+  }
+
+  /* One form for both logging and editing — an edit is the same fields with
+     the entry's values already in them. Inline inside the panel rather than an
+     overlay, matching the account selector. */
+  function propFormHTML() {
     const accts = accountsIn("prop");
-    if (!accts.length) return;
-    const pre = accts.find((a) => a.id === preId) || activeAccount() || accts[0];
-    openOverlay(panelHead("Log Prop Firm Entry") + `
-      <div class="notes-hint" style="margin:0 0 14px">Manual entry — evaluations and resets
-        count as spend, payouts as income. Nothing is detected automatically.</div>
+    const editing = state.propMode === "edit";
+    const found = editing ? propFind(state.propEntryId) : null;
+    if (editing && !found) return "";
+    const e = found ? found.entry : null;
+    const preId = found ? found.acctId
+      : ((activeAccount() && activeAccount().category === "prop" ? activeAccount().id : "")
+         || (accts[0] && accts[0].id) || "");
+    return `
+      <div class="pf-form-head">${editing ? "Edit Entry" : "Log Entry"}</div>
       <form id="pfForm" autocomplete="off" novalidate>
-        <label class="mt-label">Account
+        <label class="mt-label">Prop firm
           <select class="mt-input" name="account">
-            ${accts.map((a) => `<option value="${esc(a.id)}"${a.id === (pre && pre.id) ? " selected" : ""}>${esc(accountLabel(a))}</option>`).join("")}
+            ${accts.map((a) => `<option value="${esc(a.id)}"${a.id === preId ? " selected" : ""}>${esc(accountLabel(a))}</option>`).join("")}
           </select>
         </label>
         <label class="mt-label">Type
           <select class="mt-input" name="kind">
-            ${PROP_KINDS.map((k) => `<option value="${k.id}">${k.label}${k.out ? " (spend)" : " (income)"}</option>`).join("")}
+            ${PROP_KINDS.map((k) => `<option value="${k.id}"${e && e.kind === k.id ? " selected" : ""}>${k.label}${k.out ? " (spend)" : " (income)"}</option>`).join("")}
           </select>
         </label>
         <label class="mt-label">Firm name
-          <input class="mt-input" name="firm" type="text" value="${esc(pre ? pre.platform : "")}" placeholder="Lucid, Apex, Topstep…"></label>
+          <input class="mt-input" name="firm" type="text" value="${esc(e ? (e.firm || "") : (accts.find((a) => a.id === preId) || {}).platform || "")}"
+                 placeholder="Lucid, Apex, Topstep…"></label>
         <label class="mt-label">Amount ($)
-          <input class="mt-input" name="amount" type="text" inputmode="decimal" placeholder="0.00"></label>
+          <input class="mt-input" name="amount" type="text" inputmode="decimal"
+                 value="${e ? esc(e.amount.toFixed(2)) : ""}" placeholder="0.00"></label>
         <label class="mt-label">Date
-          <input class="mt-input mt-date" name="date" type="date" value="${todayKey()}"></label>
+          <input class="mt-input mt-date" name="date" type="date" value="${esc(e ? e.date : todayKey())}"></label>
         <div id="pfError" class="gate-error hidden"></div>
-        <button type="button" class="btn-primary" data-pfsave>Log It</button>
-      </form>`);
-    // firm follows the chosen account unless the user has typed their own
-    const sel = document.querySelector('#pfForm [name="account"]');
-    const firm = document.querySelector('#pfForm [name="firm"]');
-    let touched = false;
-    firm.addEventListener("input", () => { touched = true; });
-    sel.addEventListener("change", () => {
-      if (touched) return;
-      const a = accts.find((x) => x.id === sel.value);
-      if (a) firm.value = a.platform;
-    });
+        <button type="button" class="ad-save" data-pfsave>${editing ? "Save Changes" : "Log It"}</button>
+        <button type="button" class="ad-back" data-pfcancel>Cancel</button>
+      </form>`;
+  }
+
+  function propDeleteHTML() {
+    const found = propFind(state.propEntryId);
+    if (!found) return "";
+    const e = found.entry;
+    return `
+      <div class="pf-form-head">Delete Entry</div>
+      <div class="ad-confirm">Delete the ${esc(propKindLabel(e.kind).toLowerCase())} of
+        <b>${plainMoney(e.amount)}</b> on <b>${esc(propDateLabel(e.date))}</b>?<br>
+        The firm and combined totals update straight away. This can't be undone.</div>
+      <button class="ad-danger" data-pfdelok="${esc(e.id)}">Delete Entry</button>
+      <button class="ad-back" data-pfcancel>Cancel</button>`;
+  }
+
+  /* the panel's mode, re-rendered without losing the reader's scroll position */
+  function setPropMode(mode, entryId) {
+    state.propMode = mode || null;
+    state.propEntryId = entryId || null;
+    renderJournalInPlace();
   }
 
   function savePropEntry() {
@@ -2578,36 +2685,59 @@
     const get = (n) => (new FormData(f).get(n) || "").toString().trim();
     const amount = parseFloat(get("amount").replace(/[^0-9.]/g, ""));
     if (isNaN(amount) || amount <= 0) { err.textContent = "Enter an amount."; err.classList.remove("hidden"); return; }
-    const id = get("account");
-    if (!id) { err.textContent = "Pick an account."; err.classList.remove("hidden"); return; }
-    const list = store.propLedger[id] || (store.propLedger[id] = []);
-    list.push({ kind: get("kind") || "evaluation", firm: get("firm"),
-                amount: Math.round(amount * 100) / 100, date: get("date") || todayKey() });
+    const acctId = get("account");
+    if (!acctId) { err.textContent = "Pick a prop firm."; err.classList.remove("hidden"); return; }
+    const fields = {
+      kind: get("kind") || "evaluation",
+      firm: get("firm"),
+      amount: Math.round(amount * 100) / 100,
+      date: get("date") || todayKey(),
+    };
+    const found = state.propMode === "edit" ? propFind(state.propEntryId) : null;
+    if (found) {
+      const moved = found.acctId !== acctId;
+      const updated = Object.assign({}, found.entry, fields);
+      if (moved) {
+        // changing the firm moves the entry between ledgers so both totals move
+        store.propLedger[found.acctId].splice(found.index, 1);
+        (store.propLedger[acctId] || (store.propLedger[acctId] = [])).push(updated);
+      } else {
+        store.propLedger[acctId][found.index] = updated;
+      }
+    } else {
+      const list = store.propLedger[acctId] || (store.propLedger[acctId] = []);
+      list.push(Object.assign({ id: propEntryId() }, fields));
+    }
     save();
-    closeOverlay();
     state.journalTab = "prop";
-    renderJournal();
+    state.propOpen = true;
+    setPropMode(null);
   }
 
-  function openPropDetail(id) {
-    const a = (store.journalAccounts || []).find((x) => x.id === id);
-    if (!a) return;
-    const t = propTotals(id);
-    const net = Math.round((t.earned - t.spent) * 100) / 100;
-    const log = (store.propLedger[id] || []).slice().reverse();
-    openOverlay(panelHead(accountLabel(a)) + `
-      <div class="pf-split" style="margin-bottom:14px">
-        <span><span class="pf-k">Spent</span><span class="pf-v neg">${plainMoney(t.spent)}</span></span>
-        <span><span class="pf-k">Earned</span><span class="pf-v pos">${plainMoney(t.earned)}</span></span>
-        <span><span class="pf-k">Net</span><span class="pf-v ${net < 0 ? "neg" : "pos"}">${money(net, true)}</span></span>
-      </div>
-      ${log.length ? log.map((e) => `<div class="j-ledger">
-          <span>${esc(e.date)} · ${esc((PROP_KINDS.find((k) => k.id === e.kind) || {}).label || e.kind)}${e.firm ? " · " + esc(e.firm) : ""}</span>
-          <span class="${e.kind === "payout" ? "pos" : "neg"}">${e.kind === "payout" ? "+" : "-"}${plainMoney(e.amount).slice(1)}</span>
-        </div>`).join("")
-        : `<div class="liked-empty">Nothing logged for this account yet.</div>`}
-      <button class="btn-secondary" data-pflog="${esc(id)}">Log Another</button>
-      <button class="btn-primary" data-close>Done</button>`);
+  function deletePropEntry(entryId) {
+    const found = propFind(entryId);
+    if (!found) { setPropMode(null); return; }
+    store.propLedger[found.acctId].splice(found.index, 1);
+    save();
+    setPropMode(null);
+  }
+
+  /* On a new entry the firm name trails whichever prop firm is picked, until
+     the user types their own — then it is left alone. Editing never overwrites
+     what is already there. */
+  function wirePropForm() {
+    const f = $("pfForm");
+    if (!f) return;
+    const sel = f.querySelector('[name="account"]');
+    const firm = f.querySelector('[name="firm"]');
+    if (!sel || !firm) return;
+    let touched = state.propMode === "edit";
+    firm.addEventListener("input", () => { touched = true; });
+    sel.addEventListener("change", () => {
+      if (touched) return;
+      const a = (store.journalAccounts || []).find((x) => x.id === sel.value);
+      if (a) firm.value = a.platform;
+    });
   }
 
   function journalDate() {
@@ -2668,6 +2798,14 @@
   let journalKeepScroll = false;
   let journalScrollTop = 0;
 
+  /* re-render the journal without yanking the page back to the top: anything
+     that expands or collapses in place has to leave the reader where they are */
+  function renderJournalInPlace() {
+    journalScrollTop = cardScroll.scrollTop;
+    journalKeepScroll = true;
+    renderJournal();
+  }
+
   function renderJournal() {
     const all = store.journalAccounts || [];
     const acct = activeAccount();
@@ -2706,7 +2844,7 @@
     // below it further down the page
     const picker = accountPanelHTML();
 
-    const propCard = state.journalTab === "prop" ? propCardHTML() : "";
+    const propCard = propSummaryHTML();
     if (!scope.length) {
       cardScroll.innerHTML = tabs + picker + propCard + `
         <div class="liked-empty">No accounts yet.<br>
@@ -2715,6 +2853,7 @@
       cardScroll.scrollTop = journalKeepScroll ? journalScrollTop : 0;
       journalKeepScroll = false;
       fillAcctForm();
+      wirePropForm();
       cardFooter.style.display = "none";
       return;
     }
@@ -2795,6 +2934,7 @@
     cardScroll.scrollTop = journalKeepScroll ? journalScrollTop : 0;
     journalKeepScroll = false;
     fillAcctForm();
+    wirePropForm();
     cardFooter.style.display = "none";
   }
 
@@ -3633,7 +3773,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pflog],[data-pfsave],[data-pfacct],[data-jsection],[data-jviewall],[data-photo-pick],[data-photo-clear],[data-pk-replay],[data-pk-build],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-photo-pick],[data-photo-clear],[data-pk-replay],[data-pk-build],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -3679,9 +3819,19 @@
     else if (t.hasAttribute("data-jcash")) openCashFlow();
     else if (t.dataset.jsection) { state.journalSection = t.dataset.jsection; state.journalAllTrades = false; renderJournal(); }
     else if (t.hasAttribute("data-jviewall")) { state.journalAllTrades = !state.journalAllTrades; renderJournal(); }
-    else if (t.hasAttribute("data-pflog")) openPropLog(t.getAttribute("data-pflog"));
+    else if (t.hasAttribute("data-pfpill")) {
+      // the pill is the expand control; collapsing it also drops any open form
+      state.propOpen = !state.propOpen;
+      state.propMode = null;
+      state.propEntryId = null;
+      renderJournalInPlace();
+    }
+    else if (t.hasAttribute("data-pfadd")) setPropMode("add");
+    else if (t.dataset.pfedit) setPropMode("edit", t.dataset.pfedit);
+    else if (t.dataset.pfdel) setPropMode("delete", t.dataset.pfdel);
+    else if (t.dataset.pfdelok) deletePropEntry(t.dataset.pfdelok);
+    else if (t.hasAttribute("data-pfcancel")) setPropMode(null);
     else if (t.hasAttribute("data-pfsave")) savePropEntry();
-    else if (t.dataset.pfacct) openPropDetail(t.dataset.pfacct);
     else if (t.hasAttribute("data-jsavecash")) saveCashFlow();
     else if (t.hasAttribute("data-jsave")) saveManualTrade();
     else if (t.hasAttribute("data-jadd")) {
