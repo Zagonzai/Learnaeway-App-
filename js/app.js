@@ -151,6 +151,7 @@
     journalPicker: null,     // null | 'list' | 'add' | 'edit' | 'delete' (inline)
     journalPickerId: null,   // account being edited/deleted inside the panel
     checkinResult: null,     // { go, noCount } — result shown in place of the rows
+    rtExpand: true,          // round history open on the result/replay screens
   };
 
   /* ---------------- els ---------------- */
@@ -828,8 +829,8 @@
 
   /* ---------------- Pickæway (Reward Battle) ----------------
      The Cool Down Game's home screen. Stats come from store.pickaeway and
-     read zero until matches are actually played — the match engine itself is
-     not part of this pass, so Match Replay and Build Match are inert. */
+     read zero until matches are actually played; Build Match sets a battle up
+     and Match Replay reopens the last one. */
 
   const STREAK_DOTS = 5;
 
@@ -923,16 +924,29 @@
   }
 
   /* ---------------- Build Match ----------------
-     Picks the settings for a Reward Battle round. Everything on the screen is
-     a setting or something derived from one; the match engine itself does not
-     exist yet, so Start Match only confirms the build. */
+     Picks the settings for a Reward Battle round, then hands them straight to
+     the match engine below. Every figure on the screen is a setting or derived
+     from one. */
 
   const BM_INSTRUMENTS = ["ES", "NQ", "YM", "RTY"];
   const BM_TIMEFRAMES = [1, 2, 3, 5];
   const BM_CANDLES = [3, 5, 7, 9, 15];
-  const BM_DIFFICULTY = { hard: 10, easy: 15 };   // seconds to react
-  const BM_DURATION = 60;                          // seconds per match
   const BM_BANKROLL = 100;
+
+  /* Each timeframe runs its candles in real time at its own compressed pace,
+     and gets its own pair of reaction windows — a 5-minute candle gives you
+     longer to read it than a 1-minute one. Match duration is candleDuration
+     multiplied by the candle count, so the lobby figure is exactly the time
+     the match takes. */
+  const BM_TF_SPEC = {
+    1: { id: "1m", candleDuration: 20, hard: 10, easy: 15 },
+    2: { id: "2m", candleDuration: 35, hard: 15, easy: 30 },
+    3: { id: "3m", candleDuration: 50, hard: 30, easy: 45 },
+    5: { id: "5m", candleDuration: 65, hard: 35, easy: 60 },
+  };
+  function bmSpec(s) { return BM_TF_SPEC[s.timeframe] || BM_TF_SPEC[1]; }
+  function bmWindow(s) { return bmSpec(s)[s.difficulty]; }
+  function bmDuration(s) { return bmSpec(s).candleDuration * s.candles; }
 
   function bmSettings() {
     const b = store.buildMatch || {};
@@ -950,20 +964,18 @@
     renderBuildMatch();
   }
 
-  function bmDurationLabel() {
-    return `${Math.floor(BM_DURATION / 60)}m ${BM_DURATION % 60}s`;
+  function durationLabel(secs) {
+    return `${Math.floor(secs / 60)}m ${secs % 60}s`;
   }
-  /* the round is a fixed minute split evenly across the candles you chose */
-  function bmPerCandle(s) { return Math.round(BM_DURATION / s.candles); }
 
   function bmOverview(s) {
     return [
       { v: s.instrument, l: "Instrument" },
       { v: `${s.timeframe}m`, l: "Time Frame" },
       { v: String(s.candles), l: "Candles" },
-      { v: `${BM_DIFFICULTY[s.difficulty]}s`, l: "Reaction Window" },
+      { v: `${bmWindow(s)}s`, l: "Reaction Window" },
       { v: s.difficulty.toUpperCase(), l: "Difficulty" },
-      { v: `${bmPerCandle(s)}s`, l: "Per Candle" },
+      { v: `${bmSpec(s).candleDuration}s`, l: "Per Candle" },
     ];
   }
 
@@ -976,7 +988,7 @@
       <div class="bm-stats">
         <div class="bm-stat bm-stat-dur">
           <div class="bm-cap">Match Duration</div>
-          <div class="bm-val">${bmDurationLabel()}</div>
+          <div class="bm-val">${durationLabel(bmDuration(s))}</div>
         </div>
         <div class="bm-stat bm-stat-bank">
           <div class="bm-cap">Bank Roll</div>
@@ -1011,11 +1023,11 @@
 
       <div class="bm-diff">
         <button class="bm-rect bm-diff-btn hard ${s.difficulty === "hard" ? "on" : ""}" data-bmdiff="hard">
-          <span class="bm-diff-name">Hard</span><span class="bm-diff-secs">${BM_DIFFICULTY.hard}s</span>
+          <span class="bm-diff-name">Hard</span><span class="bm-diff-secs">${bmSpec(s).hard}s</span>
         </button>
         <span class="bm-diff-mid">To React</span>
         <button class="bm-rect bm-diff-btn easy ${s.difficulty === "easy" ? "on" : ""}" data-bmdiff="easy">
-          <span class="bm-diff-secs">${BM_DIFFICULTY.easy}s</span><span class="bm-diff-name">Easy</span>
+          <span class="bm-diff-secs">${bmSpec(s).easy}s</span><span class="bm-diff-name">Easy</span>
         </button>
       </div>
 
@@ -1049,6 +1061,887 @@
     state.slideDir = 0;
     closeOverlay();
     render();
+  }
+
+  /* ==================== Pickæway match engine ====================
+     Runs the battle behind Build Match and the replay behind Match Replay.
+
+     Everything downstream of the two generators below consumes a flat array of
+     30-second OHLC bars ({open,high,low,close,green}) and never asks where the
+     bars came from — swapping in real historical prices means replacing the
+     bodies of genSession30s() and genTradingDay() and nothing else. */
+
+  /* ─── SWAP TARGETS: the only two functions producing synthetic prices ─── */
+
+  const MK_BASE_PRICES = { ES: 5280, NQ: 18420, YM: 39800, RTY: 2080 };
+  const MK_VOLATILITY = { ES: 8, NQ: 25, YM: 60, RTY: 6 };
+
+  function genCandle(prev, inst) {
+    const vol = MK_VOLATILITY[inst] || 10;
+    const open = prev + (Math.random() - 0.5) * vol * 0.2;
+    const close = open + (Math.random() - 0.47) * vol * 1.2;
+    return {
+      open: +open.toFixed(2),
+      high: +(Math.max(open, close) + Math.random() * vol * 0.5).toFixed(2),
+      low: +(Math.min(open, close) - Math.random() * vol * 0.5).toFixed(2),
+      close: +close.toFixed(2),
+      green: close >= open,
+    };
+  }
+
+  /* the intraday tape a match is played against: n consecutive 30s bars */
+  function genSession30s(inst, n = 500) {
+    let p = MK_BASE_PRICES[inst] || 5000;
+    return Array.from({ length: n }, () => {
+      const c = genCandle(p, inst);
+      p = c.close;
+      return c;
+    });
+  }
+
+  /* a full 9:30–4:00 session as 390 one-minute bars, used by the replay chart.
+     Volatility is pushed up around the open and into the close. */
+  function genTradingDay(inst) {
+    let p = MK_BASE_PRICES[inst] || 5000;
+    const vol = MK_VOLATILITY[inst] || 10;
+    return Array.from({ length: 390 }, (_, i) => {
+      const volMult = i < 30 ? 1.4 : i > 350 ? 1.2 : 0.8 + Math.random() * 0.4;
+      const open = p + (Math.random() - 0.5) * vol * 0.15;
+      const close = open + (Math.random() - 0.48) * vol * volMult;
+      const high = Math.max(open, close) + Math.random() * vol * 0.4 * volMult;
+      const low = Math.min(open, close) - Math.random() * vol * 0.4 * volMult;
+      p = close;
+      return {
+        open: +open.toFixed(2), high: +high.toFixed(2),
+        low: +low.toFixed(2), close: +close.toFixed(2), green: close >= open,
+      };
+    });
+  }
+
+  /* ─── END SWAP TARGETS ───────────────────────────────────────────────── */
+
+  const MK_BARS_30S = { "1m": 2, "2m": 4, "3m": 6, "5m": 10 };
+  const MK_BARS_1M = { "1m": 1, "2m": 2, "3m": 3, "5m": 5 };
+
+  /* rolls a bar array up into bigger candles, `size` bars at a time */
+  function mkGroup(bars, size) {
+    const out = [];
+    for (let i = 0; i < bars.length; i += size) {
+      const g = bars.slice(i, i + size);
+      if (!g.length) continue;
+      out.push({
+        open: g[0].open,
+        high: Math.max.apply(null, g.map((c) => c.high)),
+        low: Math.min.apply(null, g.map((c) => c.low)),
+        close: g[g.length - 1].close,
+        green: g[g.length - 1].close >= g[0].open,
+      });
+    }
+    return out;
+  }
+  function mkAggregate(bars30s, tfId) { return mkGroup(bars30s, MK_BARS_30S[tfId] || 2); }
+  function mkAggregateReview(bars1m, tfId) { return mkGroup(bars1m, MK_BARS_1M[tfId] || 1); }
+
+  const MK_RISKS = [5, 10, 15, 20, 25, 30];
+  const MK_RRS = [
+    { label: "1:1", m: 1 }, { label: "1:2", m: 2 },
+    { label: "1:4", m: 4 }, { label: "1:6", m: 6 },
+  ];
+
+  /* ---- two-axis scoring: max 2.00 points a round ---- */
+
+  /* Speed Tier — how much of the reaction window you spent, correct only */
+  function calcSpeedPoints(secondsUsed, windowSecs) {
+    const pctUsed = secondsUsed / windowSecs;
+    if (pctUsed <= 0.20) return 1.0;
+    if (pctUsed <= 0.40) return 0.75;
+    if (pctUsed <= 0.60) return 0.5;
+    if (pctUsed <= 0.80) return 0.25;
+    return 0.1;
+  }
+  /* Commitment Order — full point for calling it first, half for calling it second */
+  function calcOrderPoints(isCorrect, reactedFirst) {
+    if (!isCorrect) return 0;
+    return reactedFirst ? 1.0 : 0.5;
+  }
+  function calcRoundPoints(isCorrect, secondsUsed, windowSecs, missed, reactedFirst) {
+    if (missed || !isCorrect) return 0;
+    return calcOrderPoints(isCorrect, reactedFirst) + calcSpeedPoints(secondsUsed, windowSecs);
+  }
+
+  /* the opponent: leans slightly with the last three candles, everything else
+     is a coin toss inside the same choices the player has */
+  function aiReact(candles, windowSecs) {
+    const bull = candles.slice(-3).filter((c) => c.green).length;
+    const green = bull >= 2 ? Math.random() < 0.65 : Math.random() > 0.65;
+    return {
+      direction: green ? "green" : "red",
+      rrIdx: Math.floor(Math.random() * MK_RRS.length),
+      risk: MK_RISKS[Math.floor(Math.random() * MK_RISKS.length)],
+      reactionSecs: +(1 + Math.random() * windowSecs * 0.8).toFixed(1),
+    };
+  }
+
+  /* points, then bankroll, then correct calls, then total reaction time */
+  function computeWinner(pPts, aPts, pB, aB, log) {
+    const pC = log.filter((r) => r.playerCorrect).length;
+    const aC = log.filter((r) => r.aiCorrect).length;
+    const pS = log.reduce((a, r) => a + r.playerReactionSecs, 0);
+    const aS = log.reduce((a, r) => a + r.aiReactionSecs, 0);
+    if (pPts > aPts) return { winner: "player", reason: "points" };
+    if (aPts > pPts) return { winner: "opponent", reason: "points" };
+    if (pB > aB) return { winner: "player", reason: "bankroll" };
+    if (aB > pB) return { winner: "opponent", reason: "bankroll" };
+    if (pC > aC) return { winner: "player", reason: "accuracy" };
+    if (aC > pC) return { winner: "opponent", reason: "accuracy" };
+    if (pS < aS) return { winner: "player", reason: "speed" };
+    if (aS < pS) return { winner: "opponent", reason: "speed" };
+    return { winner: "tie", reason: "tie" };
+  }
+
+  /* ---------------- live match state ----------------
+     One rAF loop drives the clock and the forming candle. The DOM is only
+     rebuilt when the round or the phase changes; every frame in between just
+     repaints the canvas and rewrites the countdown, so taps never land on a
+     node that is about to be replaced. */
+
+  const MK_HISTORY = 40;          // candles of context before the first round
+  const MK_RESOLVE_HOLD = 1500;   // ms the resolved round stays on screen
+
+  const mk = {
+    on: false,
+    s: null, spec: null, win: 0, dur: 0,
+    tf: [], rounds: 0, round: 0,
+    phase: "reacting",            // 'reacting' | 'closing' | 'resolved'
+    t0: 0, elapsed: 0,
+    pick: null, risk: 10, rrIdx: 1, lockedAt: null,
+    ai: null,
+    bankP: 0, bankA: 0, ptsP: 0, ptsA: 0,
+    log: [], expand: false,
+    animClose: 0, animHi: 0, animLo: 0, seed: 0,
+    raf: null, hold: null,
+  };
+
+  function mkActive() { return mk.tf[MK_HISTORY + mk.round]; }
+
+  /* bankrolls can go under water, and "$-40.00" reads badly */
+  function mkBank(n) {
+    return (n < 0 ? "-$" : "$") + Math.abs(n).toLocaleString("en-US",
+      { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function startMatch() {
+    const s = bmSettings();
+    const spec = bmSpec(s);
+    mkAbort();
+    const need = (MK_HISTORY + s.candles + 2) * (MK_BARS_30S[spec.id] || 2);
+    mk.on = true;
+    mk.s = s;
+    mk.spec = spec;
+    mk.win = bmWindow(s);
+    mk.dur = spec.candleDuration;
+    mk.tf = mkAggregate(genSession30s(s.instrument, need), spec.id);
+    mk.rounds = s.candles;
+    mk.round = 0;
+    mk.bankP = BM_BANKROLL;
+    mk.bankA = BM_BANKROLL;
+    mk.ptsP = 0;
+    mk.ptsA = 0;
+    mk.log = [];
+    mk.expand = false;
+    mk.risk = 10;
+    mk.rrIdx = 1;
+    stopAudio();
+    state.view = "match";
+    state.slideDir = 0;
+    closeOverlay();
+    mkBeginRound();
+    render();
+  }
+
+  function mkBeginRound() {
+    const c = mkActive();
+    mk.phase = "reacting";
+    mk.pick = null;
+    mk.lockedAt = null;
+    mk.t0 = performance.now();
+    mk.elapsed = 0;
+    mk.seed = Math.random() * 100;
+    mk.animClose = c.open;
+    mk.animHi = c.open;
+    mk.animLo = c.open;
+    mk.ai = aiReact(mk.tf.slice(0, MK_HISTORY + mk.round), mk.win);
+    cancelAnimationFrame(mk.raf);
+    mk.raf = requestAnimationFrame(mkLoop);
+  }
+
+  function mkAbort() {
+    mk.on = false;
+    cancelAnimationFrame(mk.raf);
+    clearTimeout(mk.hold);
+    mk.raf = null;
+    mk.hold = null;
+  }
+
+  function mkLoop() {
+    if (!mk.on || state.view !== "match") return;
+    mk.elapsed = (performance.now() - mk.t0) / 1000;
+
+    if (mk.phase !== "resolved") {
+      // unbiased oscillation around the open — the forming candle never leaks
+      // which way it is going to close
+      const c = mkActive();
+      const amp = (Math.max(Math.abs(c.high - c.low), 0.01)) * 0.35;
+      mk.animClose = c.open
+        + Math.sin(mk.elapsed * 1.7 + mk.seed) * amp
+        + Math.sin(mk.elapsed * 4.3 + mk.seed * 2) * amp * 0.4;
+      mk.animHi = Math.max(mk.animHi, mk.animClose);
+      mk.animLo = Math.min(mk.animLo, mk.animClose);
+    }
+
+    if (mk.phase === "reacting" && mk.elapsed >= mk.win) {
+      mk.phase = "closing";
+      renderMatch();
+    } else if (mk.phase === "closing" && mk.elapsed >= mk.dur) {
+      mkResolve();
+      return;
+    } else {
+      mkPaintClock();
+      mkPaintChart();
+    }
+    mk.raf = requestAnimationFrame(mkLoop);
+  }
+
+  function mkLock(dir) {
+    if (mk.phase !== "reacting" || mk.pick) return;
+    mk.pick = dir;
+    mk.lockedAt = Math.min(+mk.elapsed.toFixed(1), mk.win);
+    renderMatch();
+  }
+
+  function mkResolve() {
+    const c = mkActive();
+    const actualDir = c.green ? "green" : "red";
+    const missed = !mk.pick;
+    const pSecs = missed ? mk.win : mk.lockedAt;
+    const pFirst = !missed && pSecs < mk.ai.reactionSecs;
+    const aFirst = missed || mk.ai.reactionSecs <= pSecs;
+    const pCorrect = !missed && mk.pick === actualDir;
+    const aCorrect = mk.ai.direction === actualDir;
+    const pPts = calcRoundPoints(pCorrect, pSecs, mk.win, missed, pFirst);
+    const aPts = calcRoundPoints(aCorrect, mk.ai.reactionSecs, mk.win, false, aFirst);
+
+    // a missed round costs nothing — it is the same as not taking the trade
+    if (!missed) mk.bankP += pCorrect ? mk.risk * MK_RRS[mk.rrIdx].m : -mk.risk;
+    mk.bankA += aCorrect ? mk.ai.risk * MK_RRS[mk.ai.rrIdx].m : -mk.ai.risk;
+    mk.ptsP += pPts;
+    mk.ptsA += aPts;
+
+    mk.log.push({
+      round: mk.round + 1,
+      actualDir,
+      playerDir: missed ? "missed" : mk.pick,
+      playerRisk: mk.risk, playerRRIdx: mk.rrIdx,
+      playerCorrect: pCorrect, playerReactionSecs: pSecs,
+      playerReactedFirst: pFirst, playerPoints: pPts,
+      aiDir: mk.ai.direction,
+      aiRisk: mk.ai.risk, aiRRIdx: mk.ai.rrIdx,
+      aiCorrect: aCorrect, aiReactionSecs: mk.ai.reactionSecs,
+      aiReactedFirst: aFirst, aiPoints: aPts,
+    });
+
+    mk.phase = "resolved";
+    mk.animClose = c.close;
+    renderMatch();
+    mk.hold = setTimeout(() => {
+      if (!mk.on) return;
+      mk.round++;
+      if (mk.round >= mk.rounds) finishMatch();
+      else { mkBeginRound(); renderMatch(); }
+    }, MK_RESOLVE_HOLD);
+  }
+
+  function finishMatch() {
+    const res = computeWinner(mk.ptsP, mk.ptsA, mk.bankP, mk.bankA, mk.log);
+    const correct = mk.log.filter((r) => r.playerCorrect).length;
+    const snap = {
+      inst: mk.s.instrument,
+      tfId: mk.spec.id,
+      tfMin: mk.s.timeframe,
+      candleDuration: mk.spec.candleDuration,
+      win: mk.win,
+      difficulty: mk.s.difficulty,
+      totalRounds: mk.rounds,
+      log: mk.log.slice(),
+      ptsP: mk.ptsP, ptsA: mk.ptsA,
+      bankP: mk.bankP, bankA: mk.bankA,
+      winner: res.winner, reason: res.reason,
+      accuracy: Math.round((correct / mk.rounds) * 100),
+      avgSpeed: +(mk.log.reduce((a, r) => a + r.playerReactionSecs, 0) / mk.rounds).toFixed(1),
+      at: new Date().toISOString(),
+      day: genTradingDay(mk.s.instrument),
+    };
+
+    const p = store.pickaeway;
+    if (res.winner === "player") p.wins = (p.wins || 0) + 1;
+    else if (res.winner === "opponent") p.losses = (p.losses || 0) + 1;
+    else p.draws = (p.draws || 0) + 1;
+    const played = (p.wins || 0) + (p.losses || 0) + (p.draws || 0);
+    // running averages over every match ever played
+    p.accuracy = ((p.accuracy || 0) * (played - 1) + snap.accuracy) / played;
+    p.speed = ((p.speed || 0) * (played - 1) + snap.avgSpeed) / played;
+    p.rewardBalance = +((p.rewardBalance || 0) + mk.ptsP).toFixed(2);
+    p.lastMatch = snap;
+    save();
+
+    mkAbort();
+    state.view = "result";
+    state.slideDir = 0;
+    render();
+  }
+
+  /* ---------------- chart painting ---------------- */
+
+  const MK_GREEN = "#2FE6C2";
+  const MK_RED = "#FF6B3D";
+  const MK_GRID = "rgba(120,150,180,.16)";
+
+  function mkCanvasCtx(cv, cssW, cssH) {
+    const dpr = window.devicePixelRatio || 1;
+    const w = Math.max(Math.round(cssW * dpr), 1);
+    const h = Math.max(Math.round(cssH * dpr), 1);
+    if (cv.width !== w || cv.height !== h) { cv.width = w; cv.height = h; }
+    const ctx = cv.getContext("2d");
+    ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+    ctx.clearRect(0, 0, cssW, cssH);
+    return ctx;
+  }
+
+  function mkScale(candles, top, height) {
+    const ps = candles.reduce((a, c) => a.concat([c.high, c.low]), []);
+    const min = Math.min.apply(null, ps);
+    const max = Math.max.apply(null, ps);
+    const pad = (max - min) * 0.08 || 0.5;
+    const lo = min - pad, hi = max + pad, range = (hi - lo) || 1;
+    return (p) => top + ((hi - p) / range) * height;
+  }
+
+  function mkDrawCandle(ctx, c, x, w, toY) {
+    ctx.strokeStyle = ctx.fillStyle = c.green ? MK_GREEN : MK_RED;
+    ctx.lineWidth = 1.5;
+    ctx.beginPath();
+    ctx.moveTo(x, toY(c.high));
+    ctx.lineTo(x, toY(c.low));
+    ctx.stroke();
+    const top = toY(Math.max(c.open, c.close));
+    const h = Math.max(toY(Math.min(c.open, c.close)) - top, 1.5);
+    ctx.fillRect(x - w / 2, top, w, h);
+  }
+
+  /* the battle chart: ~40 candles of context with the forming candle sitting
+     at 82% across, so new candles walk in from the right */
+  function mkPaintChart() {
+    const cv = $("mkChart");
+    if (!cv || !mk.tf.length) return;
+    const W = cv.clientWidth || 340;
+    const H = 200;
+    const ctx = mkCanvasCtx(cv, W, H);
+    const PAD = 10;
+    const SLOT = Math.max(W / MK_HISTORY, 6);
+    const CW = SLOT * 0.66;
+
+    const end = MK_HISTORY + mk.round;
+    const hist = mk.tf.slice(Math.max(0, end - (MK_HISTORY - 1)), end);
+    const c = mkActive();
+    const live = mk.phase === "resolved" ? c : {
+      open: c.open, close: mk.animClose,
+      high: Math.max(mk.animHi, c.open), low: Math.min(mk.animLo, c.open),
+      green: mk.animClose >= c.open,
+    };
+    const toY = mkScale(hist.concat([live]), PAD, H - PAD * 2 - 12);
+
+    ctx.strokeStyle = MK_GRID;
+    ctx.lineWidth = 1;
+    [0.25, 0.5, 0.75].forEach((f) => {
+      const y = Math.round(PAD + f * (H - PAD * 2 - 12)) + 0.5;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    });
+
+    const activeX = W * 0.82;
+    hist.forEach((h, i) => {
+      const x = activeX - (hist.length - i) * SLOT;
+      if (x > -SLOT) mkDrawCandle(ctx, h, x, CW, toY);
+    });
+
+    // active slot: soft band, pulsing dashed outline and the REACT tag
+    ctx.fillStyle = "rgba(47,230,194,.05)";
+    ctx.fillRect(activeX - SLOT / 2, 0, SLOT, H - 12);
+    mkDrawCandle(ctx, live, activeX, CW, toY);
+    if (mk.phase !== "resolved") {
+      const top = toY(Math.max(live.open, live.close));
+      const h = Math.max(toY(Math.min(live.open, live.close)) - top, 1.5);
+      const pulse = 0.45 + 0.35 * Math.abs(Math.sin(mk.elapsed * 2.6));
+      ctx.save();
+      ctx.setLineDash([3, 2]);
+      ctx.lineWidth = 1;
+      ctx.strokeStyle = `rgba(47,230,194,${pulse.toFixed(2)})`;
+      ctx.strokeRect(activeX - CW / 2 - 2.5, top - 2.5, CW + 5, h + 5);
+      ctx.restore();
+      ctx.fillStyle = "rgba(47,230,194,.55)";
+      ctx.font = "700 8px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(mk.phase === "reacting" ? "REACT" : "CLOSING", activeX, H - 3);
+    }
+    // your locked call rides above the candle until the round resolves
+    if (mk.pick && mk.phase !== "resolved") {
+      ctx.fillStyle = mk.pick === "green" ? MK_GREEN : MK_RED;
+      ctx.font = "700 11px system-ui, sans-serif";
+      ctx.textAlign = "center";
+      ctx.fillText(mk.pick === "green" ? "▲" : "▼", activeX, 12);
+    }
+  }
+
+  function mkPaintClock() {
+    const el = $("mkClock");
+    if (!el) return;
+    const left = mk.phase === "reacting"
+      ? Math.max(mk.win - mk.elapsed, 0)
+      : Math.max(mk.dur - mk.elapsed, 0);
+    el.textContent = left.toFixed(1) + "s";
+    const fill = $("mkClockFill");
+    if (fill) {
+      const span = mk.phase === "reacting" ? mk.win : mk.dur - mk.win;
+      const done = mk.phase === "reacting" ? mk.elapsed : mk.elapsed - mk.win;
+      fill.style.width = `${Math.max(0, Math.min(1, 1 - done / span)) * 100}%`;
+    }
+  }
+
+  /* ---------------- match screen ---------------- */
+
+  function mkChipRow(list, sel, attr, fmt) {
+    return list.map((v, i) => `
+      <button class="mk-chip ${sel === i ? "on" : ""}" data-${attr}="${i}">${fmt(v)}</button>`).join("");
+  }
+
+  function mkControlsHTML() {
+    if (mk.phase === "resolved") {
+      const r = mk.log[mk.log.length - 1];
+      const cls = r.playerDir === "missed" ? "miss" : (r.playerCorrect ? "win" : "loss");
+      const label = r.playerDir === "missed" ? "Missed"
+        : (r.playerCorrect ? "Correct" : "Wrong");
+      const pnl = r.playerDir === "missed" ? 0
+        : (r.playerCorrect ? r.playerRisk * MK_RRS[r.playerRRIdx].m : -r.playerRisk);
+      return `
+        <div class="mk-resolved ${cls}">
+          <div class="mk-resolved-head">${label}</div>
+          <div class="mk-resolved-sub">
+            Candle closed ${r.actualDir === "green" ? "green ▲" : "red ▼"} ·
+            ${pnl === 0 ? "$0" : money(pnl)} · +${r.playerPoints.toFixed(2)} pts
+          </div>
+        </div>`;
+    }
+    if (mk.phase === "closing") {
+      return `
+        <div class="mk-waiting">
+          <div class="mk-waiting-head">Candle closing</div>
+          <div class="mk-waiting-sub">${mk.pick
+            ? `Locked ${mk.pick === "green" ? "Green ▲" : "Red ▼"} at ${mk.lockedAt}s · ${plainMoney(mk.risk)} at ${MK_RRS[mk.rrIdx].label}`
+            : "No call made — this round scores nothing and costs nothing"}</div>
+        </div>`;
+    }
+    if (mk.pick) {
+      return `
+        <div class="mk-waiting locked">
+          <div class="mk-waiting-head">Locked in ${mk.pick === "green" ? "Green ▲" : "Red ▼"}</div>
+          <div class="mk-waiting-sub">${mk.lockedAt}s · ${plainMoney(mk.risk)} at ${MK_RRS[mk.rrIdx].label}
+            · ${plainMoney(mk.risk * MK_RRS[mk.rrIdx].m)} to win</div>
+        </div>`;
+    }
+    return `
+      <div class="mk-calls">
+        <button class="mk-call green" data-mkpick="green"><span>▲</span> Green</button>
+        <button class="mk-call red" data-mkpick="red"><span>▼</span> Red</button>
+      </div>
+      <div class="bm-label">Risk</div>
+      <div class="mk-row mk-row-6">${mkChipRow(MK_RISKS, MK_RISKS.indexOf(mk.risk), "mkrisk", (v) => "$" + v)}</div>
+      <div class="bm-label">Risk : Reward</div>
+      <div class="mk-row mk-row-4">${mkChipRow(MK_RRS, mk.rrIdx, "mkrr", (v) => v.label)}</div>`;
+  }
+
+  function mkScoreHTML() {
+    return `
+      <div class="mk-score">
+        <div class="mk-side you">
+          <div class="mk-side-cap">You</div>
+          <div class="mk-side-pts">${mk.ptsP.toFixed(2)}</div>
+          <div class="mk-side-bank">${mkBank(mk.bankP)}</div>
+        </div>
+        <div class="mk-vs">VS</div>
+        <div class="mk-side opp">
+          <div class="mk-side-cap">Opponent</div>
+          <div class="mk-side-pts">${mk.ptsA.toFixed(2)}</div>
+          <div class="mk-side-bank">${mkBank(mk.bankA)}</div>
+        </div>
+      </div>`;
+  }
+
+  function renderMatch() {
+    if (state.view !== "match") return;
+    const pickName = document.querySelector("#pickBar .pick-name");
+    if (pickName) pickName.textContent = "Reward Battle";
+    barTitle.textContent = "Pickæway";
+    const phaseLabel = mk.phase === "reacting" ? "React now"
+      : mk.phase === "closing" ? "Candle forming" : "Round result";
+    cardScroll.innerHTML = `
+      <div class="mk-head">
+        <div class="mk-round">Round ${mk.round + 1} / ${mk.rounds}</div>
+        <div class="mk-meta">${esc(mk.s.instrument)} · ${mk.s.timeframe}m · ${mk.s.difficulty.toUpperCase()}</div>
+      </div>
+      ${mkScoreHTML()}
+      <div class="mk-chart-wrap"><canvas id="mkChart" class="mk-chart" height="200"></canvas></div>
+      <div class="mk-clock-row">
+        <span class="mk-phase ${mk.phase}">${phaseLabel}</span>
+        <span class="mk-clock" id="mkClock">0.0s</span>
+      </div>
+      <div class="mk-clock-bar"><span id="mkClockFill"></span></div>
+      ${mkControlsHTML()}
+      ${roundTableHTML(mk.log, mk.expand)}`;
+    mkPaintClock();
+    mkPaintChart();
+    cardFooter.style.display = "none";
+  }
+
+  /* ---------------- round history table ----------------
+     Collapsed it shows the last round only; expanded, every round. Totals
+     appear once there is more than one round to total. */
+
+  function rtArrow(dir) {
+    if (dir === "green") return `<span class="rt-up">▲</span>`;
+    if (dir === "red") return `<span class="rt-dn">▼</span>`;
+    return `<span class="rt-miss">MISS</span>`;
+  }
+
+  function roundTableHTML(log, expanded) {
+    if (!log.length) return "";
+    const totP = log.reduce((a, r) => a + r.playerReactionSecs, 0);
+    const totA = log.reduce((a, r) => a + r.aiReactionSecs, 0);
+    const totPP = log.reduce((a, r) => a + r.playerPoints, 0);
+    const totAP = log.reduce((a, r) => a + r.aiPoints, 0);
+    const rows = expanded ? log : log.slice(-1);
+    return `
+      <div class="rt">
+        <button class="rt-head" data-mkexpand>
+          <span class="rt-title">Round History${!expanded && log.length > 1 ? ` <em>· last round</em>` : ""}</span>
+          <span class="rt-toggle">${expanded ? "Collapse" : `Show all ${log.length}`}
+            <span class="rt-caret${expanded ? " up" : ""}">▾</span></span>
+        </button>
+        <div class="rt-body">
+          <div class="rt-cols">
+            <span class="rt-you">You</span><span class="rt-mid">Result</span><span class="rt-opp">Opponent</span>
+          </div>
+          ${rows.map((r) => {
+            const miss = r.playerDir === "missed";
+            const pCh = miss ? 0 : (r.playerCorrect ? r.playerRisk * MK_RRS[r.playerRRIdx].m : -r.playerRisk);
+            const aCh = r.aiCorrect ? r.aiRisk * MK_RRS[r.aiRRIdx].m : -r.aiRisk;
+            const pCls = miss ? "n" : (r.playerCorrect ? "g" : "r");
+            const aCls = r.aiCorrect ? "g" : "r";
+            const pFast = !miss && r.playerReactionSecs < r.aiReactionSecs;
+            return `
+            <div class="rt-row">
+              <div class="rt-grid">
+                <div class="rt-cell">${rtArrow(r.playerDir)}</div>
+                <div class="rt-cell ${pFast ? "fast" : ""}">${r.playerReactionSecs}s${pFast ? " ⚡" : ""}</div>
+                <div class="rt-cell ${pCls}">${miss ? "$0" : money(pCh)}</div>
+                <div class="rt-cell ${pCls}">${miss ? "MISS" : (r.playerCorrect ? "RIGHT" : "WRONG")}</div>
+                <div class="rt-cell">${rtArrow(r.actualDir)}</div>
+                <div class="rt-cell ${aCls}">${r.aiCorrect ? "RIGHT" : "WRONG"}</div>
+                <div class="rt-cell ${aCls}">${money(aCh)}</div>
+                <div class="rt-cell ${!pFast ? "fast" : ""}">${r.aiReactionSecs}s${!pFast ? " ⚡" : ""}</div>
+                <div class="rt-cell">${rtArrow(r.aiDir)}</div>
+              </div>
+              <div class="rt-pts">
+                <span class="${r.playerPoints > 0 ? "on" : ""}">+${r.playerPoints.toFixed(2)} pts${r.playerCorrect ? ` · ${r.playerReactedFirst ? "1st" : "2nd"}` : ""}</span>
+                <span class="rt-no">round ${r.round}</span>
+                <span class="${r.aiPoints > 0 ? "on" : ""}">${r.aiCorrect ? `${r.aiReactedFirst ? "1st" : "2nd"} · ` : ""}+${r.aiPoints.toFixed(2)} pts</span>
+              </div>
+            </div>`;
+          }).join("")}
+          ${log.length > 1 ? `
+          <div class="rt-tot">
+            <span class="${totP < totA ? "on" : ""}">${totP.toFixed(1)}s${totP < totA ? " ⚡" : ""}</span>
+            <span class="rt-no">Total Speed</span>
+            <span class="${totA < totP ? "on" : ""}">${totA.toFixed(1)}s${totA < totP ? " ⚡" : ""}</span>
+          </div>
+          <div class="rt-tot big">
+            <span class="${totPP >= totAP ? "on" : ""}">${totPP.toFixed(2)}</span>
+            <span class="rt-no">Total Points</span>
+            <span class="${totAP >= totPP ? "on" : ""}">${totAP.toFixed(2)}</span>
+          </div>` : ""}
+        </div>
+      </div>`;
+  }
+
+  /* ---------------- match result ---------------- */
+
+  function renderResult() {
+    const m = store.pickaeway.lastMatch;
+    if (!m) { openPickaeway(); return; }
+    const pickName = document.querySelector("#pickBar .pick-name");
+    if (pickName) pickName.textContent = "Match Result";
+    barTitle.textContent = "Pickæway";
+    const REASON = {
+      points: "on total points", bankroll: "on bankroll",
+      accuracy: "on correct calls", speed: "on reaction speed", tie: "dead level",
+    };
+    const head = m.winner === "player" ? "You win" : m.winner === "opponent" ? "Opponent wins" : "Draw";
+    const correct = m.log.filter((r) => r.playerCorrect).length;
+    cardScroll.innerHTML = `
+      <div class="mk-result ${m.winner}">
+        <div class="mk-result-cap">${esc(REASON[m.reason] || "")}</div>
+        <div class="mk-result-head">${head}</div>
+        <div class="mk-result-score">${m.ptsP.toFixed(2)} <em>–</em> ${m.ptsA.toFixed(2)}</div>
+        <div class="mk-result-sub">points</div>
+      </div>
+      <div class="pk-row pk-row-3">
+        <div class="pk-stat"><div class="pk-cap">Bankroll</div><div class="pk-val">${mkBank(m.bankP)}</div></div>
+        <div class="pk-stat pk-mid"><div class="pk-cap">Accuracy</div><div class="pk-val">${correct}/${m.totalRounds}</div></div>
+        <div class="pk-stat"><div class="pk-cap">Avg Speed</div><div class="pk-val">${m.avgSpeed}s</div></div>
+      </div>
+      <div class="bm-rule" aria-hidden="true"></div>
+      <div class="bm-label">Match Overview</div>
+      <div class="bm-overview">
+        ${[{ v: m.inst, l: "Instrument" }, { v: `${m.tfMin}m`, l: "Time Frame" },
+           { v: String(m.totalRounds), l: "Candles" }, { v: `${m.win}s`, l: "Reaction Window" },
+           { v: m.difficulty.toUpperCase(), l: "Difficulty" }, { v: `${m.candleDuration}s`, l: "Per Candle" }]
+          .map((o) => `
+          <div class="bm-badge">
+            <span class="bm-badge-box"><span class="bm-badge-val">${esc(o.v)}</span></span>
+            <span class="bm-badge-lbl">${esc(o.l)}</span>
+          </div>`).join("")}
+      </div>
+      ${roundTableHTML(m.log, state.rtExpand)}
+      <button class="bm-start" data-mkreplay>Match Replay</button>
+      <button class="mk-secondary" data-mkrematch>Rematch</button>
+      <button class="mk-secondary" data-mkdone>Done</button>`;
+    cardScroll.scrollTop = 0;
+    cardFooter.style.display = "none";
+  }
+
+  /* ---------------- match replay ----------------
+     The full session the match sat inside — 390 one-minute candles, rolled up
+     to whichever timeframe is selected. The candles you reacted to are boxed
+     and tappable; tapping one opens that round's detail inline under the
+     chart. Drag the track at the right to zoom. */
+
+  const RV_TFS = ["1m", "2m", "3m", "5m"];
+  const RV_ZOOMS = [40, 30, 20, 10];
+  const RV_H = 220;
+  const RV_IND = 24;
+  const RV_PAD = 12;
+  const RV_LEAD = 10;
+
+  const rv = { tf: "1m", zoom: 0, sel: null, day: [], snap: null, drag: null };
+
+  function rvSlotW() {
+    const wrap = $("rvScroll");
+    const w = (wrap ? wrap.clientWidth : 320) || 320;
+    return Math.max(w / RV_ZOOMS[rv.zoom], 8);
+  }
+  function rvCandles() { return mkAggregateReview(rv.day, rv.tf); }
+  /* which aggregated candle each round's reaction landed in */
+  function rvRoundIdxs() {
+    if (!rv.snap) return [];
+    const size = MK_BARS_1M[rv.tf] || 1;
+    return rv.snap.log.map((_, i) => Math.floor((MK_HISTORY + i * rv.snap.tfMin) / size));
+  }
+
+  function mkPaintReplay() {
+    const cv = $("rvChart");
+    if (!cv) return;
+    const candles = rvCandles();
+    if (!candles.length) return;
+    const SLOT = rvSlotW();
+    const CW = SLOT * 0.62;
+    const W = candles.length * SLOT + RV_LEAD * 2;
+    cv.style.width = W + "px";
+    const ctx = mkCanvasCtx(cv, W, RV_H);
+    const drawH = RV_H - RV_PAD * 2 - RV_IND;
+    const toY = mkScale(candles, RV_PAD, drawH);
+    const rounds = rvRoundIdxs();
+
+    ctx.strokeStyle = MK_GRID;
+    ctx.lineWidth = 1;
+    [0.25, 0.5, 0.75].forEach((f) => {
+      const y = Math.round(RV_PAD + f * drawH) + 0.5;
+      ctx.beginPath(); ctx.moveTo(0, y); ctx.lineTo(W, y); ctx.stroke();
+    });
+
+    const size = MK_BARS_1M[rv.tf] || 1;
+    ctx.font = "9px system-ui, sans-serif";
+    ctx.textAlign = "center";
+    ctx.textBaseline = "top";
+    [[0, "9:30"], [30, "10:00"], [90, "11:00"], [150, "12:00"],
+     [210, "1:00"], [270, "2:00"], [330, "3:00"], [389, "4:00"]].forEach(([min, label]) => {
+      const x = Math.floor(min / size) * SLOT + SLOT / 2 + RV_LEAD;
+      ctx.save();
+      ctx.strokeStyle = "rgba(120,150,180,.22)";
+      ctx.setLineDash([3, 4]);
+      ctx.beginPath(); ctx.moveTo(x, RV_PAD); ctx.lineTo(x, RV_PAD + drawH); ctx.stroke();
+      ctx.restore();
+      ctx.fillStyle = "#6E86A0";
+      ctx.fillText(label, x, RV_PAD + drawH + 3);
+    });
+
+    candles.forEach((c, i) => {
+      const x = i * SLOT + SLOT / 2 + RV_LEAD;
+      const ri = rounds.indexOf(i);
+      if (ri >= 0) {
+        ctx.fillStyle = rv.sel === ri ? "rgba(47,230,194,.16)" : "rgba(47,230,194,.06)";
+        ctx.fillRect(i * SLOT + RV_LEAD, 0, SLOT, RV_H - RV_IND);
+        ctx.strokeStyle = rv.sel === ri ? "rgba(47,230,194,.85)" : "rgba(47,230,194,.32)";
+        ctx.lineWidth = 1.5;
+        ctx.strokeRect(i * SLOT + RV_LEAD + 0.75, 0.75, SLOT - 1.5, RV_H - RV_IND - 1.5);
+      }
+      mkDrawCandle(ctx, c, x, CW, toY);
+      if (ri >= 0) {
+        const dir = rv.snap.log[ri].playerDir;
+        ctx.fillStyle = dir === "missed" ? "#7D93AC" : dir === "green" ? MK_GREEN : MK_RED;
+        ctx.font = `700 ${Math.max(SLOT * 0.5, 9).toFixed(0)}px system-ui, sans-serif`;
+        ctx.textAlign = "center";
+        ctx.textBaseline = "middle";
+        ctx.fillText(dir === "missed" ? "?" : dir === "green" ? "▲" : "▼", x, RV_H - RV_IND / 2);
+      }
+    });
+  }
+
+  function rvDetailHTML() {
+    if (rv.sel === null || !rv.snap) {
+      return `<div class="rv-hint">Tap a boxed candle to open that round · drag the track to zoom</div>`;
+    }
+    const r = rv.snap.log[rv.sel];
+    const miss = r.playerDir === "missed";
+    const pnl = miss ? 0 : (r.playerCorrect ? r.playerRisk * MK_RRS[r.playerRRIdx].m : -r.playerRisk);
+    const cls = miss ? "n" : (r.playerCorrect ? "g" : "r");
+    return `
+      <div class="rv-detail ${cls}">
+        <div class="rv-detail-head">
+          <span>Round ${r.round}</span>
+          <span class="rv-detail-res">${miss ? "Missed" : (r.playerCorrect ? "Right" : "Wrong")}</span>
+        </div>
+        <div class="rv-detail-grid">
+          <div><span>Your call</span><b>${miss ? "—" : (r.playerDir === "green" ? "Green ▲" : "Red ▼")}</b></div>
+          <div><span>Candle</span><b>${r.actualDir === "green" ? "Green ▲" : "Red ▼"}</b></div>
+          <div><span>Risk</span><b>${miss ? "—" : plainMoney(r.playerRisk)}</b></div>
+          <div><span>R:R</span><b>${miss ? "—" : MK_RRS[r.playerRRIdx].label}</b></div>
+          <div><span>P&amp;L</span><b class="${cls}">${miss ? "$0" : money(pnl)}</b></div>
+          <div><span>Reaction</span><b>${miss ? "—" : r.playerReactionSecs + "s"}</b></div>
+          <div><span>Points</span><b>+${r.playerPoints.toFixed(2)}</b></div>
+          <div><span>Order</span><b>${miss ? "—" : (r.playerReactedFirst ? "1st" : "2nd")}</b></div>
+        </div>
+      </div>`;
+  }
+
+  function renderReplay() {
+    const m = store.pickaeway.lastMatch;
+    if (!m) { openPickaeway(); return; }
+    if (rv.snap !== m) { rv.snap = m; rv.day = m.day || genTradingDay(m.inst); rv.sel = null; rv.zoom = 0; }
+    const pickName = document.querySelector("#pickBar .pick-name");
+    if (pickName) pickName.textContent = "Match Replay";
+    barTitle.textContent = "Pickæway";
+    const thumbTop = (rv.zoom / (RV_ZOOMS.length - 1)) * (RV_H - 44);
+    cardScroll.innerHTML = `
+      <div class="mk-head">
+        <div class="mk-round">${esc(m.inst)} · ${new Date(m.at).toLocaleDateString("en-US", { month: "short", day: "numeric" })}</div>
+        <div class="mk-meta">${m.totalRounds} rounds · ${m.log.filter((r) => r.playerCorrect).length} correct</div>
+      </div>
+      <div class="mk-row mk-row-4 rv-tfs">
+        ${RV_TFS.map((t) => `<button class="mk-chip ${rv.tf === t ? "on" : ""}" data-rvtf="${t}">${t.toUpperCase()}</button>`).join("")}
+      </div>
+      <div class="rv-stage">
+        <div class="rv-scroll" id="rvScroll"><canvas id="rvChart" class="rv-chart" height="${RV_H}"></canvas></div>
+        <div class="rv-zoom" id="rvZoom" title="Drag to zoom">
+          <span class="rv-thumb" style="top:${thumbTop}px"></span>
+        </div>
+      </div>
+      <div class="rv-zoom-lbl">${RV_ZOOMS[rv.zoom]} candles</div>
+      ${rvDetailHTML()}
+      ${roundTableHTML(m.log, state.rtExpand)}
+      <button class="mk-secondary" data-mkdone>Done</button>`;
+    cardScroll.scrollTop = 0;
+    cardFooter.style.display = "none";
+    requestAnimationFrame(() => {
+      mkPaintReplay();
+      wireReplay();
+      rvCenterOnMatch();
+    });
+  }
+
+  /* park the view over the stretch of the day the match was played on */
+  function rvCenterOnMatch() {
+    const el = $("rvScroll");
+    if (!el || !rv.snap) return;
+    const idxs = rvRoundIdxs();
+    if (!idxs.length) return;
+    const mid = (idxs[0] + idxs[idxs.length - 1]) / 2;
+    el.scrollLeft = Math.max(0, mid * rvSlotW() + RV_LEAD - el.clientWidth / 2);
+  }
+
+  function rvSetZoom(next, anchorSlot) {
+    const z = Math.max(0, Math.min(RV_ZOOMS.length - 1, next));
+    if (z === rv.zoom) return;
+    rv.zoom = z;
+    const el = $("rvScroll");
+    mkPaintReplay();
+    const thumb = document.querySelector("#rvZoom .rv-thumb");
+    if (thumb) thumb.style.top = `${(rv.zoom / (RV_ZOOMS.length - 1)) * (RV_H - 44)}px`;
+    const lbl = document.querySelector(".rv-zoom-lbl");
+    if (lbl) lbl.textContent = `${RV_ZOOMS[rv.zoom]} candles`;
+    if (el && anchorSlot != null) {
+      el.scrollLeft = Math.max(0, anchorSlot * rvSlotW() + RV_LEAD - el.clientWidth / 2);
+    }
+  }
+
+  function wireReplay() {
+    const cv = $("rvChart");
+    const scroll = $("rvScroll");
+    const zoom = $("rvZoom");
+    if (cv) cv.addEventListener("click", (e) => {
+      const rect = cv.getBoundingClientRect();
+      const idx = Math.floor((e.clientX - rect.left - RV_LEAD) / rvSlotW());
+      const ri = rvRoundIdxs().indexOf(idx);
+      rv.sel = ri >= 0 ? (rv.sel === ri ? null : ri) : null;
+      mkPaintReplay();
+      const box = document.querySelector(".rv-detail, .rv-hint");
+      if (box) box.outerHTML = rvDetailHTML();
+    });
+    if (zoom) {
+      const anchor = () => {
+        if (!scroll) return 0;
+        return (scroll.scrollLeft + scroll.clientWidth / 2 - RV_LEAD) / rvSlotW();
+      };
+      zoom.addEventListener("pointerdown", (e) => {
+        zoom.setPointerCapture(e.pointerId);
+        rv.drag = { y: e.clientY, z: rv.zoom, a: anchor() };
+      });
+      zoom.addEventListener("pointermove", (e) => {
+        if (!rv.drag) return;
+        e.preventDefault();
+        rvSetZoom(rv.drag.z + Math.round((e.clientY - rv.drag.y) / 36), rv.drag.a);
+      });
+      const end = () => { rv.drag = null; };
+      zoom.addEventListener("pointerup", end);
+      zoom.addEventListener("pointercancel", end);
+    }
+  }
+
+  function openReplay() {
+    if (!store.pickaeway.lastMatch) return false;
+    stopAudio();
+    state.view = "replay";
+    state.slideDir = 0;
+    closeOverlay();
+    render();
+    return true;
   }
 
   /* ---------------- profile photo ----------------
@@ -2339,11 +3232,15 @@
     render();
   }
 
+  /* every Pickæway view shares the same bar and dock slot */
+  const PK_VIEWS = ["pickaeway", "buildmatch", "match", "result", "replay"];
+  function inPickaeway() { return PK_VIEWS.indexOf(state.view) >= 0; }
+
   /* ring behind whichever dock icon matches the section you're in */
   function syncDockActive() {
     $("navCheckin").classList.toggle("active", state.view === "checkin");
     $("navAdd").classList.toggle("active", state.view === "journal");
-    $("navBattle").classList.toggle("active", state.view === "pickaeway" || state.view === "buildmatch");
+    $("navBattle").classList.toggle("active", inPickaeway());
     $("navPlay").classList.toggle("active", state.view === "videos");
   }
 
@@ -2351,7 +3248,7 @@
   function syncCheckinChrome() {
     const on = state.view === "checkin";
     const jr = state.view === "journal";
-    const pk = state.view === "pickaeway" || state.view === "buildmatch";
+    const pk = inPickaeway();
     checkinBar.classList.toggle("hidden", !on);
     $("journalBar").classList.toggle("hidden", !jr);
     $("pickBar").classList.toggle("hidden", !pk);
@@ -2364,9 +3261,11 @@
   function render() {
     // navigating anywhere other than the library closes the player
     if (state.videoId && state.view !== "videos") tearDownPlayer();
+    // leaving mid-match forfeits it: stop the clock rather than leave a rAF
+    // loop repainting a canvas that is no longer on screen
+    if (state.view !== "match" && mk.on) mkAbort();
     const listy = state.view === "home" || state.view === "videos"
-      || state.view === "checkin" || state.view === "journal"
-      || state.view === "pickaeway" || state.view === "buildmatch";
+      || state.view === "checkin" || state.view === "journal" || inPickaeway();
     $("cardOuter").classList.toggle("outline-bg", listy);
     if (state.view !== "checkin") cardScroll.classList.remove("ci-resulting");
     syncCheckinChrome();
@@ -2377,6 +3276,9 @@
     else if (state.view === "journal") renderJournal();
     else if (state.view === "pickaeway") renderPickaeway();
     else if (state.view === "buildmatch") renderBuildMatch();
+    else if (state.view === "match") renderMatch();
+    else if (state.view === "result") renderResult();
+    else if (state.view === "replay") renderReplay();
     else renderScreen();
   }
 
@@ -2731,7 +3633,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pflog],[data-pfsave],[data-pfacct],[data-jsection],[data-jviewall],[data-photo-pick],[data-photo-clear],[data-pk-replay],[data-pk-build],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pflog],[data-pfsave],[data-pfacct],[data-jsection],[data-jviewall],[data-photo-pick],[data-photo-clear],[data-pk-replay],[data-pk-build],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -2815,24 +3717,36 @@
     }
     else if (t.hasAttribute("data-pk-build")) openBuildMatch();
     else if (t.hasAttribute("data-pk-replay")) {
-      openOverlay(panelHead("Match Replay") + `
-        <div class="liked-empty">No matches played yet. Once you've battled, every round is
-          replayable here.</div>
-        <button class="btn-primary" data-close>Got it</button>`);
+      if (!openReplay()) {
+        openOverlay(panelHead("Match Replay") + `
+          <div class="liked-empty">No matches played yet. Once you've battled, every round is
+            replayable here.</div>
+          <button class="btn-primary" data-close>Got it</button>`);
+      }
     }
     else if (t.dataset.bmins) bmSet("instrument", t.dataset.bmins);
     else if (t.dataset.bmtf) bmSet("timeframe", +t.dataset.bmtf);
     else if (t.dataset.bmcd) bmSet("candles", +t.dataset.bmcd);
     else if (t.dataset.bmdiff) bmSet("difficulty", t.dataset.bmdiff);
-    else if (t.hasAttribute("data-bmstart")) {
-      const s = bmSettings();
-      openOverlay(panelHead("Start Match") + `
-        <div class="liked-empty">Your match is built —
-          <b>${esc(s.instrument)} · ${s.timeframe}m · ${s.candles} candles ·
-          ${BM_DIFFICULTY[s.difficulty]}s to react</b>.<br>
-          Matchmaking goes live once the battle engine ships; nothing is queued yet.</div>
-        <button class="btn-primary" data-close>Got it</button>`);
+    else if (t.hasAttribute("data-bmstart")) startMatch();
+    else if (t.dataset.mkpick) mkLock(t.dataset.mkpick);
+    else if (t.dataset.mkrisk) { mk.risk = MK_RISKS[+t.dataset.mkrisk]; renderMatch(); }
+    else if (t.dataset.mkrr) { mk.rrIdx = +t.dataset.mkrr; renderMatch(); }
+    else if (t.hasAttribute("data-mkexpand")) {
+      if (state.view === "match") { mk.expand = !mk.expand; renderMatch(); }
+      else {
+        // swap the table in place rather than re-rendering: a full render would
+        // reset the replay chart's scroll position out from under the tap
+        state.rtExpand = !state.rtExpand;
+        const box = t.closest(".rt");
+        const m = store.pickaeway.lastMatch;
+        if (box && m) box.outerHTML = roundTableHTML(m.log, state.rtExpand);
+      }
     }
+    else if (t.hasAttribute("data-mkreplay")) openReplay();
+    else if (t.hasAttribute("data-mkrematch")) openBuildMatch();
+    else if (t.hasAttribute("data-mkdone")) openPickaeway();
+    else if (t.dataset.rvtf) { rv.tf = t.dataset.rvtf; rv.sel = null; renderReplay(); }
     else if (t.hasAttribute("data-ci-exit")) { closeOverlay(); state.checkinResult = null; state.homeTab = "sections"; goHome(); }
     else if (t.hasAttribute("data-ci-submit")) {
       if (!CHECKIN_ITEMS.every((it) => store.checklist[it.id])) return;
@@ -3391,6 +4305,9 @@
   }
   syncViewportHeight();
   window.addEventListener("resize", syncViewportHeight);
+  // the battle chart repaints every animation frame; the replay chart is
+  // static, so it needs a nudge when the viewport changes width
+  window.addEventListener("resize", () => { if (state.view === "replay") mkPaintReplay(); });
   window.addEventListener("orientationchange", syncViewportHeight);
   if (window.visualViewport) window.visualViewport.addEventListener("resize", syncViewportHeight);
 
