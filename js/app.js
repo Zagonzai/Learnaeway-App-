@@ -36,6 +36,8 @@
   if (!store.settings) store.settings = { sound: true, textSize: "M", name: "" };
   if (!store.videosWatched) store.videosWatched = {};   // videoId -> true
   if (!store.checkinLog) store.checkinLog = {};         // YYYY-MM-DD -> submitted answers
+  if (!store.beforeTrade) store.beforeTrade = {};       // Before Trade Stage 1 picks
+  if (!store.beforeTradeLog) store.beforeTradeLog = {}; // YYYY-MM-DD -> submitted Stage 1
   if (!store.journalImport) store.journalImport = {};   // account -> YYYY-MM-DD -> day totals
   if (!store.journalManual) store.journalManual = {};   // account -> YYYY-MM-DD -> [manual trades]
   if (!store.journalAccounts) store.journalAccounts = [];  // user-added brokerage accounts
@@ -105,6 +107,7 @@
       checklist: store.checklist || {},
       videosWatched: store.videosWatched || {},
       checkinLog: store.checkinLog || {},
+      beforeTradeLog: store.beforeTradeLog || {},
       journalImport: store.journalImport || {},
       journalManual: store.journalManual || {},
       journalAccounts: store.journalAccounts || [],
@@ -124,7 +127,7 @@
     const cloud = await FB.loadUserDoc();
     if (!cloud) return false;
     // union maps (local device stays authoritative for its own recent edits)
-    for (const k of ["visited", "liked", "checklist", "notes", "videosWatched", "checkinLog", "journalImport", "journalManual"]) {
+    for (const k of ["visited", "liked", "checklist", "notes", "videosWatched", "checkinLog", "beforeTradeLog", "journalImport", "journalManual"]) {
       store[k] = Object.assign({}, cloud[k] || {}, store[k] || {});
     }
     if (!store.lastScreen && cloud.lastScreen) store.lastScreen = cloud.lastScreen;
@@ -142,7 +145,8 @@
   const DESKTOP_MQ = "(min-width: 1200px)";
 
   const state = {
-    view: "home",            // 'home' | 'screen' | 'videos' | 'checkin' | 'journal' | 'pickaeway' | 'buildmatch'
+    view: "home",            // 'home' | 'screen' | 'videos' | 'checkin' | 'beforetrade'
+                             // | 'journal' | 'pickaeway' | 'buildmatch' | 'match' | 'result' | 'replay'
     homeTab: "sections",     // 'sections' | 'liked' | 'saved'
     homeModule: 0,           // module index shown on home
     expanded: null,          // section id expanded into subsection deck
@@ -159,6 +163,8 @@
     journalPicker: null,     // null | 'list' | 'add' | 'edit' | 'delete' (inline)
     journalPickerId: null,   // account being edited/deleted inside the panel
     checkinResult: null,     // { go, noCount } — result shown in place of the rows
+    btResult: false,         // Before Trade Stage 1 summary shown in place of the rows
+    btStage2: false,         // Stage 2 placeholder shown in place of that summary
     rtExpand: true,          // round history open on the result/replay screens
     propOpen: false,         // prop firm P&L pill expanded (collapsed by default)
     propMode: null,          // null | 'add' | 'edit' | 'delete' inside that pill
@@ -200,13 +206,40 @@
     { id: "ready-to-trade", label: "Are you ready to trade?" },
   ];
 
-  /* Placeholders until the icon artwork lands — see the layout prompt. */
+  /* Placeholders until the icon artwork lands — see the layout prompt.
+     Only Before Trade has a screen behind it so far; the other three are still
+     inert, so they render as plain markers rather than buttons. */
   const CHECKIN_ACTIONS = [
     { label: "Start Day", icon: "cat-start-day" },
-    { label: "Before Trade", icon: "cat-before-trade" },
+    { label: "Before Trade", icon: "cat-before-trade", go: "bt-open" },
     { label: "After Trade", icon: "cat-after-trade" },
     { label: "Discipline Streak", icon: "cat-discipline-streak" },
   ];
+
+  /* Before Trade — Stage 1: Chart Read. Same one-tap-per-row shape as the
+     Start Day checklist, but the rows carry two or three named answers instead
+     of a fixed Yes/No, and the two "mark it" rows carry a single confirmation.
+     Stage 2 (strategy selection) is being built separately. */
+  const BT1_ITEMS = [
+    { id: "session", label: "Trading session", cols: 3, opts: [
+      ["asian", "Asian"], ["london", "London"], ["ny", "New York (Premarket)"]] },
+    { id: "pdh", label: "Mark previous day high", cols: 1, opts: [["marked", "Marked"]] },
+    { id: "pdl", label: "Mark previous day low", cols: 1, opts: [["marked", "Marked"]] },
+    { id: "htf", label: "Current market structure (HTF)", cols: 2, opts: [
+      ["bullish", "Bullish"], ["bearish", "Bearish"]] },
+    { id: "ltf", label: "Current lower timeframe structure", cols: 3, opts: [
+      ["uptrend", "Uptrend"], ["downtrend", "Downtrend"], ["consolidation", "Consolidation"]] },
+  ];
+  /* short forms for the summary — the full option labels are too long once
+     five of them are stacked in a key/value list */
+  const BT1_SHORT = {
+    session: "Session", pdh: "Previous day high", pdl: "Previous day low",
+    htf: "Market structure (HTF)", ltf: "Lower timeframe",
+  };
+  function bt1OptLabel(item, val) {
+    const hit = item.opts.find((o) => o[0] === val);
+    return hit ? hit[1] : "—";
+  }
 
   /* ---------------- progress helpers ---------------- */
 
@@ -813,19 +846,28 @@
         return `<button class="ci-submit${ready ? "" : " off"}"
           ${ready ? "" : "disabled"} data-ci-submit>${sent ? "Submitted" : "Submit"}</button>`;
       })()}`}
-      <div class="ci-actions">
-        ${CHECKIN_ACTIONS.map((a) => `
-          <div class="ci-action">
-            <span class="ci-orb" aria-hidden="true">
-              <img src="assets/nav-icons/${a.icon}@2x.png" alt=""></span>
-            <span class="ci-action-label">${esc(a.label)}</span>
-          </div>`).join("")}
-      </div>`;
+      ${checkinActionsHTML()}`;
     // the result stretches to fill the space the rows left behind, so it sits
     // centred in the card rather than clinging to the top of it
     cardScroll.classList.toggle("ci-resulting", !!res);
     cardScroll.scrollTop = 0;
     cardFooter.style.display = "none";
+  }
+
+  /* the four section orbs, shared by both checklist screens. The ones with no
+     screen yet stay spans so nothing looks tappable that isn't. */
+  function checkinActionsHTML() {
+    return `
+      <div class="ci-actions">
+        ${CHECKIN_ACTIONS.map((a) => {
+          const orb = `<span class="ci-orb" aria-hidden="true">
+              <img src="assets/nav-icons/${a.icon}@2x.png" alt=""></span>`;
+          return `<div class="ci-action">
+            ${a.go ? `<button class="ci-orb-btn" data-${a.go} aria-label="${esc(a.label)}">${orb}</button>` : orb}
+            <span class="ci-action-label">${esc(a.label)}</span>
+          </div>`;
+        }).join("")}
+      </div>`;
   }
 
   function openCheckin() {
@@ -834,6 +876,91 @@
     state.slideDir = 0;
     // coming back to Check-In always lands on the questions, not a stale result
     state.checkinResult = null;
+    closeOverlay();
+    render();
+  }
+
+  /* ---------------- Before Trade — Stage 1: Chart Read ----------------
+     Five one-tap rows. Submit is dead until all five are answered, and once
+     sent the rows are swapped for the summary inside the same card — same
+     treatment as the Start Day result, no overlay. */
+
+  function bt1Answered() {
+    return BT1_ITEMS.every((it) => store.beforeTrade[it.id]);
+  }
+
+  function bt1RowsHTML() {
+    return `
+      <h1 class="ci-heading">Before Trade · Stage 1</h1>
+      <div class="bt-sub">Chart Read</div>
+      <div class="bt-list">
+        ${BT1_ITEMS.map((it) => {
+          const picked = store.beforeTrade[it.id];
+          return `<div class="bt-row${picked ? " done" : ""}">
+            <div class="bt-q">${esc(it.label)}</div>
+            <div class="bt-opts bt-opts-${it.cols}">
+              ${it.opts.map(([v, label]) => `
+                <button class="bt-opt${picked === v ? " on" : ""}" data-bt="${it.id}" data-bt-val="${v}"
+                        aria-pressed="${picked === v}">${esc(label)}</button>`).join("")}
+            </div>
+          </div>`;
+        }).join("")}
+      </div>
+      ${(() => {
+        const ready = bt1Answered();
+        const sent = store.beforeTradeLog[todayKey()];
+        return `<button class="ci-submit${ready ? "" : " off"}"
+          ${ready ? "" : "disabled"} data-bt-submit>${sent ? "Submitted" : "Submit"}</button>`;
+      })()}`;
+  }
+
+  function bt1ResultHTML() {
+    const a = (store.beforeTradeLog[todayKey()] || {}).answers || store.beforeTrade;
+    return `<div class="ci-result ci-result-inline go">
+      <div class="ci-result-title">Stage 1 Complete</div>
+      <div class="ci-result-body">Chart read logged. Here's what you marked.</div>
+      <div class="bt-summary">
+        ${BT1_ITEMS.map((it) => `
+          <div class="bt-sum-row">
+            <span class="bt-sum-k">${esc(BT1_SHORT[it.id])}</span>
+            <span class="bt-sum-v">${esc(bt1OptLabel(it, a[it.id]))}</span>
+          </div>`).join("")}
+      </div>
+      <button class="btn-primary" data-bt-stage2>Continue to Stage 2</button>
+    </div>`;
+  }
+
+  /* Stage 2 is a separate build; until it lands this takes over the same
+     content area rather than opening anything over the top of it. */
+  function bt1Stage2HTML() {
+    return `<div class="ci-result ci-result-inline">
+      <div class="ci-result-title soon">Stage 2</div>
+      <div class="ci-result-body">Strategy selection and its follow-up questions are
+        being built separately. Your Stage 1 chart read is saved for today.</div>
+      <button class="btn-primary" data-bt-back>Back to Stage 1</button>
+      <button class="btn-secondary" data-bt-exit>Back to Check-In</button>
+    </div>`;
+  }
+
+  function renderBeforeTrade() {
+    barTitle.textContent = "Before Trade";
+    paintStreak();
+    const body = state.btStage2 ? bt1Stage2HTML()
+      : state.btResult ? bt1ResultHTML()
+      : bt1RowsHTML();
+    cardScroll.innerHTML = body + checkinActionsHTML();
+    cardScroll.classList.toggle("ci-resulting", !!(state.btResult || state.btStage2));
+    cardScroll.scrollTop = 0;
+    cardFooter.style.display = "none";
+  }
+
+  function openBeforeTrade() {
+    stopAudio();
+    state.view = "beforetrade";
+    state.slideDir = 0;
+    // arriving always lands on the questions, never a stale summary
+    state.btResult = false;
+    state.btStage2 = false;
     closeOverlay();
     render();
   }
@@ -3372,13 +3499,18 @@
     render();
   }
 
+  /* Start Day and Before Trade are the same section: same bar, same dock slot */
+  function inChecklist() {
+    return state.view === "checkin" || state.view === "beforetrade";
+  }
+
   /* every Pickæway view shares the same bar and dock slot */
   const PK_VIEWS = ["pickaeway", "buildmatch", "match", "result", "replay"];
   function inPickaeway() { return PK_VIEWS.indexOf(state.view) >= 0; }
 
   /* ring behind whichever dock icon matches the section you're in */
   function syncDockActive() {
-    $("navCheckin").classList.toggle("active", state.view === "checkin");
+    $("navCheckin").classList.toggle("active", inChecklist());
     $("navAdd").classList.toggle("active", state.view === "journal");
     $("navBattle").classList.toggle("active", inPickaeway());
     $("navPlay").classList.toggle("active", state.view === "videos");
@@ -3386,7 +3518,7 @@
 
   /* each of these views swaps its own bar in for the progress bar */
   function syncCheckinChrome() {
-    const on = state.view === "checkin";
+    const on = inChecklist();
     const jr = state.view === "journal";
     const pk = inPickaeway();
     checkinBar.classList.toggle("hidden", !on);
@@ -3405,14 +3537,15 @@
     // loop repainting a canvas that is no longer on screen
     if (state.view !== "match" && mk.on) mkAbort();
     const listy = state.view === "home" || state.view === "videos"
-      || state.view === "checkin" || state.view === "journal" || inPickaeway();
+      || inChecklist() || state.view === "journal" || inPickaeway();
     $("cardOuter").classList.toggle("outline-bg", listy);
-    if (state.view !== "checkin") cardScroll.classList.remove("ci-resulting");
+    if (!inChecklist()) cardScroll.classList.remove("ci-resulting");
     syncCheckinChrome();
     syncDockActive();
     if (state.view === "home") renderHome();
     else if (state.view === "videos") renderVideos();
     else if (state.view === "checkin") renderCheckin();
+    else if (state.view === "beforetrade") renderBeforeTrade();
     else if (state.view === "journal") renderJournal();
     else if (state.view === "pickaeway") renderPickaeway();
     else if (state.view === "buildmatch") renderBuildMatch();
@@ -3773,7 +3906,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-photo-pick],[data-photo-clear],[data-pk-replay],[data-pk-build],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-photo-pick],[data-photo-clear],[data-pk-replay],[data-pk-build],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -3848,15 +3981,27 @@
       save();
       renderCheckin();
     }
-    else if (t.hasAttribute("data-ci-before")) {
-      closeOverlay();
-      // Before Trade has no screen yet — this is the hand-off point for it
-      openOverlay(panelHead("Before Trade") + `
-        <div class="liked-empty">The pre-market checklist is coming soon. It runs
-          before the open and applies whichever session you trade — Asian, London
-          or New York.</div>
-        <button class="btn-primary" data-close>Got it</button>`);
+    else if (t.hasAttribute("data-ci-before") || t.hasAttribute("data-bt-open")) openBeforeTrade();
+    else if (t.dataset.bt) {
+      const id = t.dataset.bt, val = t.dataset.btVal;
+      // tapping the chosen answer clears it, same as the Start Day rows
+      if (store.beforeTrade[id] === val) delete store.beforeTrade[id];
+      else store.beforeTrade[id] = val;
+      save();
+      renderBeforeTrade();
     }
+    else if (t.hasAttribute("data-bt-submit")) {
+      if (!bt1Answered()) return;
+      const answers = {};
+      BT1_ITEMS.forEach((it) => { answers[it.id] = store.beforeTrade[it.id]; });
+      store.beforeTradeLog[todayKey()] = { answers, submittedAt: new Date().toISOString() };
+      save();
+      state.btResult = true;
+      renderBeforeTrade();
+    }
+    else if (t.hasAttribute("data-bt-stage2")) { state.btStage2 = true; renderBeforeTrade(); }
+    else if (t.hasAttribute("data-bt-back")) { state.btStage2 = false; renderBeforeTrade(); }
+    else if (t.hasAttribute("data-bt-exit")) openCheckin();
     else if (t.hasAttribute("data-photo-pick")) $("photoInput").click();
     else if (t.hasAttribute("data-crop-save")) savePhotoCrop();
     else if (t.hasAttribute("data-photo-clear")) {
