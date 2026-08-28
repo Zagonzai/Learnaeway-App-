@@ -47,6 +47,24 @@
   if (!store.journalOpen) store.journalOpen = {};       // account -> [positions still open]
   if (!store.dayProgress) store.dayProgress = {};       // YYYY-MM-DD -> { afterTrade, reviewCard }
   if (!store.journalBatches) store.journalBatches = {}; // account -> [one record per CSV import]
+  /* The profile record. `name`/`email`/`phone` were already written at sign-up
+     and are left alone; everything else is new. All of it is local — see the
+     Profile screen for what has to change once accounts are real. */
+  if (!store.profile) store.profile = {};
+  {
+    const p = store.profile;
+    if (p.firstName === undefined) p.firstName = (p.name || "").split(" ")[0] || "";
+    if (p.lastName === undefined) p.lastName = (p.name || "").split(" ").slice(1).join(" ");
+    if (p.username === undefined) p.username = "";
+    if (p.location === undefined) p.location = "";
+    if (p.bio === undefined) p.bio = "";
+    if (!Array.isArray(p.markets)) p.markets = [];
+    if (p.tradingSince === undefined) p.tradingSince = "";
+    if (p.investingSince === undefined) p.investingSince = "";
+    if (!p.links) p.links = {};
+    if (!Array.isArray(p.requestsSent)) p.requestsSent = [];
+    if (!Array.isArray(p.connections)) p.connections = [];
+  }
   if (store.profilePhoto === undefined) store.profilePhoto = "";  // data: URL, "" = use the default icon
   if (!store.pickaeway) store.pickaeway = {           // Reward Battle record
     rewardBalance: 0, wins: 0, losses: 0, draws: 0, accuracy: 0, speed: 0,
@@ -160,7 +178,11 @@
   let cloudTimer = null;
   function cloudPayload() {
     return {
-      profile: store.profile || { name: store.settings.name || "", email: (window.FB && FB.user() ? FB.user().email : "") || "", phone: "" },
+      profile: Object.assign({
+        name: store.settings.name || "",
+        email: (window.FB && FB.user() ? FB.user().email : "") || "",
+        phone: "",
+      }, store.profile || {}),
       lastScreen: store.lastScreen || "",
       visited: store.visited || {},
       liked: store.liked || {},
@@ -226,6 +248,9 @@
     journalDay: null,        // 'YYYY-MM-DD' — day view open in place of the calendar
     journalDelete: null,     // { kind:'manual'|'batch', id, acctId, label, count, days }
     journalReplace: null,    // { batchId, acctId } — CSV picker open to replace a batch
+    profileMode: "view",     // 'view' (what others would see) | 'edit'
+    profileNotice: null,     // { kind, text } — transient line under a Connect action
+    profileCodeDraft: "",    // what's typed in the connect-code box, kept across renders
     checkinResult: null,     // { go, noCount } — result shown in place of the rows
     btResult: false,         // Before Trade Stage 1 summary shown in place of the rows
     btStage2: false,         // Stage 2 placeholder shown in place of that summary
@@ -2362,7 +2387,8 @@
       save();
       syncProfilePhoto();
       closeOverlay();
-      if (state.view === "pickaeway") render();
+      // both screens paint the photo themselves and need it repainted
+      if (state.view === "pickaeway" || state.view === "profile") render();
     } catch (e) {
       // quota is the realistic failure here — the store is shared
       openOverlay(panelHead("Couldn't save") + `
@@ -4034,6 +4060,7 @@
     $("navAdd").classList.toggle("active", state.view === "journal");
     $("navBattle").classList.toggle("active", inPickaeway());
     $("navPlay").classList.toggle("active", state.view === "videos");
+    $("navProfile").classList.toggle("active", state.view === "profile");
   }
 
   /* each of these views swaps its own bar in for the progress bar */
@@ -4041,10 +4068,12 @@
     const on = inChecklist();
     const jr = state.view === "journal";
     const pk = inPickaeway();
+    const pr = state.view === "profile";
     checkinBar.classList.toggle("hidden", !on);
     $("journalBar").classList.toggle("hidden", !jr);
     $("pickBar").classList.toggle("hidden", !pk);
-    document.querySelectorAll(".bar")[1].classList.toggle("hidden", on || jr || pk);
+    $("profileBar").classList.toggle("hidden", !pr);
+    document.querySelectorAll(".bar")[1].classList.toggle("hidden", on || jr || pk || pr);
     // date/time runs on every screen, so the timer is never torn down; only
     // Check-In needs its streak repainted as the run changes
     if (on) paintStreak();
@@ -4057,7 +4086,7 @@
     // loop repainting a canvas that is no longer on screen
     if (state.view !== "match" && mk.on) mkAbort();
     const listy = state.view === "home" || state.view === "videos"
-      || inChecklist() || state.view === "journal" || inPickaeway();
+      || inChecklist() || state.view === "journal" || state.view === "profile" || inPickaeway();
     $("cardOuter").classList.toggle("outline-bg", listy);
     if (!inChecklist()) cardScroll.classList.remove("ci-resulting");
     syncCheckinChrome();
@@ -4072,6 +4101,7 @@
     else if (state.view === "match") renderMatch();
     else if (state.view === "result") renderResult();
     else if (state.view === "replay") renderReplay();
+    else if (state.view === "profile") renderProfile();
     else renderScreen();
   }
 
@@ -4207,32 +4237,391 @@
   }
 
   /* profile */
-  function openProfile() {
-    const ov = overallProgress();
-    const counts = {
-      liked: Object.keys(store.liked).length,
-      saved: Object.keys(store.saved).length,
-      notes: Object.keys(store.notes).filter((k) => store.notes[k] && store.notes[k].trim()).length,
-    };
-    const noteItems = Object.keys(store.notes)
-      .filter((k) => store.notes[k] && store.notes[k].trim() && screenIndex[k] !== undefined)
-      .map((k) => {
-        const e = screens[screenIndex[k]];
-        return `<div class="note-item">
-          <div class="note-where">${esc(e.sec.title)} · Screen ${e.ki + 1}</div>
-          <div class="note-text">${esc(store.notes[k])}</div>
-        </div>`;
-      }).join("");
-    const html = panelHead(store.settings.name ? `${store.settings.name}'s Profile` : "Your Profile") + `
-      <div class="profile-stat-grid">
-        <div class="profile-stat"><div class="num">${ov.pct}%</div><div class="lbl">Course complete</div></div>
-        <div class="profile-stat"><div class="num">${ov.done}</div><div class="lbl">Screens viewed</div></div>
-        <div class="profile-stat"><div class="num">${counts.liked}</div><div class="lbl">Liked</div></div>
-        <div class="profile-stat"><div class="num">${counts.saved}</div><div class="lbl">Saved</div></div>
+  /* ==================== Profile screen ====================
+     Two modes: `view` renders the profile the way another trader would see it
+     — only the links that are filled in, only the markets that are picked —
+     with the owner's own controls (Edit Profile, and the Connect section)
+     appended below it. `edit` swaps the same sections for their fields.
+
+     NOTHING HERE TALKS TO A BACKEND. Every value lives in store.profile in
+     localStorage and the connect code is generated on this device, so two
+     phones would happily mint the same one. What has to change when real
+     accounts exist is marked ==> BACKEND below. */
+
+  const PROFILE_BIO_MAX = 140;
+
+  const MARKET_FOCUS = [
+    { id: "stocks", label: "Stocks" },
+    { id: "options", label: "Options" },
+    { id: "futures", label: "Futures" },
+    { id: "crypto", label: "Crypto" },
+    { id: "prop", label: "Prop Firm" },
+    { id: "prediction", label: "Prediction" },
+    { id: "binary", label: "Binary Options" },
+  ];
+
+  const PROFILE_LINKS = [
+    { id: "x", label: "X", placeholder: "@handle or link" },
+    { id: "instagram", label: "Instagram", placeholder: "@handle or link" },
+    { id: "linkedin", label: "LinkedIn", placeholder: "linkedin.com/in/…" },
+    { id: "youtube", label: "YouTube", placeholder: "@channel or link" },
+    { id: "discord", label: "Discord", placeholder: "username or invite" },
+    { id: "website", label: "Website", placeholder: "yoursite.com" },
+  ];
+
+  /* Ambiguous characters left out so a code can be read down a phone line */
+  const CONNECT_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
+  const CONNECT_RE = /^AEW-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/;
+
+  /* ==> BACKEND: the code has to be issued by the server and unique across all
+     users. Generating it here means it is only unique on this device. */
+  function connectCode() {
+    const p = store.profile;
+    if (!p.connectCode) {
+      let c = "";
+      for (let i = 0; i < 6; i++) c += CONNECT_ALPHABET[Math.floor(Math.random() * CONNECT_ALPHABET.length)];
+      p.connectCode = `AEW-${c}`;
+      save();
+    }
+    return p.connectCode;
+  }
+
+  /* accepts "aew-ab12cd", "AB12CD" or with stray spaces; returns the canonical
+     form, or "" when it isn't a code at all */
+  function normaliseConnectCode(raw) {
+    let v = String(raw == null ? "" : raw).toUpperCase().replace(/[\s_]/g, "");
+    if (v.indexOf("AEW-") !== 0) v = `AEW-${v.replace(/^AEW/, "")}`;
+    return CONNECT_RE.test(v) ? v : "";
+  }
+
+  function profileName() {
+    const p = store.profile;
+    const n = `${p.firstName || ""} ${p.lastName || ""}`.trim();
+    return n || store.settings.name || "Your Profile";
+  }
+
+  function profileYears() {
+    const now = new Date().getFullYear();
+    const out = [];
+    for (let y = now; y >= now - 60; y--) out.push(String(y));
+    return out;
+  }
+
+  function marketLabel(id) {
+    const m = MARKET_FOCUS.find((x) => x.id === id);
+    return m ? m.label : id;
+  }
+
+  /* a link's display text: a bare handle stays a handle, a URL loses its
+     scheme and trailing slash so the row doesn't wrap */
+  function linkText(value) {
+    return String(value || "").trim()
+      .replace(/^https?:\/\//i, "").replace(/^www\./i, "").replace(/\/$/, "");
+  }
+  function linkHref(id, value) {
+    const v = String(value || "").trim();
+    if (/^https?:\/\//i.test(v)) return v;
+    if (v.indexOf("@") === 0) {
+      const handle = v.slice(1);
+      if (id === "x") return `https://x.com/${handle}`;
+      if (id === "instagram") return `https://instagram.com/${handle}`;
+      if (id === "youtube") return `https://youtube.com/@${handle}`;
+    }
+    if (id === "discord") return "";        // usernames aren't addressable
+    return `https://${v}`;
+  }
+
+  /* ---------------- view mode ---------------- */
+
+  function profileHeaderHTML() {
+    const p = store.profile;
+    return `
+      <div class="pr-head">
+        <button class="pr-photo" data-photo-pick aria-label="Change profile picture">
+          <img src="${store.profilePhoto || "assets/nav-icons/icon-user@2x.png"}"
+               class="${store.profilePhoto ? "shot" : ""}" alt="">
+          <span class="pr-photo-edit" aria-hidden="true">Edit</span>
+        </button>
+        <div class="pr-name">${esc(profileName())}</div>
+        ${p.username ? `<div class="pr-user">@${esc(p.username)}</div>` : ""}
+        ${p.location ? `<div class="pr-loc">${esc(p.location)}</div>` : ""}
+        ${p.bio ? `<div class="pr-bio">${esc(p.bio)}</div>` : ""}
+      </div>`;
+  }
+
+  function profileViewHTML() {
+    const p = store.profile;
+    const links = PROFILE_LINKS.filter((l) => (p.links[l.id] || "").trim());
+    return `
+      ${profileHeaderHTML()}
+
+      <div class="pr-sec">
+        <div class="pr-sec-head">Market Focus</div>
+        ${p.markets.length
+          ? `<div class="pr-tags">${p.markets.map((m) =>
+              `<span class="pr-tag">${esc(marketLabel(m))}</span>`).join("")}</div>`
+          : `<div class="pr-empty">No markets picked yet.</div>`}
       </div>
-      ${noteItems ? `<div class="set-label" style="margin-top:18px">Your notes (${counts.notes})</div>${noteItems}` : ""}
-      <button class="btn-primary" data-close>Close</button>`;
-    openOverlay(html);
+
+      <div class="pr-sec">
+        <div class="pr-sec-head">Experience</div>
+        ${p.tradingSince || p.investingSince ? `
+          <div class="pr-facts">
+            ${p.tradingSince ? `<div class="pr-fact"><span>Trading since</span><b>${esc(p.tradingSince)}</b></div>` : ""}
+            ${p.investingSince ? `<div class="pr-fact"><span>Investing since</span><b>${esc(p.investingSince)}</b></div>` : ""}
+          </div>` : `<div class="pr-empty">No years set yet.</div>`}
+      </div>
+
+      <div class="pr-sec">
+        <div class="pr-sec-head">Links</div>
+        ${links.length ? `<div class="pr-links">
+          ${links.map((l) => {
+            const href = linkHref(l.id, p.links[l.id]);
+            const inner = `<span class="pr-link-k">${esc(l.label)}</span>
+              <span class="pr-link-v">${esc(linkText(p.links[l.id]))}</span>`;
+            // an unaddressable handle still shows, it just isn't a link
+            return href
+              ? `<a class="pr-link" href="${esc(href)}" target="_blank" rel="noopener noreferrer">${inner}</a>`
+              : `<span class="pr-link">${inner}</span>`;
+          }).join("")}
+        </div>` : `<div class="pr-empty">No links added yet.</div>`}
+      </div>
+
+      <div class="pr-owner">
+        <div class="pr-owner-note">Only visible to you</div>
+        <button class="ad-save" data-pr-edit>Edit Profile</button>
+        ${profileConnectHTML()}
+      </div>`;
+  }
+
+  /* ---------------- connect ----------------
+     ==> BACKEND: sending a request has to POST to the server, which resolves
+     the code to a user, records a pending request and notifies them. Right now
+     the code is only checked for shape and the request is pushed onto a local
+     list, so nothing reaches anybody. */
+  function profileConnectHTML() {
+    const p = store.profile;
+    const n = state.profileNotice;
+    return `
+      <div class="pr-sec pr-connect">
+        <div class="pr-sec-head">Connect</div>
+        <div class="pr-code-cap">Your connect code</div>
+        <div class="pr-code" id="prCode">${esc(connectCode())}</div>
+        <button class="pr-code-btn" data-pr-share>${
+          navigator.share ? "Share Code" : "Copy Code"}</button>
+
+        <div class="pr-code-sub">Have someone else's code? Send them a request.</div>
+        <input class="mt-input pr-code-input" id="prCodeInput" type="text"
+               inputmode="latin" autocapitalize="characters" autocomplete="off" spellcheck="false"
+               maxlength="10" placeholder="AEW-XXXXXX" value="${esc(state.profileCodeDraft || "")}">
+        <button class="ad-save" data-pr-request>Send Request</button>
+        ${n ? `<div class="pr-notice ${esc(n.kind)}">${esc(n.text)}</div>` : ""}
+        ${p.requestsSent.length ? `
+          <div class="pr-sent-head">Requests sent</div>
+          ${p.requestsSent.map((r) => `
+            <div class="pr-sent">
+              <span>${esc(r.code)}</span>
+              <span class="pr-sent-state">Pending</span>
+            </div>`).join("")}` : ""}
+        <div class="pr-stub">Not wired up yet — requests are held on this device
+          only and reach nobody until accounts are live.</div>
+      </div>`;
+  }
+
+  /* ---------------- edit mode ---------------- */
+
+  function profileEditHTML() {
+    const p = store.profile;
+    const years = profileYears();
+    const left = PROFILE_BIO_MAX - (p.bio || "").length;
+    return `
+      ${profileHeaderHTML()}
+      <form id="prForm" autocomplete="off" novalidate>
+        <div class="pr-sec">
+          <div class="pr-sec-head">Header</div>
+          <div class="mt-row">
+            <label class="mt-label">First name
+              <input class="mt-input" name="firstName" type="text" value="${esc(p.firstName)}"></label>
+            <label class="mt-label">Last name
+              <input class="mt-input" name="lastName" type="text" value="${esc(p.lastName)}"></label>
+          </div>
+          <label class="mt-label">Username
+            <input class="mt-input" name="username" type="text" placeholder="without the @" value="${esc(p.username)}"></label>
+          <label class="mt-label">State / Country
+            <input class="mt-input" name="location" type="text" placeholder="Texas, USA" value="${esc(p.location)}"></label>
+          <label class="mt-label">Bio
+            <textarea class="mt-input pr-bio-input" name="bio" id="prBio"
+                      maxlength="${PROFILE_BIO_MAX}" rows="3">${esc(p.bio)}</textarea>
+            <span class="pr-count ${left <= 20 ? "low" : ""}" id="prBioCount">${left} left</span>
+          </label>
+        </div>
+
+        <div class="pr-sec">
+          <div class="pr-sec-head">Market Focus</div>
+          <div class="pr-checks">
+            ${MARKET_FOCUS.map((m) => `
+              <button type="button" class="bt-opt${p.markets.indexOf(m.id) >= 0 ? " on" : ""}"
+                      data-pr-market="${m.id}"
+                      aria-pressed="${p.markets.indexOf(m.id) >= 0}">${esc(m.label)}</button>`).join("")}
+          </div>
+        </div>
+
+        <div class="pr-sec">
+          <div class="pr-sec-head">Experience</div>
+          <label class="mt-label">Trading since
+            <select class="mt-input" name="tradingSince">
+              <option value="">—</option>
+              ${years.map((y) => `<option value="${y}"${p.tradingSince === y ? " selected" : ""}>${y}</option>`).join("")}
+            </select>
+          </label>
+          <label class="mt-label">Investing since <span class="pr-opt">optional</span>
+            <select class="mt-input" name="investingSince">
+              <option value="">Skip</option>
+              ${years.map((y) => `<option value="${y}"${p.investingSince === y ? " selected" : ""}>${y}</option>`).join("")}
+            </select>
+          </label>
+        </div>
+
+        <div class="pr-sec">
+          <div class="pr-sec-head">Links</div>
+          <div class="pr-sec-note">Leave a field empty and it stays off your profile.</div>
+          ${PROFILE_LINKS.map((l) => `
+            <label class="mt-label">${esc(l.label)}
+              <input class="mt-input" name="link_${l.id}" type="text"
+                     placeholder="${esc(l.placeholder)}" value="${esc(p.links[l.id] || "")}"></label>`).join("")}
+        </div>
+
+        <button type="button" class="ad-save" data-pr-save>Save Profile</button>
+        <button type="button" class="ad-back" data-pr-cancel>Cancel</button>
+      </form>`;
+  }
+
+  function renderProfile() {
+    barTitle.textContent = "Learnæway";
+    const nameEl = $("profileBarName");
+    if (nameEl) nameEl.textContent = state.profileMode === "edit" ? "Edit Profile" : profileName();
+    cardScroll.innerHTML = state.profileMode === "edit" ? profileEditHTML() : profileViewHTML();
+    cardScroll.scrollTop = prKeepScroll ? prScrollTop : 0;
+    prKeepScroll = false;
+    cardFooter.style.display = "none";
+    wireProfileForm();
+  }
+
+  let prKeepScroll = false;
+  let prScrollTop = 0;
+  function renderProfileInPlace() {
+    prScrollTop = cardScroll.scrollTop;
+    prKeepScroll = true;
+    renderProfile();
+  }
+
+  /* the bio counter updates as it is typed, without re-rendering the field out
+     from under the cursor */
+  function wireProfileForm() {
+    const bio = $("prBio");
+    const count = $("prBioCount");
+    if (bio && count) {
+      bio.addEventListener("input", () => {
+        const left = PROFILE_BIO_MAX - bio.value.length;
+        count.textContent = `${left} left`;
+        count.classList.toggle("low", left <= 20);
+      });
+    }
+  }
+
+  /* the form's own fields are the source of truth while editing: a market
+     toggle re-renders, so whatever is typed has to be carried across */
+  function readProfileForm() {
+    const f = $("prForm");
+    if (!f) return;
+    const get = (n) => { const el = f.querySelector(`[name="${n}"]`); return el ? el.value.trim() : ""; };
+    const p = store.profile;
+    p.firstName = get("firstName");
+    p.lastName = get("lastName");
+    p.username = get("username").replace(/^@/, "");
+    p.location = get("location");
+    p.bio = get("bio").slice(0, PROFILE_BIO_MAX);
+    p.tradingSince = get("tradingSince");
+    p.investingSince = get("investingSince");
+    PROFILE_LINKS.forEach((l) => { p.links[l.id] = get(`link_${l.id}`); });
+    // the display name the rest of the app already uses
+    const full = `${p.firstName} ${p.lastName}`.trim();
+    p.name = full;
+    if (full) store.settings.name = full;
+  }
+
+  /* Share sheet where the device has one, clipboard otherwise, and a manual
+     select as the last resort — clipboard writes need a secure context and
+     silently reject in a few embedded browsers. */
+  function shareConnectCode(btn) {
+    const code = connectCode();
+    const done = (text) => {
+      state.profileNotice = { kind: "ok", text };
+      renderProfileInPlace();
+    };
+    if (navigator.share) {
+      navigator.share({ title: "My Learnæway connect code", text: code })
+        .then(() => done("Code shared."))
+        .catch(() => { /* dismissed — say nothing */ });
+      return;
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(code)
+        .then(() => done("Code copied."))
+        .catch(() => selectConnectCode());
+      return;
+    }
+    selectConnectCode();
+  }
+
+  function selectConnectCode() {
+    const el = $("prCode");
+    if (!el) return;
+    const r = document.createRange();
+    r.selectNodeContents(el);
+    const sel = window.getSelection();
+    sel.removeAllRanges();
+    sel.addRange(r);
+    state.profileNotice = { kind: "warn", text: "Copy isn't available here — the code is selected for you." };
+    renderProfileInPlace();
+  }
+
+  /* ==> BACKEND: this is where the request has to go to the server. Today it
+     only checks the code's shape and records it locally, so the other person
+     never hears about it. Sending to a real service also needs: rejecting a
+     code that doesn't belong to anyone, rejecting your own code (checked
+     below, but only against this device's), and de-duplicating a request that
+     is already pending on the server rather than only in this list. */
+  function sendConnectRequest() {
+    const input = $("prCodeInput");
+    if (!input) return;
+    const raw = input.value;
+    state.profileCodeDraft = raw;
+    const code = normaliseConnectCode(raw);
+    const notice = (kind, text) => {
+      state.profileNotice = { kind, text };
+      renderProfileInPlace();
+    };
+    if (!raw.trim()) return notice("err", "Enter a code first.");
+    if (!code) return notice("err", "That isn't a valid code. They look like AEW-4KP7XQ.");
+    if (code === connectCode()) return notice("err", "That's your own code.");
+    if (store.profile.requestsSent.some((r) => r.code === code)) {
+      return notice("warn", `A request to ${code} is already pending.`);
+    }
+    store.profile.requestsSent.push({ code, at: new Date().toISOString(), state: "pending" });
+    save();
+    state.profileCodeDraft = "";
+    notice("ok", `Request sent to ${code}.`);
+  }
+
+  function openProfile() {
+    stopAudio();
+    state.view = "profile";
+    state.slideDir = 0;
+    state.profileMode = "view";
+    state.profileNotice = null;
+    closeOverlay();
+    render();
   }
 
   /* notes — per-screen editor on learning screens, browsable list elsewhere.
@@ -4417,6 +4806,14 @@
   $("navBattle").addEventListener("click", openPickaeway);
   $("navProfile").addEventListener("click", openProfile);
   $("btnPickHome").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
+  $("btnProfileHome").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
+  $("btnProfileEdit").addEventListener("click", () => {
+    if (state.view !== "profile") return;
+    if (state.profileMode === "edit") readProfileForm();
+    state.profileMode = state.profileMode === "edit" ? "view" : "edit";
+    state.profileNotice = null;
+    renderProfile();
+  });
   $("btnPickProfile").addEventListener("click", openProfile);
   $("photoInput").addEventListener("change", (e) => {
     readProfilePhoto(e.target.files && e.target.files[0]);
@@ -4426,7 +4823,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pk-replay],[data-pk-build],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -4578,13 +4975,43 @@
     else if (t.hasAttribute("data-bt-stage2")) { state.btStage2 = true; renderBeforeTrade(); }
     else if (t.hasAttribute("data-bt-back")) { state.btStage2 = false; renderBeforeTrade(); }
     else if (t.hasAttribute("data-bt-exit")) openCheckin();
+    else if (t.hasAttribute("data-pr-edit")) {
+      state.profileMode = "edit";
+      state.profileNotice = null;
+      renderProfile();
+    }
+    else if (t.hasAttribute("data-pr-cancel")) {
+      // nothing typed since the last save is kept — the fields are re-read
+      // from the stored record on the way back in
+      state.profileMode = "view";
+      renderProfile();
+    }
+    else if (t.hasAttribute("data-pr-save")) {
+      readProfileForm();
+      save();
+      syncProfilePhoto();
+      state.profileMode = "view";
+      renderProfile();
+    }
+    else if (t.dataset.prMarket) {
+      // keep whatever is half-typed in the other fields across the re-render
+      readProfileForm();
+      const id = t.dataset.prMarket;
+      const at = store.profile.markets.indexOf(id);
+      if (at >= 0) store.profile.markets.splice(at, 1);
+      else store.profile.markets.push(id);
+      save();
+      renderProfileInPlace();
+    }
+    else if (t.hasAttribute("data-pr-share")) shareConnectCode(t);
+    else if (t.hasAttribute("data-pr-request")) sendConnectRequest();
     else if (t.hasAttribute("data-photo-pick")) $("photoInput").click();
     else if (t.hasAttribute("data-crop-save")) savePhotoCrop();
     else if (t.hasAttribute("data-photo-clear")) {
       store.profilePhoto = "";
       save();
       syncProfilePhoto();
-      openSettings();
+      if (state.view === "profile") renderProfile(); else openSettings();
     }
     else if (t.hasAttribute("data-pk-build")) openBuildMatch();
     else if (t.hasAttribute("data-pk-replay")) {

@@ -3058,6 +3058,302 @@ select.mt-input {
   .bm-rect { font-size: calc(12px * var(--fs)); }
 }
 
+/* ===================== PROFILE SCREEN =====================
+   View mode renders what another trader would see; edit mode swaps the same
+   sections for their fields. Reuses the app's form and pill vocabulary rather
+   than introducing a third one. */
+.pr-head { text-align: center; margin-bottom: 20px; }
+.pr-photo {
+  position: relative;
+  display: block;
+  width: 104px;
+  height: 104px;
+  margin: 2px auto 12px;
+  border-radius: 50%;
+  background: url("../assets/buttons-icon/profile-ring@2x.png") center / contain no-repeat;
+}
+.pr-photo img {
+  position: absolute;
+  left: 50%;
+  top: 50%;
+  width: 74%;
+  height: 74%;
+  transform: translate(-50%, -50%);
+  object-fit: contain;
+}
+.pr-photo img.shot { border-radius: 50%; object-fit: cover; }
+.pr-photo-edit {
+  position: absolute;
+  left: 50%;
+  bottom: -2px;
+  transform: translateX(-50%);
+  padding: 2px 12px;
+  border-radius: 999px;
+  border: 1px solid rgba(61,223,255,.5);
+  background: rgba(5,9,22,.9);
+  font-size: calc(9px * var(--fs));
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: var(--cyan);
+}
+.pr-photo:active { transform: scale(.97); filter: brightness(1.2); }
+.pr-name {
+  font-size: calc(21px * var(--fs));
+  font-weight: 800;
+  color: #F2FBFF;
+  line-height: 1.2;
+}
+.pr-user {
+  font-size: calc(13px * var(--fs));
+  font-weight: 700;
+  color: var(--cyan);
+  margin-top: 2px;
+}
+.pr-loc {
+  font-size: calc(11.5px * var(--fs));
+  font-weight: 600;
+  letter-spacing: .08em;
+  text-transform: uppercase;
+  color: #8FA9C6;
+  margin-top: 4px;
+}
+.pr-bio {
+  font-size: calc(13px * var(--fs));
+  line-height: 1.5;
+  color: #D9EAFB;
+  margin: 10px auto 0;
+  max-width: 300px;
+}
+
+.pr-sec { margin-bottom: 22px; }
+.pr-sec-head {
+  font-size: calc(10.5px * var(--fs));
+  font-weight: 800;
+  letter-spacing: .18em;
+  text-transform: uppercase;
+  color: #8FA9C6;
+  margin: 0 0 10px 2px;
+}
+.pr-sec-note {
+  font-size: calc(11px * var(--fs));
+  line-height: 1.45;
+  color: #8FB4D8;
+  margin: -4px 0 10px 2px;
+}
+.pr-empty {
+  font-size: calc(12px * var(--fs));
+  color: #7D93AC;
+  padding: 4px 2px;
+}
+.pr-opt {
+  font-size: calc(9.5px * var(--fs));
+  font-weight: 600;
+  letter-spacing: .06em;
+  color: #6E86A0;
+  text-transform: none;
+}
+
+/* picked markets, as tags */
+.pr-tags { display: flex; flex-wrap: wrap; gap: 7px; }
+.pr-tag {
+  padding: 7px 14px;
+  border-radius: 999px;
+  border: 1px solid rgba(61,223,255,.5);
+  background: rgba(61,223,255,.08);
+  font-size: calc(11.5px * var(--fs));
+  font-weight: 700;
+  color: var(--cyan);
+}
+.pr-checks { display: flex; flex-wrap: wrap; gap: 8px; }
+.pr-checks .bt-opt { flex: 1 1 auto; min-width: 30%; min-height: 42px; padding: 8px 12px; }
+
+.pr-facts { display: flex; flex-direction: column; gap: 7px; }
+.pr-fact {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 10px 13px;
+  border-radius: 12px;
+  background: rgba(9,13,30,.6);
+  border: 1px solid rgba(61,223,255,.2);
+}
+.pr-fact span { font-size: calc(11.5px * var(--fs)); color: #8FB4D8; }
+.pr-fact b {
+  font-size: calc(14px * var(--fs));
+  font-weight: 800;
+  color: #F2FBFF;
+  font-variant-numeric: tabular-nums;
+}
+
+.pr-links { display: flex; flex-direction: column; gap: 7px; }
+.pr-link {
+  display: flex;
+  align-items: baseline;
+  justify-content: space-between;
+  gap: 12px;
+  padding: 10px 13px;
+  border-radius: 12px;
+  background: rgba(9,13,30,.6);
+  border: 1px solid rgba(61,223,255,.2);
+  text-decoration: none;
+}
+a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
+.pr-link-k {
+  flex: 0 0 auto;
+  font-size: calc(11px * var(--fs));
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: #8FB4D8;
+}
+.pr-link-v {
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  font-size: calc(12.5px * var(--fs));
+  font-weight: 700;
+  color: var(--cyan);
+  text-align: right;
+}
+
+/* the two blocks nobody else would see */
+.pr-owner { border-top: 1px solid rgba(120,150,180,.22); padding-top: 16px; }
+.pr-owner-note {
+  font-size: calc(10px * var(--fs));
+  font-weight: 700;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+  color: #6E86A0;
+  text-align: center;
+  margin-bottom: 12px;
+}
+
+.pr-connect { margin-top: 22px; text-align: center; }
+.pr-connect .pr-sec-head { text-align: left; }
+.pr-code-cap {
+  font-size: calc(10px * var(--fs));
+  font-weight: 700;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: #8FB4D8;
+}
+.pr-code {
+  font-size: calc(30px * var(--fs));
+  font-weight: 800;
+  letter-spacing: .1em;
+  color: var(--teal);
+  text-shadow: 0 0 20px rgba(47,230,194,.6);
+  font-variant-numeric: tabular-nums;
+  margin: 4px 0 12px;
+  user-select: all;
+  -webkit-user-select: all;
+}
+.pr-code-btn {
+  display: block;
+  width: 78%;
+  max-width: 300px;
+  margin: 0 auto 20px;
+  padding: 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(61,223,255,.45);
+  background: rgba(10,16,34,.72);
+  font-size: calc(12.5px * var(--fs));
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: #C7D9EF;
+}
+.pr-code-btn:active { border-color: var(--cyan); filter: brightness(1.3); transform: scale(.98); }
+.pr-code-sub {
+  font-size: calc(12px * var(--fs));
+  line-height: 1.45;
+  color: #9FC0E0;
+  margin-bottom: 10px;
+}
+.pr-code-input { text-align: center; letter-spacing: .16em; text-transform: uppercase; }
+.pr-notice {
+  margin-top: 12px;
+  padding: 9px 12px;
+  border-radius: 10px;
+  font-size: calc(11.5px * var(--fs));
+  line-height: 1.4;
+  border: 1px solid;
+}
+.pr-notice.ok { color: var(--teal); border-color: rgba(47,230,194,.45); background: rgba(47,230,194,.07); }
+.pr-notice.warn { color: #FFC46B; border-color: rgba(255,196,107,.4); background: rgba(255,196,107,.07); }
+.pr-notice.err { color: #FF6B9D; border-color: rgba(255,61,154,.45); background: rgba(255,61,154,.07); }
+
+.pr-sent-head {
+  margin: 18px 0 8px;
+  font-size: calc(10px * var(--fs));
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: #8FA9C6;
+  text-align: left;
+}
+.pr-sent {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  padding: 9px 13px;
+  margin-bottom: 6px;
+  border-radius: 12px;
+  background: rgba(9,13,30,.6);
+  border: 1px solid rgba(61,223,255,.2);
+  font-size: calc(12px * var(--fs));
+  font-weight: 700;
+  color: #EAF6FF;
+  letter-spacing: .06em;
+}
+.pr-sent-state {
+  font-size: calc(10px * var(--fs));
+  font-weight: 800;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: #FFC46B;
+}
+/* says plainly that this half of the screen is scaffolding */
+.pr-stub {
+  margin-top: 14px;
+  padding: 10px 12px;
+  border-radius: 10px;
+  border: 1px dashed rgba(120,150,180,.4);
+  font-size: calc(10.5px * var(--fs));
+  line-height: 1.45;
+  color: #7D93AC;
+  text-align: left;
+}
+
+/* bio: a textarea in the app's input skin, with the count under its corner */
+.pr-bio-input {
+  height: auto;
+  min-height: 82px;
+  padding: 11px 14px;
+  line-height: 1.45;
+  resize: none;
+}
+.pr-count {
+  display: block;
+  margin-top: 5px;
+  text-align: right;
+  font-size: calc(10.5px * var(--fs));
+  font-weight: 700;
+  letter-spacing: .06em;
+  text-transform: none;
+  color: #6E86A0;
+}
+.pr-count.low { color: #FFC46B; }
+
+@media (max-width: 370px) {
+  .pr-code { font-size: calc(26px * var(--fs)); }
+  .pr-checks .bt-opt { min-width: 46%; }
+}
+
 /* ===================== JOURNAL DAY VIEW =====================
    Opens in place of the calendar when a day is tapped. Reuses the prop-firm
    list's item plate so a trade row reads the same wherever it appears. */
