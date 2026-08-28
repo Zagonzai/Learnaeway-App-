@@ -2467,16 +2467,27 @@ select.mt-input {
 
 /* ===================== PICKÆWAY (Reward Battle) ===================== */
 
-/* 5-day check-in streak. Lives in the Trade Day Check-In bar, the one bar that
-   shows this instead of the date/time. Filled days use the delivered disc; the
-   rest use the same thin outline ring as the profile frame, left to right. */
+/* Four section dots. Lives in the Trade Day Check-In bar, the one bar that
+   shows this instead of the date/time. Completed sections use the delivered
+   disc; the rest use the same thin outline ring as the profile frame, left to
+   right, bracketed by Start and End. */
 .streak-row {
   flex: 1 1 auto;
   min-width: 0;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 10px;
+  gap: 9px;
+}
+/* same weight and colour as the unfilled dot's ring, so the row reads as one
+   piece rather than text bolted onto circles */
+.streak-cap {
+  font-size: calc(10px * var(--fs));
+  font-weight: 700;
+  letter-spacing: .1em;
+  text-transform: uppercase;
+  color: rgba(199,236,244,.7);
+  white-space: nowrap;
 }
 /* Pickæway's second bar carries the game name where the streak used to sit */
 .pick-name {
@@ -2491,6 +2502,7 @@ select.mt-input {
   text-overflow: ellipsis;
 }
 .streak-dot {
+  flex: 0 0 auto;
   width: 18px;
   height: 18px;
   border-radius: 50%;
@@ -3487,6 +3499,9 @@ select.mt-input {
 .rv-detail-grid b.r { color: #FF8A4C; }
 
 @media (max-width: 370px) {
+  .streak-row { gap: 7px; }
+  .streak-cap { font-size: calc(9px * var(--fs)); letter-spacing: .06em; }
+  .streak-dot { width: 16px; height: 16px; }
   .bt-opts { gap: 6px; }
   .bt-opt { font-size: calc(11px * var(--fs)); padding: 6px 4px; }
   .bt-q { font-size: calc(11.5px * var(--fs)); }

@@ -45,10 +45,22 @@
   if (!store.propLedger) store.propLedger = {};         // prop account -> [evaluation/reset/payout]
   if (!store.journalTrades) store.journalTrades = {};   // account -> [per-trade records]
   if (!store.journalOpen) store.journalOpen = {};       // account -> [positions still open]
+  if (!store.dayProgress) store.dayProgress = {};       // YYYY-MM-DD -> { afterTrade, reviewCard }
   if (store.profilePhoto === undefined) store.profilePhoto = "";  // data: URL, "" = use the default icon
   if (!store.pickaeway) store.pickaeway = {           // Reward Battle record
     rewardBalance: 0, wins: 0, losses: 0, draws: 0, accuracy: 0, speed: 0,
   };
+  // sessions were renamed: Asian -> Asia, London -> Europe
+  const SESSION_RENAME = { asian: "asia", london: "europe" };
+  let sessionsRenamed = false;
+  if (store.beforeTrade && SESSION_RENAME[store.beforeTrade.session]) {
+    store.beforeTrade.session = SESSION_RENAME[store.beforeTrade.session];
+    sessionsRenamed = true;
+  }
+  Object.keys(store.beforeTradeLog || {}).forEach((day) => {
+    const a = store.beforeTradeLog[day] && store.beforeTradeLog[day].answers;
+    if (a && SESSION_RENAME[a.session]) { a.session = SESSION_RENAME[a.session]; sessionsRenamed = true; }
+  });
   // ledger entries used to be anonymous positions in an array; edit and delete
   // need to name one, so backfill an id on anything written before that
   let stamped = false;
@@ -71,7 +83,7 @@
   });
   // written straight out rather than through save(): the cloud-sync timer it
   // touches is declared further down and would still be in its dead zone here
-  if (renamed || stamped) { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) { /* quota */ } }
+  if (renamed || stamped || sessionsRenamed) { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) { /* quota */ } }
   function todayKey() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -223,7 +235,7 @@
      Stage 2 (strategy selection) is being built separately. */
   const BT1_ITEMS = [
     { id: "session", label: "Trading session", cols: 3, opts: [
-      ["asian", "Asian"], ["london", "London"], ["ny", "New York (Premarket)"]] },
+      ["asia", "Asia"], ["europe", "Europe"], ["ny", "New York"]] },
     { id: "pdh", label: "Mark previous day high", cols: 1, opts: [["marked", "Marked"]] },
     { id: "pdl", label: "Mark previous day low", cols: 1, opts: [["marked", "Marked"]] },
     { id: "htf", label: "Current market structure (HTF)", cols: 2, opts: [
@@ -824,10 +836,31 @@
     </div>`;
   }
 
+  /* Rebuilding a checklist in place — answering a row, expanding something —
+     must leave the reader where they were. Only arriving at the screen starts
+     at the top. Same mechanism the journal uses. */
+  let ciKeepScroll = false;
+  let ciScrollTop = 0;
+  function renderChecklistInPlace(fn) {
+    ciScrollTop = cardScroll.scrollTop;
+    ciKeepScroll = true;
+    fn();
+  }
+
+  /* Start Day stays on its result for the rest of the calendar day: the
+     answers are already logged, so the state is rebuilt from that log rather
+     than held in memory, and it survives navigating away and back. */
+  function checkinResultFor(dayKey) {
+    const rec = (store.checkinLog || {})[dayKey];
+    if (!rec || !rec.answers) return null;
+    const noCount = CHECKIN_ITEMS.filter((it) => rec.answers[it.id] === "no").length;
+    return { go: noCount < 3, noCount };
+  }
+
   function renderCheckin() {
     barTitle.textContent = "Trade Day Checkin";
     paintStreak();
-    const res = state.checkinResult;
+    const res = state.checkinResult || checkinResultFor(todayKey());
     cardScroll.innerHTML = `
       ${res ? checkinResultHTML(res) : `
       <h1 class="ci-heading">Check List Before Trading Day</h1>
@@ -851,7 +884,8 @@
     // the result stretches to fill the space the rows left behind, so it sits
     // centred in the card rather than clinging to the top of it
     cardScroll.classList.toggle("ci-resulting", !!res);
-    cardScroll.scrollTop = 0;
+    cardScroll.scrollTop = ciKeepScroll ? ciScrollTop : 0;
+    ciKeepScroll = false;
     cardFooter.style.display = "none";
   }
 
@@ -875,8 +909,9 @@
     stopAudio();
     state.view = "checkin";
     state.slideDir = 0;
-    // coming back to Check-In always lands on the questions, not a stale result
-    state.checkinResult = null;
+    // once today's check-in is submitted the screen belongs to the result, so
+    // coming back lands there; the questions return on the next calendar day
+    state.checkinResult = checkinResultFor(todayKey());
     closeOverlay();
     render();
   }
@@ -951,7 +986,8 @@
       : bt1RowsHTML();
     cardScroll.innerHTML = body + checkinActionsHTML();
     cardScroll.classList.toggle("ci-resulting", !!(state.btResult || state.btStage2));
-    cardScroll.scrollTop = 0;
+    cardScroll.scrollTop = ciKeepScroll ? ciScrollTop : 0;
+    ciKeepScroll = false;
     cardFooter.style.display = "none";
   }
 
@@ -971,43 +1007,71 @@
      read zero until matches are actually played; Build Match sets a battle up
      and Match Replay reopens the last one. */
 
-  const STREAK_DOTS = 5;
-
   function dayKeyOf(d) {
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
   }
 
-  /* Consecutive submitted check-in days, counting back from today. Today not
-     being done yet doesn't break the run — the day isn't over. */
-  function checkinStreak() {
-    const log = store.checkinLog || {};
+  /* The four sections a full trading day is made of. Each one fills its own
+     dot the moment it is submitted, and stays filled for the rest of that
+     calendar day — nothing here resets mid-day. Start Day and Before Trade
+     read their own submitted logs; the two that have no screen yet read
+     store.dayProgress, which is the hook they will write to when built. */
+  const DAY_SECTIONS = [
+    { id: "startDay", label: "Start Day", done: (k) => !!(store.checkinLog || {})[k] },
+    { id: "beforeTrade", label: "Before Trade", done: (k) => !!(store.beforeTradeLog || {})[k] },
+    { id: "afterTrade", label: "After Trade", done: (k) => !!(store.dayProgress[k] || {}).afterTrade },
+    { id: "reviewCard", label: "Review Streak Report Card", done: (k) => !!(store.dayProgress[k] || {}).reviewCard },
+  ];
+
+  function sectionsDone(dayKey) {
+    return DAY_SECTIONS.filter((s) => s.done(dayKey)).length;
+  }
+  /* all four sections submitted — a full discipline streak day */
+  function dayComplete(dayKey) {
+    return sectionsDone(dayKey) === DAY_SECTIONS.length;
+  }
+
+  /* Consecutive fully-completed days, counting back from today. Today not
+     being finished yet doesn't break the run — the day isn't over. */
+  function disciplineStreak() {
     const d = new Date();
-    if (!log[dayKeyOf(d)]) d.setDate(d.getDate() - 1);
+    if (!dayComplete(dayKeyOf(d))) d.setDate(d.getDate() - 1);
     let n = 0;
-    while (log[dayKeyOf(d)]) { n++; d.setDate(d.getDate() - 1); }
+    while (dayComplete(dayKeyOf(d))) { n++; d.setDate(d.getDate() - 1); }
     return n;
   }
 
-  /* Which FX session is open right now, by UTC hour. */
-  function currentSession() {
-    const h = new Date().getUTCHours();
-    if (h >= 13 && h < 22) return "NEW YORK";
-    if (h >= 8 && h < 13) return "LONDON";
-    if (h < 8) return "TOKYO";
-    return "SYDNEY";
+  /* The hour in New York, whatever the device's own timezone and whether or
+     not the US is on daylight saving. */
+  function easternHour(d) {
+    const h = parseInt(d.toLocaleString("en-US", {
+      timeZone: "America/New_York", hour: "numeric", hour12: false }), 10);
+    return isNaN(h) ? d.getUTCHours() : h % 24;
   }
 
-  /* Five circles: filled for each day of the current run, outline for the
-     rest. Same left-to-right fill as the Discipline Streak section. Lives in
-     the Trade Day Check-In bar — the one bar that shows this instead of the
-     date/time. */
+  /* Three sessions, by New York time. New York opens at 7am Eastern so the
+     premarket counts as part of it; Europe runs from the London open to that;
+     everything else is Asia. */
+  function currentSession() {
+    const h = easternHour(new Date());
+    if (h >= 7 && h < 17) return "NEW YORK";
+    if (h >= 3 && h < 7) return "EUROPE";
+    return "ASIA";
+  }
+
+  /* Four circles in the Trade Day Check-In bar, one per section, filled as
+     each is completed today — left to right, Start through End. Filled uses
+     the delivered disc; the rest keep the thin outline ring. */
   function paintStreak() {
-    const run = Math.min(checkinStreak(), STREAK_DOTS);
+    const key = todayKey();
     const el = $("checkinStreak");
     if (!el) return;
-    el.innerHTML = Array.from({ length: STREAK_DOTS }, (_, i) =>
-      `<span class="streak-dot${i < run ? " on" : ""}"></span>`).join("");
-    el.setAttribute("aria-label", `Check-in streak: ${run} of ${STREAK_DOTS} days`);
+    const dots = DAY_SECTIONS.map((sec) =>
+      `<span class="streak-dot${sec.done(key) ? " on" : ""}" title="${esc(sec.label)}"></span>`).join("");
+    el.innerHTML = `<span class="streak-cap">Start</span>${dots}<span class="streak-cap">End</span>`;
+    el.setAttribute("aria-label",
+      `Today's sections: ${sectionsDone(key)} of ${DAY_SECTIONS.length} complete — ${
+        DAY_SECTIONS.map((s) => `${s.label} ${s.done(key) ? "done" : "not done"}`).join(", ")}`);
   }
 
   /* session · time · date, painted onto the header video */
@@ -4127,7 +4191,9 @@
       const sel = activeAccount();
       if (sel) state.journalTab = sel.category;
       save();
-      setPicker(null);         // picking an account collapses the dropdown
+      // the panel stays open with the tick moved onto the chosen row: closing
+      // it here used to throw the reader back up the page mid-selection
+      setPicker("list");
     }
     // the chevron toggles: tapping it again closes the panel it opened
     else if (t.hasAttribute("data-jpicktoggle")) setPicker(state.journalPicker ? null : "list");
@@ -4181,7 +4247,7 @@
       if (store.checklist[id] === val) delete store.checklist[id];
       else store.checklist[id] = val;
       save();
-      renderCheckin();
+      renderChecklistInPlace(renderCheckin);
     }
     else if (t.hasAttribute("data-ci-before") || t.hasAttribute("data-bt-open")) openBeforeTrade();
     else if (t.dataset.bt) {
@@ -4190,7 +4256,7 @@
       if (store.beforeTrade[id] === val) delete store.beforeTrade[id];
       else store.beforeTrade[id] = val;
       save();
-      renderBeforeTrade();
+      renderChecklistInPlace(renderBeforeTrade);
     }
     else if (t.hasAttribute("data-bt-submit")) {
       if (!bt1Answered()) return;
