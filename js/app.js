@@ -44,6 +44,7 @@
   if (!store.journalActive) store.journalActive = "__all";   // "__all" = combined view
   if (!store.propLedger) store.propLedger = {};         // prop account -> [evaluation/reset/payout]
   if (!store.journalTrades) store.journalTrades = {};   // account -> [per-trade records]
+  if (!store.journalOpen) store.journalOpen = {};       // account -> [positions still open]
   if (store.profilePhoto === undefined) store.profilePhoto = "";  // data: URL, "" = use the default icon
   if (!store.pickaeway) store.pickaeway = {           // Reward Battle record
     rewardBalance: 0, wins: 0, losses: 0, draws: 0, accuracy: 0, speed: 0,
@@ -2323,9 +2324,186 @@
     return trades;
   }
 
+  /* ---------------- Robinhood Activity Report ----------------
+     Columns: Activity Date, Process Date, Settle Date, Instrument, Description,
+     Trans Code, Quantity, Price, Amount.
+
+     Unlike Tradovate this is an account statement, not a trade blotter: cash
+     events, corporate actions and option legs all share the file, and a
+     completed option trade is spread across two rows that have to be paired
+     up. */
+
+  /* "$63.34" -> 63.34 · "($114.03)" -> -114.03 · "$3,081.48" -> 3081.48 */
+  function parseRhMoney(v) {
+    const str = String(v == null ? "" : v).trim();
+    if (!str) return 0;
+    const n = parseFloat(str.replace(/[$,\s()]/g, "")) || 0;
+    return str.indexOf("(") >= 0 ? -n : n;
+  }
+
+  /* Cash and corporate-action rows. None of these is an execution:
+       CDIV cash dividend · SLIP stock lending income · ACH cash transfer
+       OEXP option expiry (no fill price) · SXCH spin-off / exchange */
+  const RH_SKIP_CODES = ["CDIV", "SLIP", "ACH", "OEXP", "SXCH"];
+  const RH_OPEN_CODES = { BTO: "Long", STO: "Short" };
+  const RH_CLOSE_CODES = { STC: "Long", BTC: "Short" };
+  /* Dividend reinvestment buys are funded by a dividend, not a decision, so
+     they are noise in a trading journal. Flip this to true to keep them. */
+  const RH_INCLUDE_DRIP = false;
+
+  /* "AAPL 1/17/2025 Call $200.00" -> the contract that row belongs to */
+  function parseRhContract(instrument, description) {
+    const m = String(description == null ? "" : description)
+      .match(/(\d{1,2}\/\d{1,2}\/\d{2,4})\s+(Call|Put)\s+\$?([\d,]+(?:\.\d+)?)/i);
+    if (!m) return null;
+    const exp = mdyToDayKey(m[1]) || m[1];
+    const type = m[2].toLowerCase() === "call" ? "Call" : "Put";
+    const strike = parseFloat(m[3].replace(/,/g, "")) || 0;
+    const sym = (instrument || "").trim();
+    return {
+      key: `${sym}|${exp}|${strike}|${type}`,
+      label: `${sym} ${m[1]} ${strike}${type[0]}`,
+      underlying: sym, exp, strike, type,
+    };
+  }
+
+  function rhNum(v) {
+    const n = parseFloat(String(v == null ? "" : v).replace(/[^0-9.\-]/g, ""));
+    return isNaN(n) ? 0 : n;
+  }
+
+  /* FIFO within a contract: the oldest open pairs off against the oldest
+     close. Quantities need not line up, so an open lot can be consumed by
+     several closes and vice versa; the Amount is pro-rated across the matched
+     quantity rather than recomputed from price, because Robinhood has already
+     netted fees into it. */
+  function fifoMatchOptions(legs) {
+    const groups = {};
+    legs.forEach((l) => (groups[l.contract.key] || (groups[l.contract.key] = [])).push(l));
+    const trades = [], open = [];
+    let orphanCloses = 0;
+    Object.keys(groups).forEach((k) => {
+      const list = groups[k].slice().sort((a, b) =>
+        (a.day < b.day ? -1 : a.day > b.day ? 1 : a.row - b.row));
+      const lots = [];
+      list.forEach((leg) => {
+        if (leg.opening) { lots.push({ leg, left: leg.qty }); return; }
+        let need = leg.qty;
+        while (need > 1e-9 && lots.length) {
+          const lot = lots[0];
+          const take = Math.min(need, lot.left);
+          const entryAmt = lot.leg.qty ? lot.leg.amount * (take / lot.leg.qty) : 0;
+          const exitAmt = leg.qty ? leg.amount * (take / leg.qty) : 0;
+          trades.push({
+            // a trade belongs to the day it was closed, as with Tradovate
+            day: leg.day,
+            openDay: lot.leg.day,
+            pnl: Math.round((entryAmt + exitAmt) * 100) / 100,
+            symbol: leg.contract.label,
+            qty: String(Math.round(take * 1e6) / 1e6),
+            side: RH_CLOSE_CODES[leg.code] || "Long",
+            entry: lot.leg.price,
+            exit: leg.price,
+            kind: "option",
+          });
+          lot.left -= take;
+          need -= take;
+          if (lot.left <= 1e-9) lots.shift();
+        }
+        // a close whose open predates the export window: no entry price and no
+        // way to compute P&L, so it is reported rather than guessed at
+        if (need > 1e-9) orphanCloses++;
+      });
+      lots.forEach((lot) => open.push({
+        symbol: lot.leg.contract.label,
+        side: RH_OPEN_CODES[lot.leg.code] || "Long",
+        qty: Math.round(lot.left * 1e6) / 1e6,
+        day: lot.leg.day,
+        price: lot.leg.price,
+      }));
+    });
+    return { trades, open, orphanCloses };
+  }
+
+  function parseRobinhoodExport(rows) {
+    const head = rows[0].map((h) => h.trim());
+    const col = (name) => head.indexOf(name);
+    const iDate = col("Activity Date"), iInst = col("Instrument"), iDesc = col("Description");
+    const iCode = col("Trans Code"), iQty = col("Quantity"), iPrice = col("Price"), iAmt = col("Amount");
+    if (iDate < 0 || iCode < 0 || iAmt < 0) {
+      throw new Error("That doesn't look like a Robinhood activity report — no Activity Date / Trans Code / Amount columns.");
+    }
+
+    // a dividend reinvestment lands as a fractional Buy on the same instrument
+    // and day as the cash dividend that paid for it
+    const cdiv = {};
+    for (let r = 1; r < rows.length; r++) {
+      if ((rows[r][iCode] || "").trim() !== "CDIV") continue;
+      const d = mdyToDayKey(rows[r][iDate]);
+      if (d) cdiv[`${(rows[r][iInst] || "").trim()}|${d}`] = true;
+    }
+    const isDrip = (inst, day, code, desc, qty) =>
+      code === "DRIP"
+      || /dividend\s*re-?invest/i.test(desc)
+      || (code === "Buy" && cdiv[`${inst}|${day}`] && Math.abs(qty - Math.round(qty)) > 1e-9);
+
+    const optionLegs = [], stock = [];
+    let skipped = 0, drip = 0;
+
+    for (let r = 1; r < rows.length; r++) {
+      const row = rows[r];
+      const code = (row[iCode] || "").trim();
+      const day = mdyToDayKey(row[iDate]);
+      // the trailing disclaimer has no date and no transaction code
+      if (!day || !code) { skipped++; continue; }
+      if (RH_SKIP_CODES.indexOf(code) >= 0) { skipped++; continue; }
+
+      const inst = (row[iInst] || "").trim();
+      const desc = iDesc >= 0 ? (row[iDesc] || "") : "";
+      const qty = Math.abs(rhNum(row[iQty]));
+      const amount = parseRhMoney(row[iAmt]);
+      const price = iPrice >= 0 ? parseRhMoney(row[iPrice]) : 0;
+
+      if (isDrip(inst, day, code, desc, qty)) {
+        drip++;
+        if (!RH_INCLUDE_DRIP) { skipped++; continue; }
+      }
+
+      const opening = Object.prototype.hasOwnProperty.call(RH_OPEN_CODES, code);
+      const closing = Object.prototype.hasOwnProperty.call(RH_CLOSE_CODES, code);
+      if (opening || closing) {
+        const contract = parseRhContract(inst, desc);
+        // an option code with an unreadable description can't be paired to
+        // anything, so it is counted out rather than mis-grouped
+        if (!contract) { skipped++; continue; }
+        optionLegs.push({ row: r, code, day, qty, price, amount, contract, opening });
+        continue;
+      }
+
+      // shares: each row stands on its own, no pairing
+      if (code === "Buy" || code === "Sell") {
+        stock.push({
+          day, pnl: amount, symbol: inst || (desc || "").trim(),
+          qty: String(qty), side: code, entry: price, kind: "stock",
+        });
+        continue;
+      }
+      skipped++;   // anything else this file carries is not a trade
+    }
+
+    const matched = fifoMatchOptions(optionLegs);
+    return {
+      trades: matched.trades.concat(stock),
+      open: matched.open,
+      skipped, drip, orphanCloses: matched.orphanCloses,
+    };
+  }
+
   const BROKER_PARSERS = [
     { id: "tradovate", label: "Tradovate", parse: parseTradovateExport,
       detect: (head) => head.indexOf("soldTimestamp") >= 0 && head.indexOf("buyFillId") >= 0 },
+    { id: "robinhood", label: "Robinhood", parse: parseRobinhoodExport,
+      detect: (head) => head.indexOf("Trans Code") >= 0 && head.indexOf("Activity Date") >= 0 },
   ];
 
   /* broker-agnostic: normalised trades -> per-day totals */
@@ -2346,8 +2524,16 @@
     if (rows.length < 2) throw new Error("That file has no rows to import.");
     const head = rows[0].map((h) => h.trim());
     const broker = BROKER_PARSERS.find((b) => b.detect(head)) || BROKER_PARSERS[0];
-    const trades = broker.parse(rows);
-    if (!trades.length) throw new Error("No trades found in that file.");
+    // a parser may return a bare trade list, or a report carrying open
+    // positions and counts of what it left out
+    const parsed = broker.parse(rows);
+    const report = Array.isArray(parsed) ? { trades: parsed } : parsed;
+    const trades = report.trades || [];
+    if (!trades.length) {
+      throw new Error(report.open && report.open.length
+        ? "No completed trades in that file — every position in it is still open."
+        : "No trades found in that file.");
+    }
     const days = aggregateTrades(trades);
     // import wins over sample/manual figures for the days it covers — it's the
     // real broker record. Change here if manual entry should take precedence.
@@ -2363,8 +2549,16 @@
     addTradeRecords(account.id, trades.map((t) => ({
       date: t.day, symbol: t.symbol || "", side: t.side || "Long", qty: t.qty || "", pnl: t.pnl,
     })));
+    // positions with no closing leg are not trades — they are held, so they are
+    // kept apart from the P&L record. Re-importing replaces the account's list
+    // rather than stacking duplicates on it.
+    if (report.open) store.journalOpen[account.id] = report.open;
     save();
-    return { broker: broker.label, trades: trades.length, days: Object.keys(days).sort() };
+    return {
+      broker: broker.label, trades: trades.length, days: Object.keys(days).sort(),
+      open: (report.open || []).length, skipped: report.skipped || 0,
+      drip: report.drip || 0, orphanCloses: report.orphanCloses || 0,
+    };
   }
 
   /* ---------------- accounts ----------------
@@ -3481,9 +3675,17 @@
       const span = res.days.length === 1
         ? new Date(+last[0], +last[1] - 1, +last[2]).toLocaleDateString("en-US", { month: "long", day: "numeric", year: "numeric" })
         : `${res.days.length} days`;
+      // an account statement carries plenty that isn't a trade; say what was
+      // left out rather than silently dropping it
+      const notes = [];
+      if (res.open) notes.push(`${res.open} position${res.open === 1 ? "" : "s"} still open — held back from the P&amp;L record.`);
+      if (res.drip) notes.push(`${res.drip} dividend reinvestment buy${res.drip === 1 ? "" : "s"} skipped as noise.`);
+      if (res.orphanCloses) notes.push(`${res.orphanCloses} closing leg${res.orphanCloses === 1 ? "" : "s"} had no opening row in this file, so no P&amp;L could be worked out for ${res.orphanCloses === 1 ? "it" : "them"}.`);
+      if (res.skipped) notes.push(`${res.skipped} non-trade row${res.skipped === 1 ? "" : "s"} ignored (dividends, transfers, expiries, corporate actions).`);
       openOverlay(panelHead("Import Complete") + `
         <div class="liked-empty">${res.trades} ${res.broker} trade${res.trades === 1 ? "" : "s"}
-          imported across ${span}.<br>Day totals on the calendar now use the broker record.</div>
+          imported across ${span}.<br>Day totals on the calendar now use the broker record.
+          ${notes.length ? `<br><br>${notes.join("<br>")}` : ""}</div>
         <button class="btn-primary" data-close>Done</button>`);
       input.value = "";
     };

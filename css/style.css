@@ -1825,8 +1825,11 @@ select.mt-input {
 .j-stat-btn.on .ci-orb { filter: brightness(1.3) drop-shadow(0 0 10px rgba(61,223,255,.75)); }
 .j-stat-btn.on .ci-action-label { color: var(--cyan); }
 .ci-orb { display: grid; place-items: center; }
-/* half the size they used to render at — the rings were swallowed by them */
-.ci-orb img { width: 28%; height: 28%; object-fit: contain; }
+.ci-orb img { width: 56%; height: 56%; object-fit: contain; }
+/* half the size they used to render at — the rings were swallowed by them.
+   Scoped to the checklist screens: the journal's stat orbs reuse .ci-orb and
+   were not part of that change. */
+.ci-actions .ci-orb img { width: 28%; height: 28%; }
 
 /* four stat placeholders — same frame asset as the check-in category buttons */
 .j-stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 16px 0 2px; }
