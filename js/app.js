@@ -46,10 +46,58 @@
   if (!store.journalTrades) store.journalTrades = {};   // account -> [per-trade records]
   if (!store.journalOpen) store.journalOpen = {};       // account -> [positions still open]
   if (!store.dayProgress) store.dayProgress = {};       // YYYY-MM-DD -> { afterTrade, reviewCard }
+  if (!store.journalBatches) store.journalBatches = {}; // account -> [one record per CSV import]
   if (store.profilePhoto === undefined) store.profilePhoto = "";  // data: URL, "" = use the default icon
   if (!store.pickaeway) store.pickaeway = {           // Reward Battle record
     rewardBalance: 0, wins: 0, losses: 0, draws: 0, accuracy: 0, speed: 0,
   };
+  /* Trades used to be anonymous and untagged. The day view has to say which
+     came from a CSV and which were typed in, and delete either, so both need
+     an id and a source. A record is manual when the account's manual ledger
+     holds an entry for the same day and amount (matched off one-for-one so a
+     day with two identical manual trades tags both); everything else on an
+     account that has imported before belongs to a stand-in batch for whatever
+     was imported before this version. */
+  let tagged = false;
+  function jtId() { return `jt-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`; }
+  Object.keys(store.journalTrades || {}).forEach((acctId) => {
+    const legacyDays = Object.keys(store.journalImport[acctId] || {});
+    let legacyBatch = null;
+    // one manual entry can only account for one trade record
+    const pool = {};
+    Object.keys(store.journalManual[acctId] || {}).forEach((day) => {
+      pool[day] = (store.journalManual[acctId][day] || []).map((e) => e.pnl);
+    });
+    (store.journalTrades[acctId] || []).forEach((t) => {
+      if (!t.id) { t.id = jtId(); tagged = true; }
+      if (t.source) return;
+      const hit = (pool[t.date] || []).indexOf(t.pnl);
+      if (hit >= 0) { pool[t.date].splice(hit, 1); t.source = "manual"; }
+      else if (legacyDays.length) {
+        if (!legacyBatch) {
+          legacyBatch = `batch-legacy-${acctId}`;
+          const list = store.journalBatches[acctId] || (store.journalBatches[acctId] = []);
+          if (!list.some((b) => b.id === legacyBatch)) {
+            list.push({ id: legacyBatch, broker: "CSV", file: "", at: "", days: legacyDays.slice(), trades: 0 });
+          }
+        }
+        t.source = "import";
+        t.batch = legacyBatch;
+      } else t.source = "manual";
+      tagged = true;
+    });
+    const b = (store.journalBatches[acctId] || []).find((x) => x.id === legacyBatch);
+    if (b) b.trades = (store.journalTrades[acctId] || []).filter((t) => t.batch === legacyBatch).length;
+  });
+  // manual ledger entries need naming too, so one can be deleted on its own
+  Object.keys(store.journalManual || {}).forEach((acctId) => {
+    Object.keys(store.journalManual[acctId] || {}).forEach((day) => {
+      (store.journalManual[acctId][day] || []).forEach((e) => {
+        if (!e.id) { e.id = jtId(); tagged = true; }
+      });
+    });
+  });
+
   // sessions were renamed: Asian -> Asia, London -> Europe
   const SESSION_RENAME = { asian: "asia", london: "europe" };
   let sessionsRenamed = false;
@@ -83,7 +131,7 @@
   });
   // written straight out rather than through save(): the cloud-sync timer it
   // touches is declared further down and would still be in its dead zone here
-  if (renamed || stamped || sessionsRenamed) { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) { /* quota */ } }
+  if (renamed || stamped || sessionsRenamed || tagged) { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) { /* quota */ } }
   function todayKey() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -175,6 +223,9 @@
     journalRange: "1M",
     journalPicker: null,     // null | 'list' | 'add' | 'edit' | 'delete' (inline)
     journalPickerId: null,   // account being edited/deleted inside the panel
+    journalDay: null,        // 'YYYY-MM-DD' — day view open in place of the calendar
+    journalDelete: null,     // { kind:'manual'|'batch', id, acctId, label, count, days }
+    journalReplace: null,    // { batchId, acctId } — CSV picker open to replace a batch
     checkinResult: null,     // { go, noCount } — result shown in place of the rows
     btResult: false,         // Before Trade Stage 1 summary shown in place of the rows
     btStage2: false,         // Stage 2 placeholder shown in place of that summary
@@ -2583,7 +2634,7 @@
     return days;
   }
 
-  function importCsvText(text) {
+  function importCsvText(text, fileName, replaceBatchId) {
     const rows = parseCsv(text);
     if (rows.length < 2) throw new Error("That file has no rows to import.");
     const head = rows[0].map((h) => h.trim());
@@ -2607,10 +2658,21 @@
         ? "Select a single account before importing — the combined view can't receive trades."
         : "Add an account before importing trades.");
     }
+    // A replacement drops the batch it supersedes first, but only now that the
+    // file has parsed cleanly — a bad file must never cost the user the import
+    // they already had.
+    if (replaceBatchId) deleteImportBatch(account.id, replaceBatchId);
     const acct = store.journalImport[account.id] || (store.journalImport[account.id] = {});
     Object.keys(days).forEach((k) => { acct[k] = days[k]; });
+    const batch = {
+      id: `batch-${Date.now().toString(36)}-${Math.random().toString(36).slice(2, 7)}`,
+      broker: broker.label, file: fileName || "", at: new Date().toISOString(),
+      days: Object.keys(days).sort(), trades: trades.length,
+    };
+    (store.journalBatches[account.id] || (store.journalBatches[account.id] = [])).push(batch);
     // the calendar needs day totals; the P&L views need each trade
     addTradeRecords(account.id, trades.map((t) => ({
+      id: jtId(), source: "import", batch: batch.id,
       date: t.day, symbol: t.symbol || "", side: t.side || "Long", qty: t.qty || "", pnl: t.pnl,
     })));
     // positions with no closing leg are not trades — they are held, so they are
@@ -2622,6 +2684,7 @@
       broker: broker.label, trades: trades.length, days: Object.keys(days).sort(),
       open: (report.open || []).length, skipped: report.skipped || 0,
       drip: report.drip || 0, orphanCloses: report.orphanCloses || 0,
+      replaced: !!replaceBatchId,
     };
   }
 
@@ -2747,6 +2810,54 @@
   function addTradeRecords(accountId, records) {
     const list = store.journalTrades[accountId] || (store.journalTrades[accountId] = []);
     records.forEach((r) => list.push(r));
+  }
+
+  /* ---------------- deleting what a day holds ----------------
+     Trades live in two places by design: journalTrades carries every trade for
+     the P&L views, while the calendar reads day totals from journalImport
+     (imports) or journalManual (typed in). A delete has to leave both
+     consistent, so the day totals for anything touched are rebuilt from what
+     survives rather than patched. */
+
+  function rebuildImportDays(accountId, dayKeys) {
+    const acct = store.journalImport[accountId] || (store.journalImport[accountId] = {});
+    const trades = store.journalTrades[accountId] || [];
+    dayKeys.forEach((k) => {
+      const left = trades.filter((t) => t.source === "import" && t.date === k);
+      if (!left.length) { delete acct[k]; return; }
+      acct[k] = left.reduce((a, t) => {
+        a.pnl += t.pnl; a.trades++;
+        if (t.pnl > 0) a.wins++; else if (t.pnl < 0) a.losses++; else a.flat++;
+        return a;
+      }, { pnl: 0, trades: 0, wins: 0, losses: 0, flat: 0 });
+      acct[k].pnl = Math.round(acct[k].pnl * 100) / 100;
+    });
+  }
+
+  /* every trade that came in on one CSV, and the day totals it wrote */
+  function deleteImportBatch(accountId, batchId) {
+    const list = store.journalTrades[accountId] || [];
+    const touched = {};
+    store.journalTrades[accountId] = list.filter((t) => {
+      if (t.batch !== batchId) return true;
+      touched[t.date] = true;
+      return false;
+    });
+    const rec = (store.journalBatches[accountId] || []).find((b) => b.id === batchId);
+    // a legacy batch predates per-trade tagging, so fall back to its own day list
+    (rec && rec.days ? rec.days : []).forEach((k) => { touched[k] = true; });
+    rebuildImportDays(accountId, Object.keys(touched));
+    store.journalBatches[accountId] = (store.journalBatches[accountId] || []).filter((b) => b.id !== batchId);
+  }
+
+  function deleteManualTrade(accountId, entryId, day) {
+    const man = store.journalManual[accountId] || {};
+    if (man[day]) {
+      man[day] = man[day].filter((e) => e.id !== entryId);
+      if (!man[day].length) delete man[day];
+    }
+    store.journalTrades[accountId] = (store.journalTrades[accountId] || [])
+      .filter((t) => t.id !== entryId);
   }
 
   /* every trade across the accounts in scope, newest first, within the range */
@@ -3140,17 +3251,145 @@
   /* A day holds only what the user imported or logged — there is no generated
      data any more, so an untouched day is simply blank and every new account
      starts at zero. */
+  /* ---------------- day view ----------------
+     Tapping a day on the calendar opens what that day is actually made of.
+     Typed-in trades can be deleted one at a time; imported ones are shown
+     grouped under the CSV that brought them, read-only, because correcting an
+     import means re-importing a corrected file rather than hand-editing rows
+     the broker produced. */
+
+  function dayEntries(accts, key) {
+    const manual = [], imported = {};
+    accts.forEach((a) => {
+      ((store.journalManual[a.id] || {})[key] || []).forEach((e) => {
+        manual.push({ acct: a, entry: e });
+      });
+      (store.journalTrades[a.id] || []).forEach((t) => {
+        if (t.source !== "import" || t.date !== key) return;
+        const bid = t.batch || "__untagged";
+        (imported[bid] || (imported[bid] = { acct: a, batch: null, trades: [] })).trades.push(t);
+      });
+      (store.journalBatches[a.id] || []).forEach((b) => {
+        if (imported[b.id]) imported[b.id].batch = b;
+      });
+    });
+    return { manual, batches: Object.keys(imported).map((k) => Object.assign({ id: k }, imported[k])) };
+  }
+
+  function dayLabel(key) {
+    const p = String(key || "").split("-");
+    if (p.length !== 3) return key || "";
+    return new Date(+p[0], +p[1] - 1, +p[2])
+      .toLocaleDateString("en-US", { weekday: "short", month: "long", day: "numeric", year: "numeric" });
+  }
+
+  function dayViewHTML(accts, key) {
+    const { manual, batches } = dayEntries(accts, key);
+    const info = (() => {
+      const p = key.split("-");
+      return scopeDay(accts, +p[0], +p[1] - 1, +p[2]);
+    })();
+    const total = info ? info.pnl : 0;
+    const many = accts.length > 1;
+
+    if (state.journalDelete) {
+      const d = state.journalDelete;
+      return `<div class="jd">
+        ${jdHeadHTML(key, total, info)}
+        <div class="pf-form-head">${d.kind === "batch" ? "Delete Import" : "Delete Trade"}</div>
+        <div class="ad-confirm">${d.kind === "batch"
+          ? `Delete every trade that came in on <b>${esc(d.label)}</b>?<br>
+             ${d.count} trade${d.count === 1 ? "" : "s"} across ${d.days} day${d.days === 1 ? "" : "s"}
+             go with it, and those day totals go back to whatever else is logged.`
+          : `Delete <b>${esc(d.label)}</b>?<br>This trade is removed from the day and from your P&amp;L.`}
+          This can't be undone.</div>
+        <button class="ad-danger" data-jdelok>Delete</button>
+        <button class="ad-back" data-jdelcancel>Cancel</button>
+      </div>`;
+    }
+
+    return `<div class="jd">
+      ${jdHeadHTML(key, total, info)}
+      ${!manual.length && !batches.length
+        ? `<div class="pf-empty">Nothing logged on this day.</div>` : ""}
+
+      ${manual.length ? `
+        <div class="jd-sec">
+          <div class="jd-sec-head"><span>Manually Entered</span><span class="jd-tag manual">Manual</span></div>
+          ${manual.map(({ acct, entry }) => `
+            <div class="pf-item">
+              <div class="pf-item-main jd-static">
+                <span class="pf-item-txt">
+                  <span class="pf-item-kind">${esc(entry.asset || entry.platform || "Trade")}</span>
+                  <span class="pf-item-meta">${many ? esc(accountLabel(acct)) + " · " : ""}${
+                    entry.entry || entry.exit ? `in ${esc(entry.entry || "—")} · out ${esc(entry.exit || "—")}` : "typed in"}</span>
+                </span>
+                <span class="pf-item-amt ${entry.pnl < 0 ? "neg" : "pos"}">${money(entry.pnl, true)}</span>
+              </div>
+              <button class="pf-item-del" data-jdelmanual="${esc(entry.id || "")}"
+                      data-jdelacctid="${esc(acct.id)}" aria-label="Delete this trade"></button>
+            </div>`).join("")}
+        </div>` : ""}
+
+      ${batches.map((b) => {
+        const label = b.batch
+          ? `${b.batch.broker}${b.batch.file ? " · " + b.batch.file : ""}`
+          : "Imported CSV";
+        const when = b.batch && b.batch.at
+          ? new Date(b.batch.at).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })
+          : "";
+        return `
+        <div class="jd-sec">
+          <div class="jd-sec-head">
+            <span>${esc(label)}</span><span class="jd-tag imported">Imported</span>
+          </div>
+          <div class="jd-batch-meta">${when ? `Imported ${esc(when)} · ` : ""}${
+            b.batch ? `${b.batch.trades} trade${b.batch.trades === 1 ? "" : "s"} in this file` : "from an earlier import"}
+            <br>Imported trades aren't edited here — re-upload a corrected file instead.</div>
+          ${b.trades.map((t) => `
+            <div class="pf-item">
+              <div class="pf-item-main jd-static">
+                <span class="pf-item-txt">
+                  <span class="pf-item-kind">${esc(t.symbol || "Trade")}</span>
+                  <span class="pf-item-meta">${many ? esc(accountLabel(b.acct)) + " · " : ""}${esc(t.side || "")}${
+                    t.qty ? " · " + esc(String(t.qty)) : ""}</span>
+                </span>
+                <span class="pf-item-amt ${t.pnl < 0 ? "neg" : "pos"}">${money(t.pnl, true)}</span>
+              </div>
+            </div>`).join("")}
+          <div class="jd-batch-acts">
+            <button class="jd-act" data-jreplace="${esc(b.id)}" data-jdelacctid="${esc(b.acct.id)}">Re-upload / Replace CSV</button>
+            <button class="jd-act danger" data-jdelbatch="${esc(b.id)}" data-jdelacctid="${esc(b.acct.id)}">Delete Import</button>
+          </div>
+        </div>`;
+      }).join("")}
+    </div>`;
+  }
+
+  function jdHeadHTML(key, total, info) {
+    return `
+      <div class="jd-head">
+        <button class="jd-back" data-jdayback aria-label="Back to the calendar">‹</button>
+        <div class="jd-title">
+          <span class="jd-date">${esc(dayLabel(key))}</span>
+          <span class="jd-total ${total < 0 ? "neg" : "pos"}">${info ? money(total, true) : "No trades"}</span>
+        </div>
+      </div>`;
+  }
+
+  /* Imported day totals and typed-in trades add together. This used to let an
+     import shadow any manual trade on the same day, which the day view makes
+     plainly wrong: it lists both but the header only counted one. */
   function journalDay(id, y, m, d) {
     const key = dayKey(y, m, d);
     const imp = (store.journalImport[id] || {})[key];
-    if (imp) return { pnl: imp.pnl, wins: imp.wins, losses: imp.losses };
     const man = ((store.journalManual[id] || {})[key] || []);
-    if (!man.length) return null;
+    if (!imp && !man.length) return null;
     const t = man.reduce((a, x) => {
       a.pnl += x.pnl;
       if (x.pnl > 0) a.wins++; else if (x.pnl < 0) a.losses++;
       return a;
-    }, { pnl: 0, wins: 0, losses: 0 });
+    }, imp ? { pnl: imp.pnl, wins: imp.wins, losses: imp.losses } : { pnl: 0, wins: 0, losses: 0 });
     return { pnl: Math.round(t.pnl * 100) / 100, wins: t.wins, losses: t.losses };
   }
 
@@ -3276,10 +3515,11 @@
           continue;
         }
         const cls = cell.pnl === null ? "" : (cell.pnl < 0 ? "loss real" : cell.pnl > 0 ? "profit real" : "real");
-        grid += `<div class="j-day ${cls}">
+        const dk = dayKey(cell.d.getFullYear(), cell.d.getMonth(), cell.d.getDate());
+        grid += `<button class="j-day ${cls}" data-jday="${dk}">
           <span class="j-date">${cell.d.getDate()}</span>
           ${cell.pnl === null ? "" : `<span class="j-pnl ${cell.pnl < 0 ? "neg" : "pos"}">${money(cell.pnl)}</span>`}
-        </div>`;
+        </button>`;
       }
     }
 
@@ -3304,8 +3544,9 @@
         <div class="j-grid">${grid}</div>
       </div>`;
 
-    cardScroll.innerHTML = tabs + picker + propCard +
-      (state.journalSection === "calendar" ? calendarHTML : sectionHTML(scope)) + `
+    const middle = state.journalDay ? dayViewHTML(scope, state.journalDay)
+      : state.journalSection === "calendar" ? calendarHTML : sectionHTML(scope);
+    cardScroll.innerHTML = tabs + picker + propCard + middle + `
       <div class="j-add-wrap">
         <button class="j-add" data-jadd aria-label="Add a trade"></button>
         <span class="j-add-label">Add Trade</span>
@@ -3525,6 +3766,8 @@
   function setPicker(mode, id) {
     journalScrollTop = cardScroll.scrollTop;
     journalKeepScroll = true;
+    // a confirm step names one account's trade; changing accounts voids it
+    state.journalDelete = null;
     state.journalPicker = mode;
     state.journalPickerId = id || null;
     renderJournal();
@@ -3683,7 +3926,9 @@
     }
     const acct = store.journalManual[account.id] || (store.journalManual[account.id] = {});
     const pnl = Math.round(amount * 100) / 100;
+    const entryId = jtId();
     (acct[day] || (acct[day] = [])).push({
+      id: entryId,
       platform: val("platform"), asset: val("asset"),
       entry: val("entry"), exit: val("exit"),
       pnl, loggedAt: new Date().toISOString(),
@@ -3692,7 +3937,10 @@
     const en = parseFloat(val("entry")), ex = parseFloat(val("exit"));
     const side = (!isNaN(en) && !isNaN(ex) && en !== ex)
       ? (((ex > en) === (pnl >= 0)) ? "Long" : "Short") : "Long";
-    addTradeRecords(account.id, [{ date: day, symbol: val("asset"), side, qty: "", pnl }]);
+    addTradeRecords(account.id, [{
+      id: entryId, source: "manual",
+      date: day, symbol: val("asset"), side, qty: "", pnl,
+    }]);
     save();
     const d = day.split("-");
     state.journalMonth = monthOffsetFor(+d[0], +d[1] - 1);
@@ -3723,8 +3971,12 @@
     const reader = new FileReader();
     reader.onload = () => {
       let res;
+      const repl = state.journalReplace;
+      state.journalReplace = null;
       try {
-        res = importCsvText(String(reader.result));
+        res = importCsvText(String(reader.result),
+          (input.files[0] && input.files[0].name) || "",
+          repl && repl.batchId);
       } catch (err) {
         openOverlay(panelHead("Import Failed") + `
           <div class="liked-empty">${esc(err.message || "Could not read that file.")}</div>
@@ -3746,9 +3998,9 @@
       if (res.drip) notes.push(`${res.drip} dividend reinvestment buy${res.drip === 1 ? "" : "s"} skipped as noise.`);
       if (res.orphanCloses) notes.push(`${res.orphanCloses} closing leg${res.orphanCloses === 1 ? "" : "s"} had no opening row in this file, so no P&amp;L could be worked out for ${res.orphanCloses === 1 ? "it" : "them"}.`);
       if (res.skipped) notes.push(`${res.skipped} non-trade row${res.skipped === 1 ? "" : "s"} ignored (dividends, transfers, expiries, corporate actions).`);
-      openOverlay(panelHead("Import Complete") + `
+      openOverlay(panelHead(res.replaced ? "Import Replaced" : "Import Complete") + `
         <div class="liked-empty">${res.trades} ${res.broker} trade${res.trades === 1 ? "" : "s"}
-          imported across ${span}.<br>Day totals on the calendar now use the broker record.
+          imported across ${span}.${res.replaced ? "<br>The import it replaces has been removed." : ""}<br>Day totals on the calendar now use the broker record.
           ${notes.length ? `<br><br>${notes.join("<br>")}` : ""}</div>
         <button class="btn-primary" data-close>Done</button>`);
       input.value = "";
@@ -3761,6 +4013,8 @@
     stopAudio();
     state.view = "journal";
     state.slideDir = 0;
+    state.journalDay = null;
+    state.journalDelete = null;
     closeOverlay();
     render();
   }
@@ -4172,7 +4426,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-photo-pick],[data-photo-clear],[data-pk-replay],[data-pk-build],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pk-replay],[data-pk-build],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -4218,8 +4472,62 @@
     }
     else if (t.hasAttribute("data-jsaveacct")) saveAccount();
     else if (t.hasAttribute("data-jcash")) openCashFlow();
-    else if (t.dataset.jsection) { state.journalSection = t.dataset.jsection; state.journalAllTrades = false; renderJournal(); }
+    else if (t.dataset.jsection) {
+      state.journalSection = t.dataset.jsection;
+      state.journalAllTrades = false;
+      state.journalDay = null;
+      state.journalDelete = null;
+      renderJournal();
+    }
     else if (t.hasAttribute("data-jviewall")) { state.journalAllTrades = !state.journalAllTrades; renderJournal(); }
+    else if (t.dataset.jday) {
+      state.journalDay = t.dataset.jday;
+      state.journalDelete = null;
+      renderJournal();
+    }
+    else if (t.hasAttribute("data-jdayback")) {
+      // the confirm step backs out to the day it belongs to, not the calendar
+      if (state.journalDelete) state.journalDelete = null;
+      else state.journalDay = null;
+      renderJournal();
+    }
+    else if (t.hasAttribute("data-jdelcancel")) { state.journalDelete = null; renderJournalInPlace(); }
+    else if (t.dataset.jdelmanual) {
+      const acctId = t.dataset.jdelacctid;
+      const entry = ((store.journalManual[acctId] || {})[state.journalDay] || [])
+        .find((e) => e.id === t.dataset.jdelmanual);
+      state.journalDelete = {
+        kind: "manual", id: t.dataset.jdelmanual, acctId,
+        label: (entry && (entry.asset || entry.platform)) || "this trade",
+      };
+      renderJournalInPlace();
+    }
+    else if (t.dataset.jdelbatch) {
+      const acctId = t.dataset.jdelacctid;
+      const b = (store.journalBatches[acctId] || []).find((x) => x.id === t.dataset.jdelbatch);
+      state.journalDelete = {
+        kind: "batch", id: t.dataset.jdelbatch, acctId,
+        label: b ? `${b.broker}${b.file ? " · " + b.file : ""}` : "this import",
+        count: b ? b.trades : (store.journalTrades[acctId] || []).filter((x) => x.batch === t.dataset.jdelbatch).length,
+        days: b && b.days ? b.days.length : 1,
+      };
+      renderJournalInPlace();
+    }
+    else if (t.hasAttribute("data-jdelok")) {
+      const d = state.journalDelete;
+      if (d) {
+        if (d.kind === "batch") deleteImportBatch(d.acctId, d.id);
+        else deleteManualTrade(d.acctId, d.id, state.journalDay);
+        save();
+      }
+      state.journalDelete = null;
+      renderJournal();
+    }
+    else if (t.dataset.jreplace) {
+      // the old batch is only dropped once the replacement has parsed cleanly
+      state.journalReplace = { batchId: t.dataset.jreplace, acctId: t.dataset.jdelacctid };
+      $("jCsvFile").click();
+    }
     else if (t.hasAttribute("data-pfpill")) {
       // the pill is the expand control; collapsing it also drops any open form
       state.propOpen = !state.propOpen;

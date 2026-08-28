@@ -3058,6 +3058,92 @@ select.mt-input {
   .bm-rect { font-size: calc(12px * var(--fs)); }
 }
 
+/* ===================== JOURNAL DAY VIEW =====================
+   Opens in place of the calendar when a day is tapped. Reuses the prop-firm
+   list's item plate so a trade row reads the same wherever it appears. */
+.jd { margin-bottom: 16px; }
+.jd-head { display: flex; align-items: center; gap: 10px; margin-bottom: 14px; }
+.jd-back {
+  flex: 0 0 auto;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  border-radius: 50%;
+  border: 1px solid rgba(61,223,255,.35);
+  background: rgba(10,16,34,.72);
+  font-size: calc(20px * var(--fs));
+  line-height: 1;
+  color: #C7D9EF;
+}
+.jd-back:active { border-color: var(--cyan); filter: brightness(1.3); transform: scale(.94); }
+.jd-title { display: flex; flex-direction: column; gap: 2px; min-width: 0; }
+.jd-date {
+  font-size: calc(13.5px * var(--fs));
+  font-weight: 800;
+  color: #EAF6FF;
+}
+.jd-total {
+  font-size: calc(16px * var(--fs));
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.jd-total.pos { color: var(--teal); }
+.jd-total.neg { color: #FF6B9D; }
+
+.jd-sec { margin-bottom: 16px; }
+.jd-sec-head {
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 10px;
+  margin-bottom: 7px;
+  font-size: calc(11px * var(--fs));
+  font-weight: 800;
+  letter-spacing: .08em;
+  color: #C7D9EF;
+}
+/* says at a glance where a row came from, which is why one is editable and
+   the other is not */
+.jd-tag {
+  flex: 0 0 auto;
+  padding: 3px 9px;
+  border-radius: 999px;
+  font-size: calc(9px * var(--fs));
+  font-weight: 800;
+  letter-spacing: .12em;
+  text-transform: uppercase;
+}
+.jd-tag.manual { color: var(--teal); border: 1px solid rgba(47,230,194,.5); background: rgba(47,230,194,.08); }
+.jd-tag.imported { color: var(--cyan); border: 1px solid rgba(61,223,255,.5); background: rgba(61,223,255,.08); }
+.jd-batch-meta {
+  font-size: calc(10px * var(--fs));
+  line-height: 1.45;
+  color: #8FB4D8;
+  margin-bottom: 8px;
+}
+/* imported rows are plates, not buttons — nothing to tap into */
+.pf-item-main.jd-static { cursor: default; }
+.jd-sec .pf-item { margin-bottom: 7px; }
+.jd-batch-acts { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; margin-top: 10px; }
+.jd-act {
+  min-height: 40px;
+  padding: 8px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(61,223,255,.4);
+  background: rgba(10,16,34,.72);
+  font-size: calc(11px * var(--fs));
+  font-weight: 700;
+  line-height: 1.2;
+  color: #C7D9EF;
+}
+.jd-act.danger { border-color: rgba(255,61,154,.45); color: #FF6B9D; }
+.jd-act:active { filter: brightness(1.3); transform: scale(.97); }
+
+/* the calendar's day cells are buttons now, so the button reset has to not
+   flatten them */
+.j-day { font-family: inherit; text-align: inherit; }
+
 /* ===================== MATCH ENGINE =====================
    Live battle, match result and match replay. Same panel/chip/pill vocabulary
    as Build Match — nothing here opens over the top of anything else. */
