@@ -3915,24 +3915,25 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 
 .dt-shell { display: none; }
 
-/* Sound toggle for the hero video, in the gear's column directly above it.
-   The bar insets its own icons by margin 4% + padding 14px, so the same
-   expression lines this up with the gear at any width. The delivered asset is
-   a finished round button, ring and all, so the element carries no frame of
-   its own. Sits above the clock's stacking context but inside the header, so
-   it rides on the video rather than over the bar. */
+/* Sound toggle for the hero video: top right of the screen, held back at half
+   opacity so it reads as a control on the footage rather than a button over
+   it. Kept in the gear's column — the bar insets its own icons by margin 4%
+   plus padding 14px — so it lines up with the chrome below at any width, and
+   under the safe-area inset so a notch never lands on it. The delivered assets
+   are bare glyphs, so the element carries no frame. */
 .hdr-mute {
   position: absolute;
   right: calc(4% + 14px);
-  bottom: 6px;
+  top: calc(var(--sat) + 10px);
   z-index: 3;
   width: 34px;
   height: 34px;
   display: grid;
   place-items: center;
+  opacity: .5;
 }
 .hdr-mute img { width: 100%; height: 100%; object-fit: contain; display: block; }
-.hdr-mute:active { transform: scale(.92); filter: brightness(1.25); }
+.hdr-mute:active { opacity: .85; transform: scale(.92); }
 /* nothing to toggle if the video can't play at all */
 .header-zone.video-broken .hdr-mute { display: none; }
 

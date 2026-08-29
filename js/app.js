@@ -227,6 +227,14 @@
      section runs, and a `const` further down would still be in its dead zone. */
   const DESKTOP_MQ = "(min-width: 1200px)";
 
+  /* Up here for the same reason: the header video is wired during module setup
+     and asks for sound immediately, which reaches the mute button's painter —
+     declared much further down, where a `const` would still be in its dead
+     zone. See the hero sound section for what these do. */
+  const VOL_ON = "assets/buttons-icon/speaker-on@2x.png";
+  const VOL_OFF = "assets/buttons-icon/speaker-muted@2x.png";
+  let heroSoundWanted = false;   // what the listener last asked for
+
   const state = {
     view: "home",            // 'home' | 'screen' | 'videos' | 'checkin' | 'beforetrade'
                              // | 'journal' | 'pickaeway' | 'buildmatch' | 'match' | 'result' | 'replay'
@@ -4721,6 +4729,7 @@
         playing = false;
         setPlayIcon(false);
         setNarrating(false);
+        syncHeroDuck();
       }
     });
   }
@@ -4734,6 +4743,8 @@
     }
     return audioEl;
   }
+  /* Deliberately scoped to this one Audio object: it must never reach for the
+     header clip, or any other media on the page. */
   function stopAudio() {
     if (audioEl) { audioEl.pause(); audioEl = null; }
     audioQueue = [];
@@ -4742,6 +4753,7 @@
     playing = false;
     setPlayIcon(false);
     setNarrating(false);
+    syncHeroDuck();          // narration is done — the clip may speak again
   }
   function togglePlay() {
     const src = currentAudioSrc();
@@ -4754,6 +4766,7 @@
     }
     setPlayIcon(playing);
     setNarrating(playing);
+    syncHeroDuck();          // starting narration ducks the clip, stopping frees it
   }
   $("btnPlay").addEventListener("click", togglePlay);
   $("btnReplay").addEventListener("click", () => {
@@ -5791,9 +5804,6 @@
      element's own .muted, never from what we hoped it would be, and it repaints
      on volumechange so it cannot drift out of step with reality. */
 
-  const VOL_ON = "assets/buttons-icon/btn-volume-on@2x.png";
-  const VOL_OFF = "assets/buttons-icon/btn-volume-off@2x.png";
-
   function heroVideo() {
     return window.matchMedia(DESKTOP_MQ).matches ? dtCentre : waveVideo;
   }
@@ -5815,10 +5825,19 @@
      succeeds where the load-time attempt did not. */
   function tryUnmuted(v) {
     if (!v) return Promise.resolve(false);
+    // narration owns the session while it runs; the clip waits its turn
+    if (narrationLive()) { v.muted = true; syncMuteButton(); return Promise.resolve(false); }
+    /* The wish is recorded here and only unrecorded if the browser refuses.
+       It must NOT be read back off v.muted once play() settles: the duck can
+       mute the clip while that promise is still pending, and deriving the wish
+       from the element then would file the ducking as the listener's choice
+       and leave the clip silent after narration ended. */
+    heroSoundWanted = true;
     v.muted = false;
     return Promise.resolve(v.play())
       .then(() => { syncMuteButton(); return !v.muted; })
       .catch(() => {
+        heroSoundWanted = false;      // refused — remember it, don't keep asking
         v.muted = true;
         return Promise.resolve(v.play()).catch(() => {}).then(() => { syncMuteButton(); return false; });
       });
@@ -5827,8 +5846,33 @@
   function toggleHeroSound() {
     const v = heroVideo();
     if (!v) return;
-    if (v.muted) tryUnmuted(v);
-    else { v.muted = true; syncMuteButton(); }
+    if (v.muted) { heroSoundWanted = true; tryUnmuted(v); }
+    else { heroSoundWanted = false; v.muted = true; syncMuteButton(); }
+  }
+
+  /* ---------------- background vs foreground audio ----------------
+     The header clip is ambience and the lesson narration is the content, so
+     they must never compete for the device's audio session. Nothing in this
+     app ever paused all media — stopAudio() only ever touched its own Audio
+     object — but two unmuted elements playing at once is enough for a phone to
+     hand the session to whichever asserted it last, and a looping video
+     re-asserts every time it wraps. That is the reported symptom: narration
+     dropping out at the loop boundary.
+
+     So the clip ducks itself while narration is playing and comes back
+     afterwards. The narration element is never touched from here, and the clip
+     keeps playing throughout — only its volume yields. */
+
+  function narrationLive() {
+    return playing && !!currentAudioSrc();
+  }
+
+  function syncHeroDuck() {
+    const v = heroVideo();
+    if (!v) return;
+    const shouldBeMuted = !heroSoundWanted || narrationLive();
+    if (v.muted !== shouldBeMuted) v.muted = shouldBeMuted;
+    syncMuteButton();
   }
 
   /* the button is a view of the element's state, so watch the element */
