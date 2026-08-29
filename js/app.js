@@ -5695,137 +5695,47 @@
     window.matchMedia(DESKTOP_MQ).addEventListener("change", attachHeaderSource);
   }
 
-  /* ---------------- desktop header strip ----------------
-     The desktop layout's header is five segments of the same loop. Segment 3
-     is the app's own header video (it already carries the clock); the other
-     four are built here.
-
-     Built in JS and only past the breakpoint, so a phone never downloads or
-     decodes four extra videos for markup it will never show.
-
-     Keeping them in step is the whole job: five independent <video> elements
-     playing the same file drift apart within a minute, and a strip that drifts
-     stops reading as one continuous piece. Sync is a soft correction — the
-     playback rate is nudged a few percent to let a lagging segment catch up —
-     because hard-seeking every segment produces a visible stutter across the
-     whole strip. A hard seek is kept only for gross desync, which is what a
-     backgrounded tab or a stalled decode leaves behind. */
   /* ---------------- desktop banner ----------------
-     Four layers, all 16:9 and all 31.7s, built only past the desktop
-     breakpoint so a phone never downloads them:
+     One video, the same clip the phone plays in its header, running the full
+     width of row 1 — from the left edge of the left panel to the right edge of
+     the right panel — behind the app column and the two side columns.
 
-       floor   full width, tiled horizontally at its own aspect ratio, never
-               stretched; its top edge is the line the centre video stands on
-       left    the whole span from the page's left edge to the centre video,
-               tiled the same way, sharing the centre's eye-line
-       right   the same, mirrored
-       centre  the hero, a single instance, the only layer with audio
+     It replaces a four-layer composition (a tiled floor, two flanking overlays
+     and a centre clip, all kept frame-aligned by a drift correcting sync loop)
+     that read as a cluster over the centre column rather than as one strip.
+     None of that machinery is needed for a single element: it loops itself,
+     and there is nothing left for it to stay in step with.
 
-     So the standing band covers the row end to end: the strip reaches the outer
-     edge of both side panels instead of clustering over the centre column.
+     Built in JS rather than markup so a phone never creates a second decoder
+     for a clip its own header is already playing. The clock, the mute button
+     and the gear sit above it untouched — this is only the layer underneath. */
 
-     Every proportion is a CSS variable on .dt-banner (--dtb-floor-h,
-     --dtb-vid-h, --dtb-vid-w) so the composition can be retuned without
-     touching this code. */
-
-  /* The floor and both flanks repeat to fill their span; only the centre is a
-     single instance. Each cap is one decoder per tile, so they are deliberately
-     modest — the flanks are lower than the floor because there are two of them.
-     Thirteen decoders at the widest layout, against the twenty-plus a purely
-     natural tile count would want. */
-  const DT_FLOOR_TILE_CAP = 6;
-  const DT_FLANK_TILE_CAP = 3;
-
-  const DT_BANNER_LAYERS = [
-    { sel: ".dtb-floor", file: "banner-floor", cap: DT_FLOOR_TILE_CAP },
-    { sel: ".dtb-left", file: "banner-left", cap: DT_FLANK_TILE_CAP },
-    { sel: ".dtb-right", file: "banner-right", cap: DT_FLANK_TILE_CAP },
-    { sel: ".dtb-centre", file: "banner-centre", audio: true },
-  ];
-
-  let dtLayers = [];        // every <video> in the banner, for the sync loop
-  let dtCentre = null;      // the master clock, and the one that carries sound
-  const dtTileCount = {};   // selector -> tiles currently laid out
-
-  /* H.264 only — the delivered clips have no WebM twin, and offering a source
-     that isn't there costs a 404 per layer on every desktop load. */
-  function dtVideoHTML(file, extra) {
-    return `<video muted loop playsinline webkit-playsinline preload="auto" ${extra || ""}>
-      <source src="assets/video/${file}.mp4" type="video/mp4">
-    </video>`;
-  }
+  let dtBannerVideo = null;   // the desktop hero, and the one that carries sound
 
   function buildDesktopBanner() {
     const banner = $("dtBanner");
-    if (!banner || dtLayers.length) return;
+    if (!banner || dtBannerVideo) return;
     // the app's own header video is hidden at this width — stop it rather than
     // leave a second decoder running on a clip nobody can see
     if (waveVideo) { waveVideo.pause(); waveVideo.removeAttribute("autoplay"); }
-    DT_BANNER_LAYERS.forEach((layer) => {
-      const host = banner.querySelector(layer.sel);
-      if (!host) return;
-      if (layer.cap) return;              // laid out below, all at once
-      host.innerHTML = dtVideoHTML(layer.file);
-      const v = host.querySelector("video");
-      v.muted = true;                     // as a property too: the attribute
-      v.play().catch(() => {});           // alone doesn't satisfy autoplay policy
-      dtLayers.push(v);
-      if (layer.audio) { dtCentre = v; watchHeroAudio(v); tryUnmuted(v); }
-    });
-    layoutBannerTiles();
+    /* H.264 only — the clip has no WebM twin, and offering a source that isn't
+       there costs a 404 on every desktop load. */
+    banner.innerHTML = `<video class="dtb-video" muted loop playsinline webkit-playsinline preload="auto">
+      <source src="assets/video/header-loop.mp4" type="video/mp4">
+    </video>`;
+    const v = banner.querySelector("video");
+    v.muted = true;                     // as a property too: the attribute
+    v.play().catch(() => {});           // alone doesn't satisfy autoplay policy
+    dtBannerVideo = v;
+    watchHeroAudio(v);
+    tryUnmuted(v);
     syncMuteButton();
   }
 
-  /* The repeating layers repeat rather than stretch, so how many copies each one
-     holds depends on how many of its own width fit across the span it covers —
-     the whole page for the floor, page edge to the centre video for each flank.
-     Recomputed on resize, since both spans move with the window. */
-  function layoutBannerTiles() {
-    const banner = $("dtBanner");
-    if (!banner) return;
-    DT_BANNER_LAYERS.forEach((layer) => {
-      if (!layer.cap) return;
-      const host = banner.querySelector(layer.sel);
-      if (!host) return;
-      /* One decoder per tile, so the count is capped: at a 54px floor across a
-         1920px page the natural 16:9 tile is 96px wide and would want twenty of
-         them. Past the cap the tiles simply share the width and each shows a
-         cover-cropped band of the frame — cropped, never stretched. */
-      const tileW = host.clientHeight * (16 / 9);
-      const natural = tileW > 0 ? Math.ceil(host.clientWidth / tileW) : 1;
-      const want = Math.max(1, Math.min(natural, layer.cap));
-      if (want === dtTileCount[layer.sel]) return;
-      // drop the old tiles out of the sync list before replacing them
-      const old = Array.from(host.querySelectorAll("video"));
-      dtLayers = dtLayers.filter((v) => old.indexOf(v) < 0);
-      host.innerHTML = Array.from({ length: want }, () => dtVideoHTML(layer.file)).join("");
-      host.querySelectorAll("video").forEach((v) => {
-        v.muted = true;
-        v.play().catch(() => {});
-        dtLayers.push(v);
-      });
-      dtTileCount[layer.sel] = want;
-    });
-  }
-
-  /* The four clips are one composition, so they have to stay frame-aligned:
-     nudge playbackRate for small drift, hard-seek for large. Same approach the
-     mirrored header strip used, with the centre video as the master. */
-  function syncDesktopBanner() {
-    if (!dtCentre || dtCentre.readyState < 2) return;
-    const master = dtCentre.currentTime;
-    const dur = dtCentre.duration;
-    dtLayers.forEach((v) => {
-      if (v === dtCentre || v.readyState < 2) return;
-      let drift = v.currentTime - master;
-      // the loop wraps, so a drift near ±duration is really a tiny one
-      if (dur && Math.abs(drift) > dur / 2) drift -= Math.sign(drift) * dur;
-      if (Math.abs(drift) > 0.35) { v.currentTime = master; v.playbackRate = 1; }
-      else if (Math.abs(drift) > 0.02) v.playbackRate = drift > 0 ? 0.97 : 1.03;
-      else v.playbackRate = 1;
-      if (v.paused) v.play().catch(() => {});
-    });
-    if (dtCentre.paused) dtCentre.play().catch(() => {});
+  /* Autoplay can still be lost to a backgrounded tab or a stalled decode, and
+     nothing else is watching this element now that the sync loop is gone. */
+  function keepBannerPlaying() {
+    if (dtBannerVideo && dtBannerVideo.paused) dtBannerVideo.play().catch(() => {});
   }
 
   /* ---------------- hero sound ----------------
@@ -5840,7 +5750,7 @@
      on volumechange so it cannot drift out of step with reality. */
 
   function heroVideo() {
-    return window.matchMedia(DESKTOP_MQ).matches ? dtCentre : waveVideo;
+    return window.matchMedia(DESKTOP_MQ).matches ? dtBannerVideo : waveVideo;
   }
 
   function syncMuteButton() {
@@ -5924,20 +5834,16 @@
   }
 
   function syncDesktopChrome() {
-    if (window.matchMedia(DESKTOP_MQ).matches) { buildDesktopBanner(); layoutBannerTiles(); }
+    if (window.matchMedia(DESKTOP_MQ).matches) buildDesktopBanner();
     // crossing the breakpoint changes which pre-login step applies
     if (!store.authSeen) showAuthStep();
   }
   syncDesktopChrome();
   window.matchMedia(DESKTOP_MQ).addEventListener("change", syncDesktopChrome);
-  setInterval(syncDesktopBanner, 1000);
+  setInterval(keepBannerPlaying, 1000);
   $("hdrMute").addEventListener("click", toggleHeroSound);
   // crossing the breakpoint changes which video the button speaks for
   window.matchMedia(DESKTOP_MQ).addEventListener("change", syncMuteButton);
-  // the floor's tile count follows the window's width
-  window.addEventListener("resize", () => {
-    if (window.matchMedia(DESKTOP_MQ).matches) layoutBannerTiles();
-  });
 
   applyTextSize();
   syncVolume();

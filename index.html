@@ -266,20 +266,15 @@
        the header segments and the column panels stay pixel-aligned with the
        app shell between them.
 
-       The banner's four layers are filled with <video> by app.js, and only at
-       the desktop breakpoint — so a phone never downloads or decodes them.
-       It spans the full width behind the app column, whose own header video is
-       hidden at this width so the banner shows through it; the clock stays on
-       top, over the centre video. -->
+       The banner holds one <video>, put there by app.js and only at the desktop
+       breakpoint, so a phone never decodes a second copy of the clip its own
+       header is already playing. It runs the full width behind all three
+       columns; the app column's own header video is hidden at this width so the
+       banner shows through it, with the clock still on top. -->
   <div class="dt-shell" id="dtShell" aria-hidden="true">
-    <div class="dt-banner" id="dtBanner">
-      <!-- painted back to front: floor, then the two flanking overlays that
-           sit on it, then the centre video standing on its front edge -->
-      <div class="dtb-layer dtb-floor" id="dtbFloor"></div>
-      <div class="dtb-layer dtb-side dtb-left" data-dtb="left"></div>
-      <div class="dtb-layer dtb-side dtb-right" data-dtb="right"></div>
-      <div class="dtb-layer dtb-centre" data-dtb="centre"></div>
-    </div>
+    <!-- one video, the full width of the row; app.js fills this past the
+         breakpoint so a phone never loads a second copy of the same clip -->
+    <div class="dt-banner" id="dtBanner"></div>
     <div class="dt-col dt-left">
       <div class="dt-bar"></div>
       <div class="dt-panel dt-panel-square"></div>

@@ -4006,15 +4006,15 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   .header-zone + .bar { margin-top: 5px; }
 
   /* ---- header banner ----
-     One composition across the full width of row 1, painted behind the app
-     column: floor along the bottom, the two flanking overlays standing on it,
-     the centre video between them on the same eye-line. Replaces the five
-     mirrored copies of the wave loop that used to fill this row.
+     One video across the full width of row 1, painted behind all three columns:
+     left edge of the left panel to the right edge of the right panel, one
+     continuous strip. It is the same clip the phone plays in its own header.
 
-     Every proportion is a variable, so retuning the scene is a value change
-     rather than a layout rewrite. All four clips are 16:9, so one height drives
-     every box and the two flanks come out identical despite the left one's
-     smaller source (1368x770 against 1440x810). */
+     Replaces a four-layer composition — a tiled floor with two flanking
+     overlays and a centre clip standing on it — that only ever covered the
+     middle of the row. object-fit keeps the frame's proportions and crops to
+     the strip rather than stretching; object-position is the one value to
+     change if a different band of the frame should show. */
   .dt-banner {
     grid-row: 1;
     grid-column: 1 / 9;
@@ -4022,56 +4022,18 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
     overflow: hidden;
     background: #000;
     z-index: 0;
-
-    --dtb-floor-h: calc(var(--dt-head) * 0.42);
-    --dtb-vid-h: calc(var(--dt-head) - var(--dtb-floor-h));
-    --dtb-vid-w: calc(var(--dtb-vid-h) * 16 / 9);
   }
-  /* the app column sits over the banner; its own header video is hidden below
-     so the scene shows through, with the clock still on top of it */
-  .app { position: relative; z-index: 1; }
-  .header-zone .wave-video, .header-zone .wave-still { display: none; }
-
-  .dtb-layer { position: absolute; }
-  .dtb-layer video {
+  .dtb-video {
     display: block;
     width: 100%;
     height: 100%;
     object-fit: cover;
+    object-position: center;
   }
-
-  /* the floor runs edge to edge, repeated rather than stretched: each tile is
-     its own instance, and they share the width evenly */
-  .dtb-floor {
-    left: 0;
-    right: 0;
-    bottom: 0;
-    height: var(--dtb-floor-h);
-    display: flex;
-  }
-  .dtb-floor video { flex: 1 1 0; min-width: 0; }
-
-  /* The three standing layers share a bottom edge — the floor's top line — and
-     between them they cover the row end to end, so the strip runs from the left
-     edge of the left panel to the right edge of the right panel rather than
-     sitting as one small cluster over the centre column. The centre keeps its
-     own 16:9 box as the focal point; each flank takes everything from the page
-     edge up to it, and fills that span the way the floor does — repeated
-     instances at their own aspect ratio, never one frame stretched across half
-     a screen. Tile counts come from layoutBannerTiles(). */
-  .dtb-side, .dtb-centre {
-    bottom: var(--dtb-floor-h);
-    height: var(--dtb-vid-h);
-  }
-  .dtb-centre {
-    width: var(--dtb-vid-w);
-    left: 50%;
-    margin-left: calc(var(--dtb-vid-w) / -2);
-  }
-  .dtb-left { left: 0; right: calc(50% + var(--dtb-vid-w) / 2); }
-  .dtb-right { right: 0; left: calc(50% + var(--dtb-vid-w) / 2); }
-  .dtb-side { display: flex; }
-  .dtb-side video { flex: 1 1 0; min-width: 0; }
+  /* the app column sits over the banner; its own header video is hidden below
+     so the clip shows through, with the clock still on top of it */
+  .app { position: relative; z-index: 1; }
+  .header-zone .wave-video, .header-zone .wave-still { display: none; }
 
   /* ---- columns ----
      The side columns mirror the centre column's own vertical rhythm exactly,
