@@ -5756,10 +5756,37 @@
 
   /* ---------------- boot ---------------- */
 
-  // iOS (especially standalone/home-screen mode) can under-report dvh, leaving
-  // a dead band under the bottom nav — size the app off measured innerHeight.
+  /* How tall the app column really is.
+
+     iOS under-reports dvh in standalone mode, which is why this is measured at
+     all rather than left to CSS. But innerHeight under-reports too, and by a
+     very specific amount: the top safe-area inset. On an iPhone 16 Pro Max
+     that is 62pt of a 956pt screen, and since html/body do fill the screen,
+     the shortfall showed up as an empty band of page background under the
+     dock — the dead space this is here to remove.
+
+     Installed to the home screen the web view owns the whole display: nothing
+     above it, nothing below it, so the screen's height IS the column's. That
+     is only trusted when it is plainly the same screen in the same
+     orientation — a safe-area shortfall is tens of points, an orientation
+     mismatch is hundreds. In a browser tab, where chrome really does take
+     height away, the measured value stands. */
+  const VH_MAX_SHORTFALL = 160;
+  function isStandalone() {
+    return window.navigator.standalone === true
+      || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
+  }
+  function viewportHeight() {
+    let h = Math.max(window.innerHeight || 0,
+                     document.documentElement.clientHeight || 0);
+    if (isStandalone() && window.screen) {
+      const scr = window.screen.height || 0;
+      if (scr > h && scr - h <= VH_MAX_SHORTFALL) h = scr;
+    }
+    return h;
+  }
   function syncViewportHeight() {
-    document.documentElement.style.setProperty("--vhpx", window.innerHeight + "px");
+    document.documentElement.style.setProperty("--vhpx", viewportHeight() + "px");
   }
   syncViewportHeight();
   window.addEventListener("resize", syncViewportHeight);
