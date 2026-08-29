@@ -18,14 +18,17 @@
 
     <!-- ============ HEADER ZONE (looping video — action icons live in the card footer) ============ -->
     <header class="header-zone" id="headerZone">
+      <!-- Autoplay, loop and muted are unchanged: the clip carries audio but a
+           muted autoplay is what browsers allow and what the header has always
+           done. No poster — the only still we hold is of the previous clip, and
+           the wrong frame flashing under this one is worse than the video
+           element's own dark ground. -->
       <video
         id="waveVideo"
         class="wave-bg wave-video"
-        poster="assets/backgrounds/wave-header@2x.png"
         autoplay muted loop playsinline webkit-playsinline preload="auto"
       >
-        <source src="assets/video/wave-header-loop.mp4" type="video/mp4">
-        <source src="assets/video/wave-header-loop.webm" type="video/webm">
+        <source src="assets/video/hero-loop.mp4" type="video/mp4">
       </video>
       <div class="wave-bg wave-still" aria-hidden="true"></div>
       <!-- session · time · date, sitting directly on the video. Plain white,

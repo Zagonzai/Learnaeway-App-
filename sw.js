@@ -3,7 +3,7 @@
  * deploys show up immediately; only falls back to cache when offline.
  * Heavy binary assets (images) are cache-first since they rarely change.
  */
-const CACHE = "learnaeway-v66";
+const CACHE = "learnaeway-v67";
 
 const SHELL = [
   "./",
@@ -18,7 +18,7 @@ const SHELL = [
   "./assets/logo/logo-symbol-v2@3x.png",
   "./assets/logo/logo-wordmark@3x.png",
   "./assets/backgrounds/wave-header@2x.png",
-  "./assets/video/wave-header-loop.mp4",
+  "./assets/video/hero-loop.mp4",
   /* the four desktop banner clips are deliberately NOT precached: they are
      ~3MB and only ever fetched past the 1200px breakpoint. Being under
      /assets/ they are cache-first once a desktop actually asks for them. */

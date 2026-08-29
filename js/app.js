@@ -5655,7 +5655,7 @@
   const waveVideo = $("waveVideo");
   if (waveVideo) {
     waveVideo.addEventListener("error", () => $("headerZone").classList.add("video-broken"));
-    waveVideo.play().catch(() => { /* autoplay blocked — poster image shows until a user gesture */ });
+    waveVideo.play().catch(() => { /* autoplay blocked — the still fallback shows until a user gesture */ });
   }
 
   /* ---------------- desktop header strip ----------------
@@ -5691,7 +5691,8 @@
     { sel: ".dtb-floor", file: "banner-floor", tile: true },
     { sel: ".dtb-left", file: "banner-left" },
     { sel: ".dtb-right", file: "banner-right" },
-    { sel: ".dtb-centre", file: "banner-centre", audio: true },
+    // the same clip the mobile header plays, so a desktop fetches it once
+    { sel: ".dtb-centre", file: "hero-loop", audio: true },
   ];
 
   const DT_FLOOR_TILE_CAP = 6;
@@ -5711,6 +5712,9 @@
   function buildDesktopBanner() {
     const banner = $("dtBanner");
     if (!banner || dtLayers.length) return;
+    // the app's own header video is hidden at this width — stop it rather than
+    // leave a second decoder running on a clip nobody can see
+    if (waveVideo) { waveVideo.pause(); waveVideo.removeAttribute("autoplay"); }
     DT_BANNER_LAYERS.forEach((layer) => {
       const host = banner.querySelector(layer.sel);
       if (!host) return;
