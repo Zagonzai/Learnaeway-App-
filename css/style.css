@@ -112,8 +112,12 @@ img { user-select: none; -webkit-user-drag: none; }
    runs up behind the status bar and dynamic island rather than being pushed
    below them. Nothing interactive lives in here — the action icons moved to
    the card footer — so there is nothing to keep clear of the notch. */
-/* The header is exactly the clip's own shape — 1080x606 — so the whole frame
-   shows with nothing cropped, and its bottom edge is the header's bottom edge.
+/* The clip is 1080x606, but its candlestick wave sits in the lower part of the
+   frame and everything above that is empty — so the box is the frame with its
+   top quarter cut off (1080x455) and the video anchored to the bottom. The
+   wave still lands exactly on the header's bottom edge, nothing of it is lost,
+   and the header gives back around 60pt of dead space to the card below.
+   Raising 455 back toward 606 reveals more of the empty top again.
    Height follows the width, so it is right at any phone size. Full-bleed from
    y:0, notch included; the clock inside carries its own safe-area inset.
    Desktop restores a fixed height further down: there the banner covers this
@@ -122,7 +126,7 @@ img { user-select: none; -webkit-user-drag: none; }
   position: relative;
   flex: 0 0 auto;
   width: 100%;
-  aspect-ratio: 1080 / 606;
+  aspect-ratio: 1080 / 455;
   height: auto;
   overflow: hidden;
 }
@@ -139,16 +143,18 @@ img { user-select: none; -webkit-user-drag: none; }
 .wave-video {
   width: 100%;
   height: 100%;
-  /* the box is the frame's own aspect ratio, so cover crops nothing */
+  /* Cover crops to the box, and the box is shorter than the frame — so the
+     crop has to come off the top, where the frame is empty. Anchored to the
+     bottom, the wave keeps sitting on the header's bottom edge. */
   object-fit: cover;
-  object-position: center;
+  object-position: center bottom;
   background: #050614;   /* shows briefly if the video is still buffering */
 }
 /* static fallback — hidden by default; shown if the video can't play at all
    (see JS 'video-broken' class) or under prefers-reduced-motion below */
 .wave-still {
   display: none;
-  background: url("../assets/backgrounds/wave-header@2x.png") center 40% / cover no-repeat;
+  background: url("../assets/backgrounds/wave-header@2x.png") center bottom / cover no-repeat;
 }
 .header-zone.video-broken .wave-video { display: none; }
 .header-zone.video-broken .wave-still { display: block; }
@@ -3931,16 +3937,17 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 
 .dt-shell { display: none; }
 
-/* Sound toggle for the hero video: top right of the screen, held back at half
-   opacity so it reads as a control on the footage rather than a button over
-   it. Kept in the gear's column — the bar insets its own icons by margin 4%
-   plus padding 14px — so it lines up with the chrome below at any width, and
-   under the safe-area inset so a notch never lands on it. The delivered assets
-   are bare glyphs, so the element carries no frame. */
+/* Sound toggle for the hero video: directly above the gear, sharing its column
+   — the bar insets its own icons by margin 4% plus padding 14px, so the two
+   line up at any width. Anchored to the BOTTOM of the header rather than the
+   top: up by the status bar it needed a strip of its own, which is exactly the
+   dead space the cropped header just gave back. Held at half opacity so it
+   reads as a control on the footage rather than a button over it. The
+   delivered assets are bare glyphs, so the element carries no frame. */
 .hdr-mute {
   position: absolute;
   right: calc(4% + 14px);
-  top: calc(var(--sat) + 4px);
+  bottom: 6px;
   z-index: 3;
   width: 34px;
   height: 34px;

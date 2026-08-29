@@ -5756,37 +5756,20 @@
 
   /* ---------------- boot ---------------- */
 
-  /* How tall the app column really is.
+  /* How tall the app column is: what the browser reports the viewport to be,
+     and nothing cleverer than that. iOS can under-report dvh in standalone
+     mode, which is why this is measured here rather than left to CSS.
 
-     iOS under-reports dvh in standalone mode, which is why this is measured at
-     all rather than left to CSS. But innerHeight under-reports too, and by a
-     very specific amount: the top safe-area inset. On an iPhone 16 Pro Max
-     that is 62pt of a 956pt screen, and since html/body do fill the screen,
-     the shortfall showed up as an empty band of page background under the
-     dock — the dead space this is here to remove.
-
-     Installed to the home screen the web view owns the whole display: nothing
-     above it, nothing below it, so the screen's height IS the column's. That
-     is only trusted when it is plainly the same screen in the same
-     orientation — a safe-area shortfall is tens of points, an orientation
-     mismatch is hundreds. In a browser tab, where chrome really does take
-     height away, the measured value stands. */
-  const VH_MAX_SHORTFALL = 160;
-  function isStandalone() {
-    return window.navigator.standalone === true
-      || (window.matchMedia && window.matchMedia("(display-mode: standalone)").matches);
-  }
-  function viewportHeight() {
-    let h = Math.max(window.innerHeight || 0,
-                     document.documentElement.clientHeight || 0);
-    if (isStandalone() && window.screen) {
-      const scr = window.screen.height || 0;
-      if (scr > h && scr - h <= VH_MAX_SHORTFALL) h = scr;
-    }
-    return h;
-  }
+     Do NOT reach for screen.height. In standalone mode the web view does not
+     own the whole display — it is shorter than the screen by the status bar —
+     while screen.height IS the display. Sizing the column to it puts the dock
+     below the visible area, where html/body's overflow:hidden clips it in
+     half. The band of #050614 visible below the dock on a screenshot is the
+     manifest's background_color, painted by iOS outside the web view; it is
+     the same colour as the page background and an entirely different thing,
+     and it is not ours to reclaim. */
   function syncViewportHeight() {
-    document.documentElement.style.setProperty("--vhpx", viewportHeight() + "px");
+    document.documentElement.style.setProperty("--vhpx", window.innerHeight + "px");
   }
   syncViewportHeight();
   window.addEventListener("resize", syncViewportHeight);
