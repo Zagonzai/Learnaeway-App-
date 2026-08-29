@@ -5655,7 +5655,10 @@
   const waveVideo = $("waveVideo");
   if (waveVideo) {
     waveVideo.addEventListener("error", () => $("headerZone").classList.add("video-broken"));
-    waveVideo.play().catch(() => { /* autoplay blocked — the still fallback shows until a user gesture */ });
+    watchHeroAudio(waveVideo);
+    // sound on if the browser allows it, muted playback if not, never silence
+    // and a stopped video
+    tryUnmuted(waveVideo);
   }
 
   /* ---------------- desktop header strip ----------------
@@ -5724,7 +5727,7 @@
       v.muted = true;                     // as a property too: the attribute
       v.play().catch(() => {});           // alone doesn't satisfy autoplay policy
       dtLayers.push(v);
-      if (layer.audio) dtCentre = v;
+      if (layer.audio) { dtCentre = v; watchHeroAudio(v); tryUnmuted(v); }
     });
     syncMuteButton();
   }
@@ -5774,25 +5777,62 @@
     if (dtCentre.paused) dtCentre.play().catch(() => {});
   }
 
-  /* Muted on load, which is both the autoplay requirement and what anyone
-     expects of a page that starts playing by itself. The button opts in. */
-  let dtMuted = true;
-  function syncMuteButton() {
-    const btn = $("dtMute");
-    if (!btn) return;
-    btn.classList.toggle("on", !dtMuted);
-    btn.setAttribute("aria-pressed", dtMuted ? "false" : "true");
-    btn.setAttribute("aria-label", dtMuted ? "Unmute banner audio" : "Mute banner audio");
-    if (dtCentre) dtCentre.muted = dtMuted;
+  /* ---------------- hero sound ----------------
+     One control for whichever video is the hero at this width: the header clip
+     on a phone, the banner's centre layer on desktop.
+
+     Sound on by default, but a browser will refuse an unmuted autoplay without
+     a prior gesture — iOS always, desktop Chrome unless the site has earned
+     enough engagement. So: try unmuted, and fall back to muted playback rather
+     than to no playback at all. Either way the button is painted from the
+     element's own .muted, never from what we hoped it would be, and it repaints
+     on volumechange so it cannot drift out of step with reality. */
+
+  const VOL_ON = "assets/buttons-icon/btn-volume-on@2x.png";
+  const VOL_OFF = "assets/buttons-icon/btn-volume-off@2x.png";
+
+  function heroVideo() {
+    return window.matchMedia(DESKTOP_MQ).matches ? dtCentre : waveVideo;
   }
-  function toggleBannerMute() {
-    dtMuted = !dtMuted;
-    if (dtCentre) {
-      dtCentre.muted = dtMuted;
-      // unmuting a video the browser started muted needs a fresh play() call
-      if (!dtMuted) dtCentre.play().catch(() => { dtMuted = true; syncMuteButton(); });
-    }
-    syncMuteButton();
+
+  function syncMuteButton() {
+    const btn = $("hdrMute");
+    if (!btn) return;
+    const v = heroVideo();
+    const img = btn.querySelector("img");
+    // no hero yet (the banner is still building) reads as silent
+    const muted = !v || v.muted;
+    if (img) img.src = muted ? VOL_OFF : VOL_ON;
+    btn.setAttribute("aria-pressed", muted ? "false" : "true");
+    btn.setAttribute("aria-label", muted ? "Turn sound on" : "Turn sound off");
+  }
+
+  /* Attempt sound, settle for silence. Called once per video that can carry
+     audio, and again from the button, which is a real gesture and so usually
+     succeeds where the load-time attempt did not. */
+  function tryUnmuted(v) {
+    if (!v) return Promise.resolve(false);
+    v.muted = false;
+    return Promise.resolve(v.play())
+      .then(() => { syncMuteButton(); return !v.muted; })
+      .catch(() => {
+        v.muted = true;
+        return Promise.resolve(v.play()).catch(() => {}).then(() => { syncMuteButton(); return false; });
+      });
+  }
+
+  function toggleHeroSound() {
+    const v = heroVideo();
+    if (!v) return;
+    if (v.muted) tryUnmuted(v);
+    else { v.muted = true; syncMuteButton(); }
+  }
+
+  /* the button is a view of the element's state, so watch the element */
+  function watchHeroAudio(v) {
+    if (!v) return;
+    ["volumechange", "play", "pause", "loadedmetadata"].forEach((e) =>
+      v.addEventListener(e, syncMuteButton));
   }
 
   function syncDesktopChrome() {
@@ -5803,7 +5843,9 @@
   syncDesktopChrome();
   window.matchMedia(DESKTOP_MQ).addEventListener("change", syncDesktopChrome);
   setInterval(syncDesktopBanner, 1000);
-  $("dtMute").addEventListener("click", toggleBannerMute);
+  $("hdrMute").addEventListener("click", toggleHeroSound);
+  // crossing the breakpoint changes which video the button speaks for
+  window.matchMedia(DESKTOP_MQ).addEventListener("change", syncMuteButton);
   // the floor's tile count follows the window's width
   window.addEventListener("resize", () => {
     if (window.matchMedia(DESKTOP_MQ).matches) layoutFloorTiles();

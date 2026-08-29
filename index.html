@@ -18,11 +18,14 @@
 
     <!-- ============ HEADER ZONE (looping video — action icons live in the card footer) ============ -->
     <header class="header-zone" id="headerZone">
-      <!-- Autoplay, loop and muted are unchanged: the clip carries audio but a
-           muted autoplay is what browsers allow and what the header has always
-           done. No poster — the only still we hold is of the previous clip, and
-           the wrong frame flashing under this one is worse than the video
-           element's own dark ground. -->
+      <!-- `muted` stays in the markup on purpose: it is what guarantees the
+           autoplay starts at all. app.js then asks for sound immediately, and
+           keeps the muted playback if the browser refuses — so the clip is
+           never silent AND stopped. The button above reports whichever of the
+           two actually happened.
+           No poster — the only still we hold is of the previous clip, and the
+           wrong frame flashing under this one is worse than the video element's
+           own dark ground. -->
       <video
         id="waveVideo"
         class="wave-bg wave-video"
@@ -33,15 +36,13 @@
       <div class="wave-bg wave-still" aria-hidden="true"></div>
       <!-- session · time · date, sitting directly on the video. Plain white,
            no scrim or shadow behind it (per spec). Shown on every screen. -->
-      <!-- desktop only: the centre banner video is the one layer with audio.
-           Sits in the gear's column, directly above it. -->
-      <button id="dtMute" class="dt-mute" type="button"
-              aria-label="Unmute banner audio" aria-pressed="false">
-        <svg viewBox="0 0 24 24" aria-hidden="true">
-          <path class="dtm-cone" d="M4 9.5h3.2L12 5.4v13.2L7.2 14.5H4z"/>
-          <g class="dtm-on"><path d="M15.4 9.1a4 4 0 0 1 0 5.8"/><path d="M17.9 6.6a7.5 7.5 0 0 1 0 10.8"/></g>
-          <g class="dtm-off"><path d="M15.8 9.8l4.6 4.6"/><path d="M20.4 9.8l-4.6 4.6"/></g>
-        </svg>
+      <!-- Sound for whichever video is the hero here: the header clip on a
+           phone, the banner's centre layer on desktop. Sits in the gear's
+           column directly above it — the same 4% + 14px inset the bar uses for
+           its own icons. The image follows the video's real muted state. -->
+      <button id="hdrMute" class="hdr-mute" type="button"
+              aria-label="Turn sound on" aria-pressed="false">
+        <img src="assets/buttons-icon/btn-volume-off@2x.png" alt="">
       </button>
       <div class="wave-clock" id="waveClock">
         <div class="wc-session"><b id="wcSessionName"></b><span>Session</span></div>

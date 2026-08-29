@@ -122,7 +122,11 @@ img { user-select: none; -webkit-user-drag: none; }
   width: 100%;
   height: 100%;
   object-fit: cover;
-  object-position: center 40%;
+  /* The clip is 16:9 in a much wider window, so cover crops it hard: at 393px
+     the frame scales to 393x221 and only 102px shows. Anchored to the bottom,
+     so the frame's own bottom edge lands on the header's bottom edge and sits
+     directly above the bar, rather than being cropped away above it. */
+  object-position: center bottom;
   background: #050614;   /* shows briefly if the video is still buffering */
 }
 /* static fallback — hidden by default; shown if the video can't play at all
@@ -3902,8 +3906,27 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
    PWA, which keeps its single-column, single-video-header layout untouched. */
 
 .dt-shell { display: none; }
-/* desktop-only control: the banner it belongs to does not exist on a phone */
-.dt-mute { display: none; }
+
+/* Sound toggle for the hero video, in the gear's column directly above it.
+   The bar insets its own icons by margin 4% + padding 14px, so the same
+   expression lines this up with the gear at any width. The delivered asset is
+   a finished round button, ring and all, so the element carries no frame of
+   its own. Sits above the clock's stacking context but inside the header, so
+   it rides on the video rather than over the bar. */
+.hdr-mute {
+  position: absolute;
+  right: calc(4% + 14px);
+  bottom: 6px;
+  z-index: 3;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+}
+.hdr-mute img { width: 100%; height: 100%; object-fit: contain; display: block; }
+.hdr-mute:active { transform: scale(.92); filter: brightness(1.25); }
+/* nothing to toggle if the video can't play at all */
+.header-zone.video-broken .hdr-mute { display: none; }
 
 @media (min-width: 1200px) {
   /* Solid black behind everything — the mobile build's ambient corner glows
@@ -4012,31 +4035,6 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   .dtb-centre { left: 50%; margin-left: calc(var(--dtb-vid-w) / -2); }
   .dtb-left { right: calc(50% + var(--dtb-vid-w) / 2 + var(--dtb-gap)); }
   .dtb-right { left: calc(50% + var(--dtb-vid-w) / 2 + var(--dtb-gap)); }
-
-  /* sound control for the centre layer, in the gear's column directly above
-     it: the bar insets its icons by its own 4% margin plus 14px of padding */
-  .dt-mute {
-    display: grid;
-    place-items: center;
-    position: absolute;
-    right: calc(4% + 14px);
-    bottom: 6px;
-    z-index: 3;
-    width: 34px;
-    height: 34px;
-    border-radius: 50%;
-    border: 1px solid rgba(61,223,255,.45);
-    background: rgba(5,9,22,.72);
-    color: #C7ECF4;
-  }
-  .dt-mute svg { width: 19px; height: 19px; fill: none; stroke: currentColor; stroke-width: 1.9; stroke-linecap: round; }
-  .dt-mute .dtm-cone { fill: currentColor; stroke: none; }
-  .dt-mute .dtm-on { display: none; }
-  .dt-mute.on { border-color: var(--teal); color: var(--teal); }
-  .dt-mute.on .dtm-on { display: block; }
-  .dt-mute.on .dtm-off { display: none; }
-  .dt-mute:hover { filter: brightness(1.3); }
-  .dt-mute:active { transform: scale(.93); }
 
   /* ---- columns ----
      The side columns mirror the centre column's own vertical rhythm exactly,
