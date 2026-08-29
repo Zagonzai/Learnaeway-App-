@@ -417,9 +417,18 @@ img { user-select: none; -webkit-user-drag: none; }
 .action-btn {
   line-height: 0;
   transition: transform .15s ease, filter .15s ease;
+  /* The artwork shrank; the thing you press did not. Sized like its .footer-icon
+     neighbours so the whole row stays comfortably tappable. */
+  width: 44px;
+  height: 44px;
+  display: grid;
+  place-items: center;
 }
 .action-btn:active { transform: scale(.9); filter: brightness(1.35); }
-.action-btn img { width: clamp(38px, 5.6vh, 48px); height: auto; }
+/* The same restraint the Trade Journal and Trade Day Check-In icons were cut
+   back to: a little under three quarters of what these used to be, so the
+   footer row reads as chrome rather than as the loudest thing on the card. */
+.action-btn img { width: clamp(27px, 4vh, 34px); height: auto; }
 .footer-icon {
   width: 40px;
   height: 40px;
@@ -3932,7 +3941,10 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   place-items: center;
   opacity: .5;
 }
-.hdr-mute img { width: 100%; height: 100%; object-fit: contain; display: block; }
+/* Same cut as the card's action icons: the glyph comes down to the scale the
+   Journal and Check-In screens use, while the 34px box — and so the tap target
+   — stays where it was. Opacity is untouched. */
+.hdr-mute img { width: 24px; height: 24px; object-fit: contain; display: block; }
 .hdr-mute:active { opacity: .85; transform: scale(.92); }
 /* nothing to toggle if the video can't play at all */
 .header-zone.video-broken .hdr-mute { display: none; }
@@ -4014,7 +4026,6 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
     --dtb-floor-h: calc(var(--dt-head) * 0.42);
     --dtb-vid-h: calc(var(--dt-head) - var(--dtb-floor-h));
     --dtb-vid-w: calc(var(--dtb-vid-h) * 16 / 9);
-    --dtb-gap: clamp(8px, 1.2vw, 22px);
   }
   /* the app column sits over the banner; its own header video is hidden below
      so the scene shows through, with the clock still on top of it */
@@ -4040,15 +4051,27 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   }
   .dtb-floor video { flex: 1 1 0; min-width: 0; }
 
-  /* the three standing layers share a bottom edge — the floor's top line */
+  /* The three standing layers share a bottom edge — the floor's top line — and
+     between them they cover the row end to end, so the strip runs from the left
+     edge of the left panel to the right edge of the right panel rather than
+     sitting as one small cluster over the centre column. The centre keeps its
+     own 16:9 box as the focal point; each flank takes everything from the page
+     edge up to it, and fills that span the way the floor does — repeated
+     instances at their own aspect ratio, never one frame stretched across half
+     a screen. Tile counts come from layoutBannerTiles(). */
   .dtb-side, .dtb-centre {
     bottom: var(--dtb-floor-h);
     height: var(--dtb-vid-h);
-    width: var(--dtb-vid-w);
   }
-  .dtb-centre { left: 50%; margin-left: calc(var(--dtb-vid-w) / -2); }
-  .dtb-left { right: calc(50% + var(--dtb-vid-w) / 2 + var(--dtb-gap)); }
-  .dtb-right { left: calc(50% + var(--dtb-vid-w) / 2 + var(--dtb-gap)); }
+  .dtb-centre {
+    width: var(--dtb-vid-w);
+    left: 50%;
+    margin-left: calc(var(--dtb-vid-w) / -2);
+  }
+  .dtb-left { left: 0; right: calc(50% + var(--dtb-vid-w) / 2); }
+  .dtb-right { right: 0; left: calc(50% + var(--dtb-vid-w) / 2); }
+  .dtb-side { display: flex; }
+  .dtb-side video { flex: 1 1 0; min-width: 0; }
 
   /* ---- columns ----
      The side columns mirror the centre column's own vertical rhythm exactly,

@@ -461,7 +461,12 @@
   }
 
   function renderScreen() {
-    stopAudio();
+    /* Only when the track itself changes. This used to stop unconditionally,
+       which meant any re-render of the screen you were already on — picking a
+       grid item, a cloud merge landing, anything that reaches render() — cut
+       the narration off mid-sentence. Same screen, same track: leave it be. */
+    const nextKey = [].concat(currentAudioSrc() || []).join("|");
+    if (nextKey !== audioQueueKey) stopAudio();
     const entry = screens[state.current];
     const { scr, sub, sec } = entry;
     const p = subProgress(sub);
@@ -498,6 +503,10 @@
       </div>`;
     cardScroll.scrollTop = 0;
     cardFooter.style.display = "";
+    // narration that survived this render still owns the buttons: the card body
+    // was just rewritten, so any play icon inside it is back at its default
+    setPlayIcon(playing);
+    setNarrating(playing);
     syncMarks();
   }
 
@@ -4717,9 +4726,9 @@
   function loadTrack(i) {
     if (audioEl) audioEl.pause();
     audioIndex = i;
-    audioEl = new Audio(audioQueue[i]);
-    audioEl.muted = !store.settings.sound;
-    audioEl.addEventListener("ended", () => {
+    const a = audioEl = new Audio(audioQueue[i]);
+    a.muted = !store.settings.sound;
+    a.addEventListener("ended", () => {
       if (audioIndex + 1 < audioQueue.length) {
         loadTrack(audioIndex + 1);          // next part auto-starts seamlessly
         audioEl.play().catch(() => {});
@@ -4729,8 +4738,17 @@
         playing = false;
         setPlayIcon(false);
         setNarrating(false);
-        syncHeroDuck();
       }
+    });
+    /* Nothing in this app pauses the narration except the controls right below,
+       and those clear `playing` first. So a pause arriving while `playing` is
+       still true came from outside the app — a phone handing its audio session
+       to another element on the page, which is exactly what a looping video does
+       every time it wraps. Take the session back instead of going quiet.
+       Guarded on identity so a track we deliberately discarded stays discarded. */
+    a.addEventListener("pause", () => {
+      if (a !== audioEl || !playing || a.ended) return;
+      a.play().catch(() => {});
     });
   }
   function ensureAudio(src) {
@@ -4744,16 +4762,16 @@
     return audioEl;
   }
   /* Deliberately scoped to this one Audio object: it must never reach for the
-     header clip, or any other media on the page. */
+     header clip, or any other media on the page. `playing` is cleared before the
+     element is dropped so the pause listener above lets it go quietly. */
   function stopAudio() {
+    playing = false;
     if (audioEl) { audioEl.pause(); audioEl = null; }
     audioQueue = [];
     audioQueueKey = null;
     audioIndex = 0;
-    playing = false;
     setPlayIcon(false);
     setNarrating(false);
-    syncHeroDuck();          // narration is done — the clip may speak again
   }
   function togglePlay() {
     const src = currentAudioSrc();
@@ -4766,7 +4784,6 @@
     }
     setPlayIcon(playing);
     setNarrating(playing);
-    syncHeroDuck();          // starting narration ducks the clip, stopping frees it
   }
   $("btnPlay").addEventListener("click", togglePlay);
   $("btnReplay").addEventListener("click", () => {
@@ -5699,26 +5716,36 @@
 
        floor   full width, tiled horizontally at its own aspect ratio, never
                stretched; its top edge is the line the centre video stands on
-       left    one instance, flanking, sharing the centre's eye-line
-       right   one instance, mirrored placement of left
-       centre  the hero, the only layer with audio
+       left    the whole span from the page's left edge to the centre video,
+               tiled the same way, sharing the centre's eye-line
+       right   the same, mirrored
+       centre  the hero, a single instance, the only layer with audio
+
+     So the standing band covers the row end to end: the strip reaches the outer
+     edge of both side panels instead of clustering over the centre column.
 
      Every proportion is a CSS variable on .dt-banner (--dtb-floor-h,
-     --dtb-centre-w, --dtb-side-w, --dtb-side-gap) so the composition can be
-     retuned without touching this code. */
+     --dtb-vid-h, --dtb-vid-w) so the composition can be retuned without
+     touching this code. */
+
+  /* The floor and both flanks repeat to fill their span; only the centre is a
+     single instance. Each cap is one decoder per tile, so they are deliberately
+     modest — the flanks are lower than the floor because there are two of them.
+     Thirteen decoders at the widest layout, against the twenty-plus a purely
+     natural tile count would want. */
+  const DT_FLOOR_TILE_CAP = 6;
+  const DT_FLANK_TILE_CAP = 3;
 
   const DT_BANNER_LAYERS = [
-    { sel: ".dtb-floor", file: "banner-floor", tile: true },
-    { sel: ".dtb-left", file: "banner-left" },
-    { sel: ".dtb-right", file: "banner-right" },
+    { sel: ".dtb-floor", file: "banner-floor", cap: DT_FLOOR_TILE_CAP },
+    { sel: ".dtb-left", file: "banner-left", cap: DT_FLANK_TILE_CAP },
+    { sel: ".dtb-right", file: "banner-right", cap: DT_FLANK_TILE_CAP },
     { sel: ".dtb-centre", file: "banner-centre", audio: true },
   ];
 
-  const DT_FLOOR_TILE_CAP = 6;
-
   let dtLayers = [];        // every <video> in the banner, for the sync loop
   let dtCentre = null;      // the master clock, and the one that carries sound
-  let dtFloorTiles = 0;
+  const dtTileCount = {};   // selector -> tiles currently laid out
 
   /* H.264 only — the delivered clips have no WebM twin, and offering a source
      that isn't there costs a 404 per layer on every desktop load. */
@@ -5737,7 +5764,7 @@
     DT_BANNER_LAYERS.forEach((layer) => {
       const host = banner.querySelector(layer.sel);
       if (!host) return;
-      if (layer.tile) { layoutFloorTiles(); return; }
+      if (layer.cap) return;              // laid out below, all at once
       host.innerHTML = dtVideoHTML(layer.file);
       const v = host.querySelector("video");
       v.muted = true;                     // as a property too: the attribute
@@ -5745,32 +5772,40 @@
       dtLayers.push(v);
       if (layer.audio) { dtCentre = v; watchHeroAudio(v); tryUnmuted(v); }
     });
+    layoutBannerTiles();
     syncMuteButton();
   }
 
-  /* The floor repeats rather than stretches, so the number of copies depends on
-     how many of its own width fit across the page. Recomputed on resize. */
-  function layoutFloorTiles() {
-    const floor = $("dtbFloor");
-    if (!floor) return;
-    /* One decoder per tile, so the count is capped: at a 54px floor across a
-       1920px page the natural 16:9 tile is 96px wide and would want twenty of
-       them. Past the cap the tiles simply share the width and each shows a
-       cover-cropped band of the frame — cropped, never stretched. */
-    const tileW = floor.clientHeight * (16 / 9);
-    const natural = tileW > 0 ? Math.ceil(floor.clientWidth / tileW) : 1;
-    const want = Math.max(1, Math.min(natural, DT_FLOOR_TILE_CAP));
-    if (want === dtFloorTiles) return;
-    // drop the old tiles out of the sync list before replacing them
-    const old = Array.from(floor.querySelectorAll("video"));
-    dtLayers = dtLayers.filter((v) => old.indexOf(v) < 0);
-    floor.innerHTML = Array.from({ length: want }, () => dtVideoHTML("banner-floor")).join("");
-    floor.querySelectorAll("video").forEach((v) => {
-      v.muted = true;
-      v.play().catch(() => {});
-      dtLayers.push(v);
+  /* The repeating layers repeat rather than stretch, so how many copies each one
+     holds depends on how many of its own width fit across the span it covers —
+     the whole page for the floor, page edge to the centre video for each flank.
+     Recomputed on resize, since both spans move with the window. */
+  function layoutBannerTiles() {
+    const banner = $("dtBanner");
+    if (!banner) return;
+    DT_BANNER_LAYERS.forEach((layer) => {
+      if (!layer.cap) return;
+      const host = banner.querySelector(layer.sel);
+      if (!host) return;
+      /* One decoder per tile, so the count is capped: at a 54px floor across a
+         1920px page the natural 16:9 tile is 96px wide and would want twenty of
+         them. Past the cap the tiles simply share the width and each shows a
+         cover-cropped band of the frame — cropped, never stretched. */
+      const tileW = host.clientHeight * (16 / 9);
+      const natural = tileW > 0 ? Math.ceil(host.clientWidth / tileW) : 1;
+      const want = Math.max(1, Math.min(natural, layer.cap));
+      if (want === dtTileCount[layer.sel]) return;
+      // drop the old tiles out of the sync list before replacing them
+      const old = Array.from(host.querySelectorAll("video"));
+      dtLayers = dtLayers.filter((v) => old.indexOf(v) < 0);
+      host.innerHTML = Array.from({ length: want }, () => dtVideoHTML(layer.file)).join("");
+      host.querySelectorAll("video").forEach((v) => {
+        v.muted = true;
+        v.play().catch(() => {});
+        dtLayers.push(v);
+      });
+      dtTileCount[layer.sel] = want;
     });
-    dtFloorTiles = want;
   }
 
   /* The four clips are one composition, so they have to stay frame-aligned:
@@ -5825,13 +5860,10 @@
      succeeds where the load-time attempt did not. */
   function tryUnmuted(v) {
     if (!v) return Promise.resolve(false);
-    // narration owns the session while it runs; the clip waits its turn
-    if (narrationLive()) { v.muted = true; syncMuteButton(); return Promise.resolve(false); }
     /* The wish is recorded here and only unrecorded if the browser refuses.
-       It must NOT be read back off v.muted once play() settles: the duck can
-       mute the clip while that promise is still pending, and deriving the wish
-       from the element then would file the ducking as the listener's choice
-       and leave the clip silent after narration ended. */
+       It must NOT be read back off v.muted once play() settles: the listener can
+       tap the button while that promise is still pending, and deriving the wish
+       from the element then would file their tap as our own. */
     heroSoundWanted = true;
     v.muted = false;
     return Promise.resolve(v.play())
@@ -5851,29 +5883,25 @@
   }
 
   /* ---------------- background vs foreground audio ----------------
-     The header clip is ambience and the lesson narration is the content, so
-     they must never compete for the device's audio session. Nothing in this
-     app ever paused all media — stopAudio() only ever touched its own Audio
-     object — but two unmuted elements playing at once is enough for a phone to
-     hand the session to whichever asserted it last, and a looping video
-     re-asserts every time it wraps. That is the reported symptom: narration
-     dropping out at the loop boundary.
+     The two are independent, in both directions. The header clip is ambience
+     that loops forever; the narration is the content. Neither one is allowed to
+     mute, pause or restart the other:
 
-     So the clip ducks itself while narration is playing and comes back
-     afterwards. The narration element is never touched from here, and the clip
-     keeps playing throughout — only its volume yields. */
+       - nothing here ever touches the narration element. The only thing that
+         mutes the clip is the listener's own tap on the button, recorded in
+         heroSoundWanted;
+       - the clip's loop-restart is the element's own business. It carries no
+         handler and reaches nothing outside itself — a wrap is a seek within
+         one <video>, and no code in this file listens for it;
+       - the one way a loop could ever have reached the narration is the phone
+         handing its audio session to whichever element asserted it last, which
+         a wrap does. The narration takes it straight back: see the pause
+         listener in loadTrack(). It resumes in place, so there is no restart
+         and no gap.
 
-  function narrationLive() {
-    return playing && !!currentAudioSrc();
-  }
-
-  function syncHeroDuck() {
-    const v = heroVideo();
-    if (!v) return;
-    const shouldBeMuted = !heroSoundWanted || narrationLive();
-    if (v.muted !== shouldBeMuted) v.muted = shouldBeMuted;
-    syncMuteButton();
-  }
+     An earlier build ducked the clip while narration played. That kept the two
+     off each other but cost the background audio, which is meant to keep
+     playing throughout — so the duck is gone and both sources run at once. */
 
   /* the button is a view of the element's state, so watch the element */
   function watchHeroAudio(v) {
@@ -5896,7 +5924,7 @@
   }
 
   function syncDesktopChrome() {
-    if (window.matchMedia(DESKTOP_MQ).matches) { buildDesktopBanner(); layoutFloorTiles(); }
+    if (window.matchMedia(DESKTOP_MQ).matches) { buildDesktopBanner(); layoutBannerTiles(); }
     // crossing the breakpoint changes which pre-login step applies
     if (!store.authSeen) showAuthStep();
   }
@@ -5908,7 +5936,7 @@
   window.matchMedia(DESKTOP_MQ).addEventListener("change", syncMuteButton);
   // the floor's tile count follows the window's width
   window.addEventListener("resize", () => {
-    if (window.matchMedia(DESKTOP_MQ).matches) layoutFloorTiles();
+    if (window.matchMedia(DESKTOP_MQ).matches) layoutBannerTiles();
   });
 
   applyTextSize();
