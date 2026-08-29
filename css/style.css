@@ -105,12 +105,23 @@ img { user-select: none; -webkit-user-drag: none; }
    runs up behind the status bar and dynamic island rather than being pushed
    below them. Nothing interactive lives in here — the action icons moved to
    the card footer — so there is nothing to keep clear of the notch. */
+/* The header is exactly the clip's own shape — 1080x606 — so the whole frame
+   shows with nothing cropped, and its bottom edge is the header's bottom edge.
+   Height follows the width, so it is right at any phone size. Full-bleed from
+   y:0, notch included; the clock inside carries its own safe-area inset.
+   Desktop restores a fixed height further down: there the banner covers this
+   and row 1's rhythm is set by --dt-head. */
 .header-zone {
   position: relative;
   flex: 0 0 auto;
-  height: calc(clamp(76px, 12vh, 128px) + var(--sat));
+  width: 100%;
+  aspect-ratio: 1080 / 606;
+  height: auto;
   overflow: hidden;
 }
+/* flush: the first bar starts exactly where the video ends. The other bar keeps
+   its 5px, which is what separates the two. */
+.header-zone + .bar { margin-top: 0; }
 
 .wave-bg {
   position: absolute;
@@ -121,12 +132,9 @@ img { user-select: none; -webkit-user-drag: none; }
 .wave-video {
   width: 100%;
   height: 100%;
+  /* the box is the frame's own aspect ratio, so cover crops nothing */
   object-fit: cover;
-  /* The clip is 16:9 in a much wider window, so cover crops it hard: at 393px
-     the frame scales to 393x221 and only 102px shows. Anchored to the bottom,
-     so the frame's own bottom edge lands on the header's bottom edge and sits
-     directly above the bar, rather than being cropped away above it. */
-  object-position: center bottom;
+  object-position: center;
   background: #050614;   /* shows briefly if the video is still buffering */
 }
 /* static fallback — hidden by default; shown if the video can't play at all
@@ -3978,6 +3986,11 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
     overflow: clip;
   }
   .auth-screen, .auth-card-outer { overflow: clip; }
+
+  /* the phone sizes this header to the clip it plays; here the banner behind
+     is what shows, and row 1's height is the rhythm everything else follows */
+  .header-zone { aspect-ratio: auto; height: var(--dt-head); }
+  .header-zone + .bar { margin-top: 5px; }
 
   /* ---- header banner ----
      One composition across the full width of row 1, painted behind the app

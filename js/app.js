@@ -5656,9 +5656,13 @@
   if (waveVideo) {
     waveVideo.addEventListener("error", () => $("headerZone").classList.add("video-broken"));
     watchHeroAudio(waveVideo);
-    // sound on if the browser allows it, muted playback if not, never silence
-    // and a stopped video
-    tryUnmuted(waveVideo);
+    /* The source is attached here rather than in the markup because this clip
+       is for the phone: on desktop the header is hidden behind the banner, and
+       a <source> in the HTML would have the browser download 1.6MB for an
+       element nobody can see. Attached on the way back under the breakpoint
+       too, in case the window was widened first. */
+    attachHeaderSource();
+    window.matchMedia(DESKTOP_MQ).addEventListener("change", attachHeaderSource);
   }
 
   /* ---------------- desktop header strip ----------------
@@ -5694,8 +5698,7 @@
     { sel: ".dtb-floor", file: "banner-floor", tile: true },
     { sel: ".dtb-left", file: "banner-left" },
     { sel: ".dtb-right", file: "banner-right" },
-    // the same clip the mobile header plays, so a desktop fetches it once
-    { sel: ".dtb-centre", file: "hero-loop", audio: true },
+    { sel: ".dtb-centre", file: "banner-centre", audio: true },
   ];
 
   const DT_FLOOR_TILE_CAP = 6;
@@ -5833,6 +5836,19 @@
     if (!v) return;
     ["volumechange", "play", "pause", "loadedmetadata"].forEach((e) =>
       v.addEventListener(e, syncMuteButton));
+  }
+
+  function attachHeaderSource() {
+    if (!waveVideo || window.matchMedia(DESKTOP_MQ).matches) return;
+    if (waveVideo.querySelector("source")) return;
+    const src = document.createElement("source");
+    src.src = "assets/video/header-loop.mp4";
+    src.type = "video/mp4";
+    waveVideo.appendChild(src);
+    waveVideo.load();
+    // sound on if the browser allows it, muted playback if not — never silence
+    // and a stopped video
+    tryUnmuted(waveVideo);
   }
 
   function syncDesktopChrome() {
