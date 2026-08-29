@@ -463,7 +463,9 @@ img { user-select: none; -webkit-user-drag: none; }
 .dock-btn.glow-cyan { filter: brightness(1.45) drop-shadow(0 0 10px rgba(61,223,255,.65)); }
 
 /* centre slot: the ring asset is the frame, the photo fills it. Sized past the
-   bar height so it reads as the anchor of the dock, the way the mockup has it. */
+   bar height so it reads as the anchor of the dock, the way the mockup has it.
+   The gradient ring's opening is ~76% of its canvas against the old ring's 88%,
+   so the photo inside came in to keep clear of the stroke. */
 .dock-profile {
   width: 52px;
   height: 52px;
@@ -476,8 +478,8 @@ img { user-select: none; -webkit-user-drag: none; }
 }
 /* an uploaded photo fills the ring; the fallback person icon stays icon-sized */
 .dock-profile.has-photo img {
-  width: 42px;
-  height: 42px;
+  width: 38px;
+  height: 38px;
   border-radius: 50%;
   object-fit: cover;
 }
@@ -1827,9 +1829,11 @@ select.mt-input {
 .ci-orb { display: grid; place-items: center; }
 .ci-orb img { width: 56%; height: 56%; object-fit: contain; }
 /* half the size they used to render at — the rings were swallowed by them.
-   Scoped to the checklist screens: the journal's stat orbs reuse .ci-orb and
-   were not part of that change. */
-.ci-actions .ci-orb img { width: 28%; height: 28%; }
+   The journal's bottom-bar orbs reuse .ci-orb and now match; their four icons
+   were also re-cut to a common mark size, which CSS could not have evened out
+   because the difference was internal padding in each file. */
+.ci-actions .ci-orb img,
+.j-stat-btn .ci-orb img { width: 28%; height: 28%; }
 
 /* four stat placeholders — same frame asset as the check-in category buttons */
 .j-stat-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 8px; margin: 16px 0 2px; }
@@ -3068,7 +3072,7 @@ select.mt-input {
   display: block;
   width: 104px;
   height: 104px;
-  margin: 2px auto 12px;
+  margin: 2px auto 20px;
   border-radius: 50%;
   background: url("../assets/buttons-icon/profile-ring@2x.png") center / contain no-repeat;
 }
@@ -3076,16 +3080,18 @@ select.mt-input {
   position: absolute;
   left: 50%;
   top: 50%;
-  width: 74%;
-  height: 74%;
+  width: 70%;
+  height: 70%;
   transform: translate(-50%, -50%);
   object-fit: contain;
 }
 .pr-photo img.shot { border-radius: 50%; object-fit: cover; }
+/* clears the gradient ring's lower stroke, which is thicker than the plain
+   ring this badge was first placed against */
 .pr-photo-edit {
   position: absolute;
   left: 50%;
-  bottom: -2px;
+  bottom: -9px;
   transform: translateX(-50%);
   padding: 2px 12px;
   border-radius: 999px;
