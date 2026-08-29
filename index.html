@@ -30,6 +30,16 @@
       <div class="wave-bg wave-still" aria-hidden="true"></div>
       <!-- session · time · date, sitting directly on the video. Plain white,
            no scrim or shadow behind it (per spec). Shown on every screen. -->
+      <!-- desktop only: the centre banner video is the one layer with audio.
+           Sits in the gear's column, directly above it. -->
+      <button id="dtMute" class="dt-mute" type="button"
+              aria-label="Unmute banner audio" aria-pressed="false">
+        <svg viewBox="0 0 24 24" aria-hidden="true">
+          <path class="dtm-cone" d="M4 9.5h3.2L12 5.4v13.2L7.2 14.5H4z"/>
+          <g class="dtm-on"><path d="M15.4 9.1a4 4 0 0 1 0 5.8"/><path d="M17.9 6.6a7.5 7.5 0 0 1 0 10.8"/></g>
+          <g class="dtm-off"><path d="M15.8 9.8l4.6 4.6"/><path d="M20.4 9.8l-4.6 4.6"/></g>
+        </svg>
+      </button>
       <div class="wave-clock" id="waveClock">
         <div class="wc-session"><b id="wcSessionName"></b><span>Session</span></div>
         <div class="wc-time" id="wcTime"></div>
@@ -252,14 +262,20 @@
        the header segments and the column panels stay pixel-aligned with the
        app shell between them.
 
-       Segments 1, 2, 4 and 5 are filled with <video> by app.js, and only at
+       The banner's four layers are filled with <video> by app.js, and only at
        the desktop breakpoint — so a phone never downloads or decodes them.
-       Segment 3 is the app's own header video, already carrying the clock. -->
+       It spans the full width behind the app column, whose own header video is
+       hidden at this width so the banner shows through it; the clock stays on
+       top, over the centre video. -->
   <div class="dt-shell" id="dtShell" aria-hidden="true">
-    <div class="dt-seg dt-seg-1" data-dtseg="1"></div>
-    <div class="dt-seg dt-seg-2" data-dtseg="2"></div>
-    <div class="dt-seg dt-seg-4" data-dtseg="4"></div>
-    <div class="dt-seg dt-seg-5" data-dtseg="5"></div>
+    <div class="dt-banner" id="dtBanner">
+      <!-- painted back to front: floor, then the two flanking overlays that
+           sit on it, then the centre video standing on its front edge -->
+      <div class="dtb-layer dtb-floor" id="dtbFloor"></div>
+      <div class="dtb-layer dtb-side dtb-left" data-dtb="left"></div>
+      <div class="dtb-layer dtb-side dtb-right" data-dtb="right"></div>
+      <div class="dtb-layer dtb-centre" data-dtb="centre"></div>
+    </div>
     <div class="dt-col dt-left">
       <div class="dt-bar"></div>
       <div class="dt-panel dt-panel-square"></div>

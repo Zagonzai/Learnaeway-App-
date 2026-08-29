@@ -5673,28 +5673,92 @@
      because hard-seeking every segment produces a visible stutter across the
      whole strip. A hard seek is kept only for gross desync, which is what a
      backgrounded tab or a stalled decode leaves behind. */
-  let dtSegments = [];
+  /* ---------------- desktop banner ----------------
+     Four layers, all 16:9 and all 31.7s, built only past the desktop
+     breakpoint so a phone never downloads them:
 
-  function buildDesktopStrip() {
-    if (dtSegments.length || !waveVideo) return;
-    const sources = Array.from(waveVideo.querySelectorAll("source"))
-      .map((s) => `<source src="${s.getAttribute("src")}" type="${s.getAttribute("type")}">`).join("");
-    document.querySelectorAll("#dtShell .dt-seg").forEach((seg) => {
-      seg.innerHTML = `<video muted loop playsinline webkit-playsinline preload="auto"
-        poster="assets/backgrounds/wave-header@2x.png">${sources}</video>`;
-      const v = seg.querySelector("video");
-      v.muted = true;                       // set as a property too: the attribute alone
-      v.play().catch(() => {});             // isn't always enough for autoplay policy
-      dtSegments.push(v);
-    });
+       floor   full width, tiled horizontally at its own aspect ratio, never
+               stretched; its top edge is the line the centre video stands on
+       left    one instance, flanking, sharing the centre's eye-line
+       right   one instance, mirrored placement of left
+       centre  the hero, the only layer with audio
+
+     Every proportion is a CSS variable on .dt-banner (--dtb-floor-h,
+     --dtb-centre-w, --dtb-side-w, --dtb-side-gap) so the composition can be
+     retuned without touching this code. */
+
+  const DT_BANNER_LAYERS = [
+    { sel: ".dtb-floor", file: "banner-floor", tile: true },
+    { sel: ".dtb-left", file: "banner-left" },
+    { sel: ".dtb-right", file: "banner-right" },
+    { sel: ".dtb-centre", file: "banner-centre", audio: true },
+  ];
+
+  const DT_FLOOR_TILE_CAP = 6;
+
+  let dtLayers = [];        // every <video> in the banner, for the sync loop
+  let dtCentre = null;      // the master clock, and the one that carries sound
+  let dtFloorTiles = 0;
+
+  /* H.264 only — the delivered clips have no WebM twin, and offering a source
+     that isn't there costs a 404 per layer on every desktop load. */
+  function dtVideoHTML(file, extra) {
+    return `<video muted loop playsinline webkit-playsinline preload="auto" ${extra || ""}>
+      <source src="assets/video/${file}.mp4" type="video/mp4">
+    </video>`;
   }
 
-  function syncDesktopStrip() {
-    if (!dtSegments.length || !waveVideo || waveVideo.readyState < 2) return;
-    const master = waveVideo.currentTime;
-    const dur = waveVideo.duration;
-    dtSegments.forEach((v) => {
-      if (v.readyState < 2) return;
+  function buildDesktopBanner() {
+    const banner = $("dtBanner");
+    if (!banner || dtLayers.length) return;
+    DT_BANNER_LAYERS.forEach((layer) => {
+      const host = banner.querySelector(layer.sel);
+      if (!host) return;
+      if (layer.tile) { layoutFloorTiles(); return; }
+      host.innerHTML = dtVideoHTML(layer.file);
+      const v = host.querySelector("video");
+      v.muted = true;                     // as a property too: the attribute
+      v.play().catch(() => {});           // alone doesn't satisfy autoplay policy
+      dtLayers.push(v);
+      if (layer.audio) dtCentre = v;
+    });
+    syncMuteButton();
+  }
+
+  /* The floor repeats rather than stretches, so the number of copies depends on
+     how many of its own width fit across the page. Recomputed on resize. */
+  function layoutFloorTiles() {
+    const floor = $("dtbFloor");
+    if (!floor) return;
+    /* One decoder per tile, so the count is capped: at a 54px floor across a
+       1920px page the natural 16:9 tile is 96px wide and would want twenty of
+       them. Past the cap the tiles simply share the width and each shows a
+       cover-cropped band of the frame — cropped, never stretched. */
+    const tileW = floor.clientHeight * (16 / 9);
+    const natural = tileW > 0 ? Math.ceil(floor.clientWidth / tileW) : 1;
+    const want = Math.max(1, Math.min(natural, DT_FLOOR_TILE_CAP));
+    if (want === dtFloorTiles) return;
+    // drop the old tiles out of the sync list before replacing them
+    const old = Array.from(floor.querySelectorAll("video"));
+    dtLayers = dtLayers.filter((v) => old.indexOf(v) < 0);
+    floor.innerHTML = Array.from({ length: want }, () => dtVideoHTML("banner-floor")).join("");
+    floor.querySelectorAll("video").forEach((v) => {
+      v.muted = true;
+      v.play().catch(() => {});
+      dtLayers.push(v);
+    });
+    dtFloorTiles = want;
+  }
+
+  /* The four clips are one composition, so they have to stay frame-aligned:
+     nudge playbackRate for small drift, hard-seek for large. Same approach the
+     mirrored header strip used, with the centre video as the master. */
+  function syncDesktopBanner() {
+    if (!dtCentre || dtCentre.readyState < 2) return;
+    const master = dtCentre.currentTime;
+    const dur = dtCentre.duration;
+    dtLayers.forEach((v) => {
+      if (v === dtCentre || v.readyState < 2) return;
       let drift = v.currentTime - master;
       // the loop wraps, so a drift near ±duration is really a tiny one
       if (dur && Math.abs(drift) > dur / 2) drift -= Math.sign(drift) * dur;
@@ -5703,16 +5767,43 @@
       else v.playbackRate = 1;
       if (v.paused) v.play().catch(() => {});
     });
+    if (dtCentre.paused) dtCentre.play().catch(() => {});
+  }
+
+  /* Muted on load, which is both the autoplay requirement and what anyone
+     expects of a page that starts playing by itself. The button opts in. */
+  let dtMuted = true;
+  function syncMuteButton() {
+    const btn = $("dtMute");
+    if (!btn) return;
+    btn.classList.toggle("on", !dtMuted);
+    btn.setAttribute("aria-pressed", dtMuted ? "false" : "true");
+    btn.setAttribute("aria-label", dtMuted ? "Unmute banner audio" : "Mute banner audio");
+    if (dtCentre) dtCentre.muted = dtMuted;
+  }
+  function toggleBannerMute() {
+    dtMuted = !dtMuted;
+    if (dtCentre) {
+      dtCentre.muted = dtMuted;
+      // unmuting a video the browser started muted needs a fresh play() call
+      if (!dtMuted) dtCentre.play().catch(() => { dtMuted = true; syncMuteButton(); });
+    }
+    syncMuteButton();
   }
 
   function syncDesktopChrome() {
-    if (window.matchMedia(DESKTOP_MQ).matches) buildDesktopStrip();
+    if (window.matchMedia(DESKTOP_MQ).matches) { buildDesktopBanner(); layoutFloorTiles(); }
     // crossing the breakpoint changes which pre-login step applies
     if (!store.authSeen) showAuthStep();
   }
   syncDesktopChrome();
   window.matchMedia(DESKTOP_MQ).addEventListener("change", syncDesktopChrome);
-  setInterval(syncDesktopStrip, 1000);
+  setInterval(syncDesktopBanner, 1000);
+  $("dtMute").addEventListener("click", toggleBannerMute);
+  // the floor's tile count follows the window's width
+  window.addEventListener("resize", () => {
+    if (window.matchMedia(DESKTOP_MQ).matches) layoutFloorTiles();
+  });
 
   applyTextSize();
   syncVolume();
