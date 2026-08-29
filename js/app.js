@@ -2430,6 +2430,9 @@
   function parseCsv(text) {
     const rows = [];
     let row = [], cell = "", quoted = false;
+    /* A UTF-8 BOM ahead of the header row would ride along on the first column
+       name — TopstepX writes one, and "﻿Id" matches nothing. */
+    if (text.charCodeAt(0) === 0xFEFF) text = text.slice(1);
     for (let i = 0; i < text.length; i++) {
       const c = text[i];
       if (quoted) {
@@ -2654,7 +2657,118 @@
       trades: matched.trades.concat(stock),
       open: matched.open,
       skipped, drip, orphanCloses: matched.orphanCloses,
+      skippedNote: "dividends, transfers, expiries, corporate actions",
     };
+  }
+
+  /* ---------------- TopstepX trade export ----------------
+     Columns: Id, ContractName, EnteredAt, ExitedAt, EntryPrice, ExitPrice,
+     Fees, PnL, Size, Type, TradeDay, TradeDuration, Commissions.
+
+     The simplest of the three by far: every row is already a finished trade,
+     with both fills and a net P&L that TopstepX worked out itself. So there is
+     no FIFO pass here — no opens to carry, no closes to pair, nothing left
+     over. One row in, one trade out. */
+
+  /* Blank is a real value in this file, not a fault: Commissions was added to
+     the export partway through the date range, so older rows carry nothing
+     there. Everything absent or unreadable reads as zero. */
+  function parseTsxNumber(v) {
+    const str = String(v == null ? "" : v).trim();
+    if (!str) return 0;
+    const n = parseFloat(str.replace(/[$,\s()]/g, ""));
+    if (!isFinite(n)) return 0;
+    return str.indexOf("(") >= 0 ? -Math.abs(n) : n;
+  }
+
+  /* The date a timestamp names IN ITS OWN ZONE. These stamps carry an explicit
+     offset that moves with daylight saving ("...T22:13:05-04:00"), and the
+     whole point is to read them as written rather than as the browser's local
+     time — new Date(...).getDate() would re-render a 10pm Eastern trade in
+     whatever zone the phone is in and hand back the wrong day. The leading
+     date portion is already the local date at that offset, so take it as is.
+     Also accepts a plain MM/DD/YYYY, which is how some exports write TradeDay. */
+  function offsetDayKey(ts) {
+    const str = String(ts == null ? "" : ts).trim();
+    const iso = str.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (iso) return `${iso[1]}-${iso[2]}-${iso[3]}`;
+    return mdyToDayKey(str);
+  }
+
+  /* "NQM5" -> NQ · "MNQU6" -> MNQ · "ESU6" -> ES. The root is what groups and
+     displays; the month code and year identify one specific contract, so the
+     full name is kept alongside it rather than thrown away. Some feeds prefix
+     the name ("CON.F.US.MNQ.M25"), so that is unwrapped first. A name that
+     doesn't fit the pattern is used whole — better a raw symbol than none. */
+  const TSX_MONTH_CODES = "FGHJKMNQUVXZ";
+  function tsxRootSymbol(contractName) {
+    let s = String(contractName == null ? "" : contractName).trim().toUpperCase();
+    if (!s) return "";
+    if (s.indexOf(".") >= 0) {
+      // CON.F.US.MNQ.M25 -> the last part that is neither the month code nor a
+      // routing token is the root
+      const parts = s.split(".").filter(Boolean);
+      const root = parts.find((p, i) => i >= 3 && /^[A-Z]{1,4}$/.test(p));
+      if (root) return root;
+      s = parts[parts.length - 1] || s;
+    }
+    const m = s.match(/^([A-Z]{1,4})([FGHJKMNQUVXZ])(\d{1,2})$/);
+    return m && TSX_MONTH_CODES.indexOf(m[2]) >= 0 ? m[1] : s;
+  }
+
+  function parseTopstepxExport(rows) {
+    const head = rows[0].map((h) => h.trim());
+    const col = (name) => head.indexOf(name);
+    const iContract = col("ContractName"), iPnl = col("PnL"), iDay = col("TradeDay");
+    const iIn = col("EnteredAt"), iOut = col("ExitedAt");
+    const iEntry = col("EntryPrice"), iExit = col("ExitPrice");
+    const iFees = col("Fees"), iComm = col("Commissions");
+    const iSize = col("Size"), iType = col("Type"), iDur = col("TradeDuration");
+    if (iContract < 0 || iPnl < 0 || iDay < 0) {
+      throw new Error("That doesn't look like a TopstepX export — no ContractName / PnL / TradeDay columns.");
+    }
+
+    const trades = [];
+    let skipped = 0;
+    for (let r = 1; r < rows.length; r++) {
+      const row = rows[r];
+      const contract = (row[iContract] || "").trim();
+      /* TradeDay is TopstepX's own session date, and it is the one to place the
+         trade on: futures sessions run overnight, so a fill entered at 10pm
+         Eastern belongs to the NEXT day's session and TradeDay already says so.
+         Reading the date off EnteredAt instead would split a session at
+         midnight. EnteredAt is only the fallback for a row missing TradeDay. */
+      const day = offsetDayKey(row[iDay]) || (iIn >= 0 ? offsetDayKey(row[iIn]) : null);
+      if (!day || !contract) { skipped++; continue; }
+
+      const type = (iType >= 0 ? row[iType] || "" : "").trim();
+      const t = {
+        day,
+        // PnL is TopstepX's own net figure and the source of truth — it is not
+        // recomputed from the fills, and fees are not subtracted from it again
+        pnl: parseTsxNumber(row[iPnl]),
+        symbol: tsxRootSymbol(contract),
+        contract,
+        qty: (iSize >= 0 ? row[iSize] || "" : "").trim(),
+        side: /^short$/i.test(type) ? "Short" : "Long",
+        entry: iEntry >= 0 ? parseTsxNumber(row[iEntry]) : 0,
+        exit: iExit >= 0 ? parseTsxNumber(row[iExit]) : 0,
+        // kept as written, offset and all, so nothing is re-zoned on the way in
+        enteredAt: (iIn >= 0 ? row[iIn] || "" : "").trim(),
+        exitedAt: (iOut >= 0 ? row[iOut] || "" : "").trim(),
+        // hh:mm:ss.fraction, straight from the file — derivable from the two
+        // stamps, but there is no reason to recompute what is already here
+        duration: (iDur >= 0 ? row[iDur] || "" : "").trim(),
+        // the two cost columns as one figure, rounded to cents rather than left
+        // as whatever adding two floats produced
+        fees: Math.round((parseTsxNumber(iFees >= 0 ? row[iFees] : 0)
+                        + parseTsxNumber(iComm >= 0 ? row[iComm] : 0)) * 100) / 100,
+        kind: "futures",
+      };
+      trades.push(t);
+    }
+    // a blank tail row, or anything without the two fields a trade needs
+    return { trades, skipped, skippedNote: "no trade day or contract name" };
   }
 
   const BROKER_PARSERS = [
@@ -2662,6 +2776,8 @@
       detect: (head) => head.indexOf("soldTimestamp") >= 0 && head.indexOf("buyFillId") >= 0 },
     { id: "robinhood", label: "Robinhood", parse: parseRobinhoodExport,
       detect: (head) => head.indexOf("Trans Code") >= 0 && head.indexOf("Activity Date") >= 0 },
+    { id: "topstepx", label: "TopstepX", parse: parseTopstepxExport,
+      detect: (head) => head.indexOf("ContractName") >= 0 && head.indexOf("TradeDay") >= 0 },
   ];
 
   /* broker-agnostic: normalised trades -> per-day totals */
@@ -2714,10 +2830,20 @@
     };
     (store.journalBatches[account.id] || (store.journalBatches[account.id] = [])).push(batch);
     // the calendar needs day totals; the P&L views need each trade
-    addTradeRecords(account.id, trades.map((t) => ({
-      id: jtId(), source: "import", batch: batch.id,
-      date: t.day, symbol: t.symbol || "", side: t.side || "Long", qty: t.qty || "", pnl: t.pnl,
-    })));
+    addTradeRecords(account.id, trades.map((t) => {
+      const rec = {
+        id: jtId(), source: "import", batch: batch.id,
+        date: t.day, symbol: t.symbol || "", side: t.side || "Long", qty: t.qty || "", pnl: t.pnl,
+      };
+      /* Detail a parser worked out but the common shape has no room for — the
+         specific futures contract behind a root symbol, the fills, how long the
+         trade was held. Carried only when a parser actually produced it, so
+         records from the other brokers keep exactly the shape they had. */
+      ["contract", "entry", "exit", "enteredAt", "exitedAt", "duration", "fees"].forEach((k) => {
+        if (t[k] !== undefined && t[k] !== "" && t[k] !== null) rec[k] = t[k];
+      });
+      return rec;
+    }));
     // positions with no closing leg are not trades — they are held, so they are
     // kept apart from the P&L record. Re-importing replaces the account's list
     // rather than stacking duplicates on it.
@@ -2727,6 +2853,7 @@
       broker: broker.label, trades: trades.length, days: Object.keys(days).sort(),
       open: (report.open || []).length, skipped: report.skipped || 0,
       drip: report.drip || 0, orphanCloses: report.orphanCloses || 0,
+      skippedNote: report.skippedNote || "",
       replaced: !!replaceBatchId,
     };
   }
@@ -3394,7 +3521,10 @@
               <div class="pf-item-main jd-static">
                 <span class="pf-item-txt">
                   <span class="pf-item-kind">${esc(t.symbol || "Trade")}</span>
-                  <span class="pf-item-meta">${many ? esc(accountLabel(b.acct)) + " · " : ""}${esc(t.side || "")}${
+                  <span class="pf-item-meta">${many ? esc(accountLabel(b.acct)) + " · " : ""}${
+                    /* the contract month, where the parser knew it — NQ says
+                       what was traded, NQM5 says which contract */
+                    t.contract && t.contract !== t.symbol ? esc(t.contract) + " · " : ""}${esc(t.side || "")}${
                     t.qty ? " · " + esc(String(t.qty)) : ""}</span>
                 </span>
                 <span class="pf-item-amt ${t.pnl < 0 ? "neg" : "pos"}">${money(t.pnl, true)}</span>
@@ -4040,7 +4170,7 @@
       if (res.open) notes.push(`${res.open} position${res.open === 1 ? "" : "s"} still open — held back from the P&amp;L record.`);
       if (res.drip) notes.push(`${res.drip} dividend reinvestment buy${res.drip === 1 ? "" : "s"} skipped as noise.`);
       if (res.orphanCloses) notes.push(`${res.orphanCloses} closing leg${res.orphanCloses === 1 ? "" : "s"} had no opening row in this file, so no P&amp;L could be worked out for ${res.orphanCloses === 1 ? "it" : "them"}.`);
-      if (res.skipped) notes.push(`${res.skipped} non-trade row${res.skipped === 1 ? "" : "s"} ignored (dividends, transfers, expiries, corporate actions).`);
+      if (res.skipped) notes.push(`${res.skipped} non-trade row${res.skipped === 1 ? "" : "s"} ignored${res.skippedNote ? ` (${esc(res.skippedNote)})` : ""}.`);
       openOverlay(panelHead(res.replaced ? "Import Replaced" : "Import Complete") + `
         <div class="liked-empty">${res.trades} ${res.broker} trade${res.trades === 1 ? "" : "s"}
           imported across ${span}.${res.replaced ? "<br>The import it replaces has been removed." : ""}<br>Day totals on the calendar now use the broker record.
