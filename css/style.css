@@ -948,10 +948,10 @@ img { user-select: none; -webkit-user-drag: none; }
   position: absolute;
   inset: 0;
   z-index: 90;
-  /* single full-page asset: wave header blending into navy body */
-  background:
-    url("../assets/backgrounds/login-screen-background@2x.png") top center / cover no-repeat,
-    var(--bg);
+  /* The wave is the video band at the top now, the same way the app's own
+     header works, so the body behind it is just the app's ground. The old
+     full-page still is kept as the band's fallback, not as the page. */
+  background: var(--bg);
   display: flex;
   flex-direction: column;
   overflow-y: auto;
@@ -969,13 +969,29 @@ img { user-select: none; -webkit-user-drag: none; }
 }
 .auth-screen.kb-open .auth-card { padding-bottom: 96px; }
 
-/* Spacer that drops the card below the wave portion of the background. It
-   absorbs the top inset, so the card clears the notch while the wave behind
-   it does not. */
+/* The band the clip plays in, which is also what drops the card below it. It
+   absorbs the top inset, so the card clears the notch while the footage behind
+   it does not. The still is the fallback underneath: anchored to its top,
+   which is where that asset's wave sits. */
 .auth-wave {
+  position: relative;
   flex: 0 0 auto;
   height: calc(clamp(96px, 15vh, 160px) + var(--sat));
+  overflow: hidden;
+  background: url("../assets/backgrounds/login-screen-background@2x.png") top center / cover no-repeat;
 }
+/* Same treatment the app header gives this clip: cropped to the band rather
+   than stretched, anchored to the bottom so the candlestick wave lands on the
+   band's bottom edge and only the empty top of the frame is lost. */
+.auth-wave-video {
+  position: absolute;
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: cover;
+  object-position: center bottom;
+}
+.auth-wave-video.hidden { display: none; }
 
 .auth-card-outer {
   position: relative;
@@ -1077,18 +1093,27 @@ img { user-select: none; -webkit-user-drag: none; }
   padding: 0 24px;
   font-size: 16px;               /* >=16px prevents iOS focus zoom */
   color: var(--text);
+  /* every field on the form reads from the left, password included */
+  text-align: left;
   outline: none;
   -webkit-appearance: none;
   appearance: none;
 }
 .auth-input::placeholder { color: #8FA3BF; letter-spacing: .06em; }
-/* Chrome injects these inside password/email fields. Left inline they take
+/* WebKit injects these inside password/email fields. Left inline they take
    part in layout and can widen the field; anchored absolutely they sit within
-   the bounds it already has. */
+   the bounds it already has.
+
+   ::-webkit-textfield-decoration-container is deliberately NOT in this list.
+   It is not an injected button — it is the shadow container holding the
+   field's own editing area, so absolutely positioning it at right:14px pulled
+   the text, the caret and the placeholder out of flow and jammed them against
+   the right edge. That is why the Access Code field, the only one iOS offers
+   password autofill on, sat right-aligned showing a stray dot instead of its
+   placeholder while every other field on the form looked fine. */
 .auth-input::-webkit-credentials-auto-fill-button,
 .auth-input::-webkit-strong-password-auto-fill-button,
-.auth-input::-webkit-caps-lock-indicator,
-.auth-input::-webkit-textfield-decoration-container {
+.auth-input::-webkit-caps-lock-indicator {
   position: absolute;
   right: 14px;
   top: 50%;

@@ -5354,6 +5354,7 @@
       save();
       await pullCloudAndMerge();   // resume progress/notes from other devices
       authScreen.classList.add("hidden");
+      stopAuthVideo();          // nothing left to watch behind a hidden screen
       render();
     } catch (ex) {
       err.textContent = ex.message || "Sign-in failed — please try again.";
@@ -5748,10 +5749,32 @@
     showAuthStep();
   }
 
+  /* The gate's own copy of the header clip. Its source is attached on the way
+     in and the element is stopped on the way out, so once the user is through
+     the gate there is no second decoder running on a screen nobody can see.
+     Silent throughout: the hero sound button does not reach this one. */
+  function startAuthVideo() {
+    const v = $("authVideo");
+    if (!v || v.querySelector("source")) return;
+    v.addEventListener("error", () => v.classList.add("hidden"));  // still shows through
+    const src = document.createElement("source");
+    src.src = "assets/video/header-loop.mp4";
+    src.type = "video/mp4";
+    v.appendChild(src);
+    v.muted = true;
+    v.load();
+    v.play().catch(() => {});
+  }
+  function stopAuthVideo() {
+    const v = $("authVideo");
+    if (v) v.pause();
+  }
+
   if (!store.authSeen) {
     renderAuthForm();
     showAuthStep();
     authScreen.classList.remove("hidden");
+    startAuthVideo();
   }
 
   /* ---------------- boot ---------------- */

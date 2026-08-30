@@ -184,7 +184,13 @@
 
     <!-- ===================== AUTH (pre-login entry, UI only) ===================== -->
     <div id="authScreen" class="auth-screen hidden">
-      <div class="auth-wave"></div>
+      <!-- the same clip the app header plays, so the way in looks like the way
+           around. app.js attaches the source only while this screen is up. The
+           still behind it shows if the video cannot play at all. -->
+      <div class="auth-wave">
+        <video id="authVideo" class="auth-wave-video"
+               muted loop playsinline webkit-playsinline preload="none"></video>
+      </div>
 
       <!-- Step 1: access gate — data capture + passcode gatekeeper -->
       <div id="gateStep" class="auth-card-outer hidden">
@@ -197,7 +203,7 @@
             <input class="g-pill auth-input" name="lastName" type="text" placeholder="Last Name">
             <input class="g-pill auth-input" name="email" type="email" placeholder="Email">
             <input class="g-pill auth-input" name="phone" type="tel" placeholder="Phone Number">
-            <input class="g-pill auth-input" name="passcode" type="password" placeholder="Passcode">
+            <input class="g-pill auth-input" name="passcode" type="password" placeholder="Access Code">
             <div id="gateError" class="gate-error hidden">Invalid passcode — access denied.</div>
             <button type="submit" class="g-pill auth-submit">Enter</button>
           </form>
