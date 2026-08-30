@@ -972,11 +972,16 @@ img { user-select: none; -webkit-user-drag: none; }
 /* The band the clip plays in, which is also what drops the card below it. It
    absorbs the top inset, so the card clears the notch while the footage behind
    it does not. The still is the fallback underneath: anchored to its top,
-   which is where that asset's wave sits. */
+   which is where that asset's wave sits.
+
+   The inset is a floor here, not an addition. Adding it outright made the band
+   grow by the full notch on every phone that has one — 62pt of extra band on a
+   Pro Max — when all it has to guarantee is that a decent amount of clip still
+   shows below the notch. max() gives it that guarantee and nothing more. */
 .auth-wave {
   position: relative;
   flex: 0 0 auto;
-  height: calc(clamp(96px, 15vh, 160px) + var(--sat));
+  height: max(clamp(96px, 15vh, 160px), calc(var(--sat) + 72px));
   overflow: hidden;
   background: url("../assets/backgrounds/login-screen-background@2x.png") top center / cover no-repeat;
 }
