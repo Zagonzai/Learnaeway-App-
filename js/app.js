@@ -2505,6 +2505,7 @@
 
   const PW_CLASS_A = PW_SPECIALS.filter((s) => s.cls === "A").map((s) => s.type);
   const PW_HAND_SIZE = 6;
+  const PW_TIER_COPIES = 5;      // per tier, per side
   const PW_TARGET = 25;
   const PW_REVEAL_MS = 700;
 
@@ -2518,7 +2519,7 @@
   function pwBuildTierDeck(side) {
     const cards = [];
     PW_TIERS.forEach((t) => {
-      for (let i = 0; i < 5; i++) {
+      for (let i = 0; i < PW_TIER_COPIES; i++) {
         cards.push({ id: pwId(), side, kind: "tier", type: t.type, pts: t.pts, visual: t });
       }
     });
@@ -2703,7 +2704,7 @@
       bull: [], bear: [], special: [],
       playerHand: [], aiHand: [], playerPlayed: null, aiPlayed: null,
       round: 1, log: [], winner: null, pendingCandle: 0, pending: null,
-      showLegend: false, showCounts: false, seen: pwEmptyCounts(),
+      showLegend: false, seen: pwEmptyCounts(),
     };
   }
 
@@ -2760,8 +2761,15 @@
     const newCandle = pwClamp(pw.candle + result.candleDelta);
     pw.log = result.log.concat(pw.log);
 
-    // an opponent tier card, once seen, is known for the rest of the match
-    if (aCard.kind === "tier") pw.seen[aCard.type] = (pw.seen[aCard.type] || 0) + 1;
+    /* An opponent tier card, once seen, is known for the rest of the match —
+       but only five of each exist, so the tally stops there. A tie recycles
+       both played cards to the bottom of their own decks, which means the same
+       physical card can come back and be revealed again; counting those repeats
+       is what pushed the tally past 5 into 6/5, 7/5. Past five the tier is
+       fully accounted for and another reveal carries no new information. */
+    if (aCard.kind === "tier") {
+      pw.seen[aCard.type] = Math.min(PW_TIER_COPIES, (pw.seen[aCard.type] || 0) + 1);
+    }
 
     const bags = { bull: pw.bull.slice(), bear: pw.bear.slice(), special: pw.special.slice() };
     const draw = (source, side) => {
@@ -2876,6 +2884,18 @@
       <rect x="${cx - w / 2}" y="${top}" width="${w}" height="${bodyH}" fill="currentColor" rx="1.5"/></svg>`;
   }
 
+  /* How many of that tier the player still holds anywhere they can reach it —
+     deck plus hand, the card itself included. Five exist; play two and never
+     get them back and this reads 3. Counting both places rather than tracking
+     "played" keeps it right through a tie, which puts a card back. */
+  function pwTierLeft(type) {
+    let n = 0;
+    const count = (c) => { if (c.kind === "tier" && c.type === type) n++; };
+    pwOwnDeck(pw.playerSide).forEach(count);
+    pw.playerHand.forEach(count);
+    return n;
+  }
+
   function pwCardHTML(card, opts) {
     const o = opts || {};
     const special = card.side === "special";
@@ -2883,14 +2903,28 @@
     const pts = special ? (card.cls === "B" ? card.pts : null) : card.pts;
     const tag = o.play ? "button" : "div";
     const attrs = o.play ? ` type="button" data-pw-play="${esc(card.id)}"` : "";
+    /* Deck depth for this tier, on the player's own hand cards only — they
+       already know their own deck. Nothing to show on a wild, which has no
+       tier, or on the opponent's slot. */
+    const left = o.depth && card.kind === "tier" ? pwTierLeft(card.type) : null;
     return `<${tag} class="pw-card ${sideCls}${o.small ? " sm" : ""}"${attrs}>
+      ${left != null ? `<span class="pw-card-left" title="${left} of this candle left in your deck">${left}</span>` : ""}
       <span class="pw-card-side">${special ? "WILD" : card.side.toUpperCase()}</span>
-      <span class="pw-card-icon">${pwCandleSvg(card.visual, card.side, o.small ? 28 : 34)}</span>
+      <span class="pw-card-icon">${pwCandleSvg(card.visual, card.side, o.small ? 26 : 32)}</span>
       <span class="pw-card-foot">
         <span class="pw-card-name">${esc(card.type)}</span>
         ${pts != null ? `<span class="pw-card-pts">${pts}</span>` : ""}
       </span>
     </${tag}>`;
+  }
+
+  /* The hand is always two rows, whatever it holds. A fixed column count would
+     spill onto a third row and start the screen scrolling, which this layout
+     exists to avoid — and hands do grow: FOMO adds two, and two FOMOs in a
+     match can leave ten cards down there. Columns follow the count instead, so
+     six cards sit wide and comfortable and twelve still fit in the same band. */
+  function pwHandCols(n) {
+    return Math.min(6, Math.max(3, Math.ceil(n / 2)));
   }
 
   function pwTrackHTML() {
@@ -2904,7 +2938,6 @@
     const style = `--pw-fill:${(pct * 50).toFixed(2)}%`;
     return `
       <div class="pw-track-panel">
-        <div class="pw-track-cap">Candle Points</div>
         <div class="pw-track-val ${tone}">${c > 0 ? "+" : ""}${c}</div>
         <div class="pw-track-row">
           <div class="pw-track-end top">+${PW_TARGET}</div>
@@ -2913,26 +2946,6 @@
             <div class="pw-track-fill ${tone} ${c >= 0 ? "up" : "down"}" style="${style}"></div>
           </div>
           <div class="pw-track-end bot">−${PW_TARGET}</div>
-        </div>
-      </div>`;
-  }
-
-  function pwCountsHTML() {
-    const rows = (counts, side, mode) => PW_TIERS.map((t) => {
-      const n = counts[t.type] || 0;
-      const notable = mode === "remaining" ? n === 0 : n > 0;
-      return `<div class="pw-count-row${notable ? " on" : ""}">
-        <span>${esc(t.type)}</span><span class="${side}">${n}/5</span></div>`;
-    }).join("");
-    return `
-      <div class="pw-counts">
-        <div class="pw-count-box">
-          <div class="pw-count-cap">Your deck — remaining</div>
-          ${rows(pwTierCounts(pwOwnDeck(pw.playerSide)), pw.playerSide, "remaining")}
-        </div>
-        <div class="pw-count-box">
-          <div class="pw-count-cap">Opponent — cards seen</div>
-          ${rows(pw.seen, pw.aiSide, "revealed")}
         </div>
       </div>`;
   }
@@ -2986,19 +2999,15 @@
 
     const ownCount = pwOwnDeck(pw.playerSide).length;
     const choosing = pw.phase === "draw-choice";
+    /* Everything the match needs, in one screenful and in reading order: the
+       two played cards with the meter between them, the two running totals,
+       then your hand. The round log, the stat pills and the per-tier deck
+       panels are all gone — the cards on the table say what happened, the bar
+       says what is left, and each card carries its own tier's depth.
+       The draw choice takes the hand's place rather than adding a row: there
+       is nothing to play while it is up, so nothing is lost and the view stays
+       inside one screen. */
     cardScroll.innerHTML = `
-      <div class="pw-top">
-        <div class="pw-word">Pointæway</div>
-        <div class="pw-pills">
-          <span class="pw-pill">Round ${pw.round}</span>
-          <span class="pw-pill ${pw.playerSide}">You · ${pw.playerSide.toUpperCase()}</span>
-          <span class="pw-pill">Deck ${pw.playerSide.toUpperCase()} ${ownCount}</span>
-          <span class="pw-pill wild">Wild ${pw.special.length}</span>
-        </div>
-        <button class="pw-specials" data-pw-legend aria-pressed="${pw.showLegend}">Specials</button>
-      </div>
-      ${pw.showLegend ? pwLegendHTML() : ""}
-
       <div class="pw-arena">
         <div class="pw-slot">
           <div class="pw-slot-cap">Opponent</div>
@@ -3011,32 +3020,28 @@
         </div>
       </div>
 
+      <div class="pw-bar">
+        <span class="pw-bar-stat"><b>${ownCount}</b> deck</span>
+        <span class="pw-bar-sep"></span>
+        <span class="pw-bar-stat wild"><b>${pw.special.length}</b> wild</span>
+        <button class="pw-bar-restart" data-pw-restart aria-label="Restart match">Restart</button>
+      </div>
+
       ${choosing ? `
       <div class="pw-choice">
-        <div class="pw-choice-cap">You lost that round. Draw your replacement from —</div>
+        <div class="pw-choice-cap">You lost that round. Draw from —</div>
         <div class="pw-choice-btns">
           <button class="pw-choice-btn ${pw.playerSide}" data-pw-draw="own">Your deck (${ownCount})</button>
           <button class="pw-choice-btn wild" data-pw-draw="special"
             ${pw.special.length === 0 ? "disabled" : ""}>Wild pile (${pw.special.length})</button>
         </div>
-      </div>` : ""}
-
-      <div class="pw-log">
-        ${pw.log.map((l, i) => `<div class="pw-log-row${i === 0 ? " new" : ""}">${esc(l)}</div>`).join("")}
-      </div>
-
-      <button class="pw-ghost pw-counts-toggle" data-pw-counts>
-        ${pw.showCounts ? "Hide deck counts" : "Deck counts"}</button>
-      ${pw.showCounts ? pwCountsHTML() : ""}
-
-      <div class="pw-hand-cap">Your hand${pw.phase === "selecting" ? " — choose a card" : ""}</div>
-      <div class="pw-hand">
+      </div>` : `
+      <div class="pw-hand" style="--pw-cols:${pwHandCols(pw.playerHand.length)}">
         ${pw.playerHand.length
-          ? pw.playerHand.map((c) => pwCardHTML(c, { play: pw.phase === "selecting", small: true })).join("")
+          ? pw.playerHand.map((c) => pwCardHTML(c, { play: pw.phase === "selecting", small: true, depth: true })).join("")
           : `<div class="pw-hand-empty">Empty — nothing left to play.</div>`}
-      </div>
-      <button class="pw-ghost pw-restart" data-pw-restart>Restart match</button>`;
-    if (pw.phase !== "resolving" && pw.phase !== "draw-choice") cardScroll.scrollTop = 0;
+      </div>`}`;
+    cardScroll.scrollTop = 0;
   }
 
   function openPointaeway() {
@@ -5621,7 +5626,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pw-side],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-counts],[data-pw-restart],[data-pw-again],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pw-side],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -5819,7 +5824,6 @@
     else if (t.hasAttribute("data-pw-play")) pwPlay(t.getAttribute("data-pw-play"));
     else if (t.hasAttribute("data-pw-draw")) pwChooseDraw(t.getAttribute("data-pw-draw"));
     else if (t.hasAttribute("data-pw-legend")) { pw.showLegend = !pw.showLegend; renderPointaeway(); }
-    else if (t.hasAttribute("data-pw-counts")) { pw.showCounts = !pw.showCounts; renderPointaeway(); }
     else if (t.hasAttribute("data-pw-restart") || t.hasAttribute("data-pw-again")) {
       pwAbort(); pw = pwNewGame(); renderPointaeway();
     }

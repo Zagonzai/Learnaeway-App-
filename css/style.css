@@ -4318,7 +4318,6 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 /* Its own palette, carried over from the reference prototype: bull teal, bear
    red, wild gold. Kept as local tokens rather than folded into the app's cyan
    and magenta, because in this game the two colours mean sides, not brand. */
-.pw-setup, .pw-over, .pw-top, .pw-arena, .pw-log, .pw-hand { --pw-bull: #1FCBA0; }
 #cardScroll {
   --pw-bull: #1FCBA0;
   --pw-bull-dim: #12493D;
@@ -4382,113 +4381,62 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 .pw-legend-row { font-size: calc(11.5px * var(--fs)); line-height: 1.45; color: var(--pw-muted); }
 .pw-legend-name { color: var(--pw-wild); font-weight: 700; }
 
-/* ---- header row ---- */
-.pw-top {
-  display: flex; align-items: center; flex-wrap: wrap; gap: 8px;
-  margin-bottom: 12px;
-}
-.pw-word { font-size: calc(15px * var(--fs)); font-weight: 800; color: var(--text); }
-.pw-pills { display: flex; flex-wrap: wrap; gap: 6px; flex: 1 1 auto; }
-.pw-pill {
-  padding: 4px 9px;
-  border: 1px solid var(--pw-line);
-  border-radius: 999px;
-  background: rgba(7,10,24,.6);
-  font-size: calc(9.5px * var(--fs));
-  font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
-  color: var(--pw-muted);
-  white-space: nowrap;
-}
-.pw-pill.bull { color: var(--pw-bull); border-color: rgba(31,203,160,.5); }
-.pw-pill.bear { color: var(--pw-bear); border-color: rgba(229,72,77,.5); }
-.pw-pill.wild { color: var(--pw-wild); border-color: rgba(232,178,58,.5); }
-/* the one gradient-bordered control in the row, per the reference */
-.pw-specials {
-  padding: 5px 14px;
-  border-radius: 999px;
-  font-size: calc(9.5px * var(--fs));
-  font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
-  color: var(--text);
-  border: 1.5px solid transparent;
-  background:
-    linear-gradient(rgba(7,10,24,.9), rgba(7,10,24,.9)) padding-box,
-    linear-gradient(135deg, var(--cyan), var(--grad-mid), var(--magenta)) border-box;
-}
-.pw-specials:active { filter: brightness(1.35); }
-
-/* ---- arena ---- */
+/* ---- arena ----
+   The match has to sit in one screenful: the two played cards with the meter
+   between them, a two-number bar, and the hand. Nothing else is on this
+   screen, so the meter gets the space the log and the stat pills used to take
+   and carries no frame of its own. */
 .pw-arena {
   display: grid;
   grid-template-columns: 1fr auto 1fr;
-  align-items: start;
-  gap: 10px;
-  padding: 14px 10px;
-  border: 1px solid var(--pw-line);
-  border-radius: 16px;
-  background: var(--pw-panel);
+  align-items: center;
+  gap: 8px;
+  padding: 6px 2px 10px;
 }
-.pw-slot { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.pw-slot { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .pw-slot-cap {
-  font-size: calc(9.5px * var(--fs));
+  font-size: calc(9px * var(--fs));
   font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
   color: var(--pw-muted);
 }
 .pw-empty {
-  width: 84px; height: 116px;
+  width: 82px; height: 112px;
   border: 1.5px dashed var(--pw-line);
   border-radius: 10px;
 }
 
-/* the meter: a gradient-bordered pill with the fill growing from the midline */
+/* the meter, unframed: value, then the track, ends labelled outside it */
 .pw-track-panel {
-  display: flex; flex-direction: column; align-items: center; gap: 4px;
-  /* generous padding: the border is a rounded pill, and text sitting flush
-     against the curve was clipping at the shoulders */
-  padding: 12px 14px 14px;
-  border-radius: 28px;
-  border: 1.5px solid transparent;
-  background:
-    linear-gradient(rgba(7,10,24,.92), rgba(7,10,24,.92)) padding-box,
-    linear-gradient(135deg, var(--cyan), var(--grad-mid), var(--magenta)) border-box;
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
 }
-.pw-track-cap {
-  font-size: calc(8.5px * var(--fs));
-  font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
-  color: var(--pw-muted);
-  text-align: center;
-}
-.pw-track-val { font-size: calc(20px * var(--fs)); font-weight: 800; line-height: 1; }
+.pw-track-val { font-size: calc(24px * var(--fs)); font-weight: 800; line-height: 1; }
 .pw-track-val.flat { color: var(--pw-muted); }
 .pw-track-val.bull { color: var(--pw-bull); }
 .pw-track-val.bear { color: var(--pw-bear); }
-/* The ends label the track from outside it, so nothing sits on top of the
-   fill; OPEN is the one label inside, marking the midline it starts from. */
+.pw-track-row {
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+}
 .pw-track-end {
-  font-size: calc(8.5px * var(--fs));
+  font-size: calc(9px * var(--fs));
   font-weight: 700; letter-spacing: .08em;
   color: var(--pw-muted);
 }
 .pw-track {
   position: relative;
-  width: 34px; height: 124px;
-  border-radius: 8px;
+  width: 44px; height: 132px;
+  border-radius: 10px;
   background: rgba(4,7,18,.9);
   border: 1px solid var(--pw-line);
   overflow: hidden;
-  /* Dotted tick guides. A gradient only varies along one axis, so a dashed
-     row tiled with repeat-y comes out as unbroken vertical stripes — the tile
-     is 1px tall and repeats every 1px. A dot grid needs a shape that varies
-     on both axes, which is what the radial does: one dot per cell, cells 7
-     across and 13 down. */
+  /* Dotted tick guides. A gradient only varies along one axis, so a dashed row
+     tiled with repeat-y comes out as unbroken vertical stripes. A dot grid
+     needs a shape that varies on both axes, which is what the radial does. */
   background-image: radial-gradient(circle, rgba(143,169,196,.34) 0.5px, transparent 1px);
-  background-size: 7px 13px;
+  background-size: 8px 13px;
   background-position: center;
 }
-.pw-track-row {
-  display: flex; flex-direction: column; align-items: center; gap: 5px;
-}
-/* The midline the fill grows from. Carries its own ground so it stays
-   readable when the bar is sitting right on top of it. */
+/* the midline the fill grows from, carrying its own ground so it stays
+   readable with the bar sitting on it */
 .pw-track-mid {
   position: absolute; left: 0; right: 0;
   top: 50%; transform: translateY(-50%);
@@ -4517,22 +4465,23 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 
 /* ---- cards ---- */
 .pw-card {
-  width: 84px; height: 116px;
+  position: relative;
+  width: 82px; height: 112px;
   flex-shrink: 0;
   display: flex; flex-direction: column; align-items: center; justify-content: space-between;
-  padding: 8px 5px;
+  padding: 7px 4px 6px;
   border-radius: 10px;
   border: 1.5px solid var(--pw-line);
   background: linear-gradient(160deg, rgba(11,18,38,.9), rgba(7,10,24,.9));
   transition: transform .12s ease, filter .12s ease;
 }
-.pw-card.sm { width: 76px; height: 106px; }
+.pw-card.sm { width: 100%; height: 100px; }
 .pw-card.bull { border-color: var(--pw-bull); background: linear-gradient(160deg, var(--pw-bull-dim), rgba(7,10,24,.92)); }
 .pw-card.bear { border-color: var(--pw-bear); background: linear-gradient(160deg, var(--pw-bear-dim), rgba(7,10,24,.92)); }
 .pw-card.wild { border-color: var(--pw-wild); background: linear-gradient(160deg, var(--pw-wild-dim), rgba(7,10,24,.92)); }
 button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
 .pw-card-side {
-  font-size: calc(8px * var(--fs));
+  font-size: calc(7.5px * var(--fs));
   font-weight: 700; letter-spacing: .1em;
   color: var(--pw-muted);
 }
@@ -4540,17 +4489,56 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
 .pw-card-foot { text-align: center; display: block; }
 .pw-card-name {
   display: block;
-  font-size: calc(9.5px * var(--fs));
-  line-height: 1.15; color: var(--text);
+  font-size: calc(8.5px * var(--fs));
+  line-height: 1.12; color: var(--text);
 }
-.pw-card-pts { display: block; font-size: calc(13px * var(--fs)); font-weight: 800; }
+.pw-card-pts { display: block; font-size: calc(12px * var(--fs)); font-weight: 800; }
 .pw-card.bull .pw-card-pts { color: var(--pw-bull); }
 .pw-card.bear .pw-card-pts { color: var(--pw-bear); }
 .pw-card.wild .pw-card-pts { color: var(--pw-wild); }
+/* deck depth for this tier, tucked into the corner so it never reads as the
+   card's strength — that is the big number at the foot */
+.pw-card-left {
+  position: absolute;
+  top: 4px; left: 5px;
+  min-width: 14px;
+  padding: 0 3px;
+  border-radius: 999px;
+  background: rgba(4,7,18,.85);
+  border: 1px solid var(--pw-line);
+  font-size: calc(8px * var(--fs));
+  font-weight: 700; line-height: 1.5;
+  color: var(--pw-muted);
+  text-align: center;
+}
 
-/* ---- draw choice ---- */
+/* ---- the one bar: what is left in each pile ---- */
+.pw-bar {
+  display: flex; align-items: center; gap: 10px;
+  padding: 7px 12px;
+  border: 1px solid var(--pw-line);
+  border-radius: 999px;
+  background: rgba(4,7,18,.72);
+}
+.pw-bar-stat {
+  font-size: calc(9.5px * var(--fs));
+  font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--pw-muted);
+}
+.pw-bar-stat b { font-size: calc(13px * var(--fs)); font-weight: 800; color: var(--text); }
+.pw-bar-stat.wild b { color: var(--pw-wild); }
+.pw-bar-sep { width: 1px; height: 14px; background: var(--pw-line); }
+.pw-bar-restart {
+  margin-left: auto;
+  font-size: calc(9.5px * var(--fs));
+  font-weight: 700; letter-spacing: .08em;
+  color: var(--pw-muted);
+}
+.pw-bar-restart:active { filter: brightness(1.5); }
+
+/* ---- draw choice: stands where the hand would be ---- */
 .pw-choice {
-  margin-top: 12px;
+  margin-top: 10px;
   padding: 12px;
   border: 1px solid var(--pw-wild);
   border-radius: 14px;
@@ -4571,56 +4559,17 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
 .pw-choice-btn.wild { border-color: var(--pw-wild); background: linear-gradient(160deg, var(--pw-wild-dim), var(--pw-panel)); }
 .pw-choice-btn:disabled { opacity: .4; }
 
-/* ---- log ---- */
-.pw-log {
-  margin-top: 12px;
-  padding: 10px 12px;
-  max-height: 108px;
-  overflow-y: auto;
-  border: 1px solid var(--pw-line);
-  border-radius: 12px;
-  background: rgba(4,7,18,.72);
-  display: flex; flex-direction: column; gap: 5px;
+/* ---- hand ----
+   A fixed four across rather than wrapping by width, so a hand of six sits in
+   two even rows and FOMO's two extra cards land in the same two rows instead
+   of pushing a third off the screen. */
+.pw-hand {
+  margin-top: 10px;
+  display: grid;
+  grid-template-columns: repeat(var(--pw-cols, 4), 1fr);
+  gap: 7px;
 }
-.pw-log-row { font-size: calc(11px * var(--fs)); line-height: 1.4; color: var(--pw-muted); }
-.pw-log-row.new { color: var(--text); }
-
-/* ---- deck counts ---- */
-.pw-counts-toggle { margin: 12px auto 0; }
-.pw-counts { display: grid; grid-template-columns: 1fr 1fr; gap: 10px; margin-top: 10px; }
-.pw-count-box {
-  padding: 10px;
-  border: 1px solid var(--pw-line);
-  border-radius: 12px;
-  background: rgba(4,7,18,.72);
-}
-.pw-count-cap {
-  font-size: calc(8.5px * var(--fs));
-  font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
-  color: var(--pw-muted); margin-bottom: 6px;
-}
-.pw-count-row {
-  display: flex; justify-content: space-between; gap: 6px;
-  font-size: calc(10px * var(--fs));
-  color: #5B6E85;
-  padding: 1px 0;
-}
-.pw-count-row.on { color: var(--text); }
-.pw-count-row .bull { color: var(--pw-bull); }
-.pw-count-row .bear { color: var(--pw-bear); }
-.pw-count-row:not(.on) .bull,
-.pw-count-row:not(.on) .bear { color: #5B6E85; }
-
-/* ---- hand ---- */
-.pw-hand-cap {
-  margin: 14px 0 8px;
-  font-size: calc(9.5px * var(--fs));
-  font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
-  color: var(--pw-muted);
-}
-.pw-hand { display: flex; flex-wrap: wrap; gap: 8px; }
-.pw-hand-empty { font-size: calc(11px * var(--fs)); color: #5B6E85; }
-.pw-restart { margin-top: 16px; }
+.pw-hand-empty { grid-column: 1 / -1; font-size: calc(11px * var(--fs)); color: #5B6E85; }
 
 /* ---- game over ---- */
 .pw-over { text-align: center; padding: 28px 8px; }
@@ -4633,36 +4582,53 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
 .pw-over-title.bull { color: var(--pw-bull); }
 .pw-over-title.bear { color: var(--pw-bear); }
 
-/* Narrow phones: the arena stops being three columns and stacks, with the
-   meter turning on its side so it still reads as a track. */
-@media (max-width: 390px) {
-  /* Not three columns any more, but not one tall stack either: three full-width
-     rows would push the hand two screens down. The two card slots stay side by
-     side and the meter takes the full width beneath them, on its side. */
-  .pw-arena { grid-template-columns: 1fr 1fr; gap: 10px; }
-  /* Placed explicitly: the meter is a full-width row, and auto-flow would
-     otherwise push the second slot past it onto a third row. */
+/* Short screens. The header takes a fixed share of the height whatever the
+   phone, so on a shorter one everything below it has to give a little for the
+   match to stay inside one screen. Two steps rather than fluid sizing, so the
+   card faces land on whole pixels and stay legible. */
+@media (max-height: 800px) {
+  .pw-empty, .pw-arena .pw-card { width: 74px; height: 100px; }
+  .pw-track { width: 40px; height: 108px; }
+  .pw-track-val { font-size: calc(21px * var(--fs)); }
+  .pw-card.sm { height: 88px; }
+  .pw-arena { padding: 4px 2px 8px; }
+}
+@media (max-height: 710px) {
+  .pw-empty, .pw-arena .pw-card { width: 64px; height: 88px; }
+  .pw-track { width: 34px; height: 78px; }
+  .pw-track-val { font-size: calc(18px * var(--fs)); }
+  .pw-card.sm { height: 76px; }
+  .pw-card-name { font-size: calc(7.5px * var(--fs)); }
+  .pw-card-pts { font-size: calc(10.5px * var(--fs)); }
+  .pw-arena { padding: 2px 2px 6px; gap: 6px; }
+  .pw-hand { margin-top: 7px; gap: 5px; }
+  .pw-bar { padding: 5px 10px; }
+}
+
+/* Very narrow phones: the arena stops being three columns. The two card slots stay
+   side by side and the meter takes the full width beneath them, on its side —
+   three full-width rows would push the hand off the screen, which is the one
+   thing this layout exists to prevent. */
+@media (max-width: 335px) {
+  .pw-arena { grid-template-columns: 1fr 1fr; gap: 8px; }
+  /* placed explicitly: auto-flow would push the second slot past the
+     full-width meter onto a third row */
   .pw-arena > .pw-slot:first-of-type { grid-row: 1; grid-column: 1; }
   .pw-arena > .pw-slot:last-of-type  { grid-row: 1; grid-column: 2; }
-  .pw-track-panel {
-    grid-row: 2; grid-column: 1 / -1;
-    border-radius: 20px;
-  }
-  .pw-empty { width: 76px; height: 106px; }
+  .pw-track-panel { grid-row: 2; grid-column: 1 / -1; }
   /* Laid on its side. Reversed so the ends match the direction the fill grows:
-     -25 on the left, +25 on the right, bull filling rightward and bear left. */
+     -25 on the left, +25 on the right, bull filling rightward. */
   .pw-track-row { flex-direction: row-reverse; gap: 8px; width: 100%; }
-  .pw-track { width: 100%; height: 34px; }
-  /* On its side: the same figure spent on width instead of height, growing
-     right for bull and left for bear from the same midline. The vertical
-     anchors have to be reset on the direction classes too — .pw-track-fill.up
-     outranks a bare .pw-track-fill whatever the order. */
+  .pw-track { width: 100%; height: 30px; }
+  /* the same figure spent on width instead of height; the vertical anchors have
+     to be reset on the direction classes too, since .pw-track-fill.up outranks
+     a bare .pw-track-fill whatever the order */
   .pw-track-fill { height: auto; width: var(--pw-fill, 0%); }
   .pw-track-fill.up,
   .pw-track-fill.down { top: 4px; bottom: 4px; }
   .pw-track-fill.up { left: 50%; right: auto; }
   .pw-track-fill.down { right: 50%; left: auto; }
-  /* the midline label would sit under the bar once it is horizontal */
   .pw-track-mid { display: none; }
-  .pw-counts { grid-template-columns: 1fr; }
+  .pw-empty, .pw-arena .pw-card { width: 74px; height: 102px; }
+}
 }
