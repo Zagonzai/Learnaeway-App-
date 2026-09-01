@@ -1190,7 +1190,7 @@
 
   function renderPickaeway() {
     const s = pickStats();
-    barTitle.textContent = "Pickæway";
+    barTitle.textContent = "Gameæway";
     const pickName = document.querySelector("#pickBar .pick-name");
     if (pickName) pickName.textContent = "Cool Down Game";
     cardScroll.innerHTML = `
@@ -2412,6 +2412,640 @@
         <div class="liked-empty">There wasn't room to store that photo. Try a smaller image.</div>
         <button class="btn-primary" data-close>OK</button>`);
     }
+  }
+
+  /* ==================== Gameæway ====================
+     The hub in front of the two games. Pickæway is the reactive candlestick
+     battle that was already here; Pointæway is the card game below. The dock's
+     battle slot lands here rather than in either game. */
+
+  const GAMES = [
+    { id: "pickaeway", name: "Pickæway", tag: "1v1 Reactive Battle",
+      blurb: "Read the candles as they print and call the next move before your opponent does.",
+      icon: "assets/nav-icons/icon-match-replay@2x.png" },
+    { id: "pointaeway", name: "Pointæway", tag: "1v1 Card Game",
+      blurb: "Bull against Bear. Play a candle, reveal together, and push the print 25 points your way.",
+      icon: "assets/nav-icons/icon-knowledge-test-lightning@2x.png" },
+  ];
+
+  function renderGames() {
+    barTitle.textContent = "Gameæway";
+    const pickName = document.querySelector("#pickBar .pick-name");
+    if (pickName) pickName.textContent = "Cool Down Game";
+    cardScroll.innerHTML = `
+      <div class="gs-head">Pick your game</div>
+      <div class="gs-list">
+        ${GAMES.map((g) => `
+          <button class="gs-card" data-game="${g.id}">
+            <span class="gs-icon"><img src="${esc(g.icon)}" alt=""></span>
+            <span class="gs-text">
+              <span class="gs-name">${esc(g.name)}</span>
+              <span class="gs-tag">${esc(g.tag)}</span>
+              <span class="gs-blurb">${esc(g.blurb)}</span>
+            </span>
+          </button>`).join("")}
+      </div>`;
+    cardScroll.scrollTop = 0;
+    cardFooter.style.display = "none";
+  }
+
+  function openGames() {
+    stopAudio();
+    state.view = "games";
+    state.slideDir = 0;
+    closeOverlay();
+    render();
+  }
+
+  /* ==================== Pointæway ====================
+     A 1v1 card game, ported from the reference prototype. Bull and Bear each
+     hold a deck of candlestick-strength cards; both play one card a round and
+     reveal together. The stronger card takes the round and drags a shared
+     candle — a track from -25 to +25 — that many points its way. First side to
+     the end of the track wins.
+
+     The port keeps three things from the reference deliberately, each of which
+     was a bug there once:
+
+       - resolveRound() is pure. It reads the two cards and the candle and
+         returns a description of what should happen; pwApplyResult() is the
+         only thing that changes state. Keeping the two apart is what makes the
+         round logic testable at all.
+       - pwApplyResult() draws against local copies of the decks ("bags") and
+         commits once at the end. The reference hit a bug where multi-card
+         effects — Market News refilling a hand, FOMO drawing two — read stale
+         deck state between draws and handed out the same card repeatedly.
+         Vanilla JS would not batch the way React did, but the pattern is worth
+         keeping: one commit means one place where the decks can go wrong.
+       - A special card's own outcome classification is called resolveKind, not
+         kind. The reference briefly spread these objects in an order that let
+         the card's own field overwrite the engine's, which silently broke every
+         special in the deck. Separate names cannot collide. */
+
+  const PW_TIERS = [
+    { type: "Marubozu",       pts: 5, body: 0.92, up: 0.02, down: 0.02 },
+    { type: "Hammer",         pts: 4, body: 0.28, up: 0.06, down: 0.58 },
+    { type: "Standard",       pts: 3, body: 0.46, up: 0.22, down: 0.22 },
+    { type: "Spinning Top",   pts: 2, body: 0.18, up: 0.36, down: 0.36 },
+    { type: "Weak Rejection", pts: 1, body: 0.10, up: 0.14, down: 0.66 },
+  ];
+
+  const PW_SPECIALS = [
+    { type: "Volatility Spike", cls: "A", resolveKind: "wash", desc: "Candle snaps back to 0 — the opening print." },
+    { type: "Canceled Order",   cls: "A", resolveKind: "win",  swing: 3, desc: "Voids opponent's card. You take the round, +3." },
+    { type: "Liquidated",       cls: "A", resolveKind: "win",  swing: 5, desc: "Destroys opponent's card. You take the round, +5." },
+    { type: "FOMO",             cls: "A", resolveKind: "wash", extra: 2, desc: "Draw 2 extra cards. Round is a wash." },
+    { type: "Stop Loss",        cls: "A", resolveKind: "wash", pull: 4, desc: "Pulls the candle 4 pts back toward 0." },
+    { type: "Market News",      cls: "A", resolveKind: "wash", refill: true, desc: "Both players refill their hand. Wash." },
+    { type: "Reversal",         cls: "A", resolveKind: "wash", reverse: true, desc: "Flips the candle to the other side of 0." },
+    { type: "Fear",             cls: "B", pts: 1, debuff: 2, desc: "Base 1 pt. Opponent's card is -2 pts before scoring." },
+    { type: "Momentum",         cls: "B", pts: 4, desc: "Base 4 pts. A confidence surge, no other effect." },
+    { type: "Discipline",       cls: "B", pts: 2, negatesA: true, desc: "Base 2 pts. Negates an opposing Class-A special this round." },
+  ];
+
+  const PW_CLASS_A = PW_SPECIALS.filter((s) => s.cls === "A").map((s) => s.type);
+  const PW_HAND_SIZE = 6;
+  const PW_TARGET = 25;
+  const PW_REVEAL_MS = 700;
+
+  let pwUid = 0;
+  const pwId = () => `pw${pwUid++}`;
+
+  /* the whole game, in one place, so leaving the screen can drop it cleanly */
+  let pw = null;
+  let pwTimer = null;
+
+  function pwBuildTierDeck(side) {
+    const cards = [];
+    PW_TIERS.forEach((t) => {
+      for (let i = 0; i < 5; i++) {
+        cards.push({ id: pwId(), side, kind: "tier", type: t.type, pts: t.pts, visual: t });
+      }
+    });
+    return cards;
+  }
+  /* the engine's own `kind` is written last on purpose — see the note above */
+  function pwBuildSpecialDeck() {
+    return PW_SPECIALS.map((s) => Object.assign({}, s, { id: pwId(), side: "special", kind: "special" }));
+  }
+
+  function pwShuffle(arr) {
+    const a = arr.slice();
+    for (let i = a.length - 1; i > 0; i--) {
+      const j = Math.floor(Math.random() * (i + 1));
+      const t = a[i]; a[i] = a[j]; a[j] = t;
+    }
+    return a;
+  }
+
+  const pwSign = (side) => (side === "bull" ? 1 : -1);
+  const pwClamp = (v) => Math.max(-PW_TARGET, Math.min(PW_TARGET, v));
+  const pwSigned = (n) => (n > 0 ? `+${n}` : String(n));
+  function pwEmptyCounts() {
+    const c = {};
+    PW_TIERS.forEach((t) => { c[t.type] = 0; });
+    return c;
+  }
+  function pwTierCounts(deck) {
+    const c = pwEmptyCounts();
+    deck.forEach((card) => { if (card.kind === "tier") c[card.type] = (c[card.type] || 0) + 1; });
+    return c;
+  }
+
+  /* Fear is the only card that changes what the other card is worth, and only
+     against a plain tier card. */
+  function pwEffPts(card, other) {
+    if (card.kind === "tier") {
+      if (other && other.kind === "special" && other.type === "Fear") {
+        return Math.max(0, card.pts - other.debuff);
+      }
+      return card.pts;
+    }
+    return card.pts;
+  }
+
+  /* ---- the pure part: what the round does, without doing any of it ---- */
+  function pwResolveRound(pCard, aCard, playerSide, aiSide, candle) {
+    const log = [];
+    const r = {
+      candleDelta: 0, outcome: "wash",
+      pDrawOwn: 1, aDrawOwn: 1, pExtraOwn: 0, aExtraOwn: 0,
+      pReturnCard: false, aReturnCard: false,
+      pRefill: false, aRefill: false,
+      pRecycle: false, aRecycle: false,
+      loserNeedsChoice: null, log,
+    };
+
+    const pIsA = pCard.kind === "special" && PW_CLASS_A.indexOf(pCard.type) >= 0;
+    const aIsA = aCard.kind === "special" && PW_CLASS_A.indexOf(aCard.type) >= 0;
+
+    function classAEffect(card, ownerSide) {
+      switch (card.type) {
+        case "Volatility Spike": return { delta: -candle, extra: 0, refill: false };
+        case "Canceled Order":   return { delta: pwSign(ownerSide) * card.swing, extra: 0, refill: false };
+        case "Liquidated":       return { delta: pwSign(ownerSide) * card.swing, extra: 0, refill: false };
+        case "FOMO":             return { delta: 0, extra: card.extra, refill: false };
+        case "Stop Loss":        return { delta: Math.sign(candle) * -Math.min(card.pull, Math.abs(candle)), extra: 0, refill: false };
+        case "Market News":      return { delta: 0, extra: 0, refill: true };
+        case "Reversal":         return { delta: -2 * candle, extra: 0, refill: false };
+        default:                 return { delta: 0, extra: 0, refill: false };
+      }
+    }
+
+    // Discipline blocks an opposing Class-A outright and takes the round
+    if (pCard.type === "Discipline" && aIsA) {
+      r.candleDelta = pwSign(playerSide) * pCard.pts;
+      r.outcome = "player";
+      r.aDrawOwn = 0;
+      r.loserNeedsChoice = "ai";
+      log.push(`You play Discipline — it blocks ${aCard.type} entirely. You take the round, ${pwSigned(r.candleDelta)}.`);
+      return r;
+    }
+    if (aCard.type === "Discipline" && pIsA) {
+      r.candleDelta = pwSign(aiSide) * aCard.pts;
+      r.outcome = "ai";
+      r.pDrawOwn = 0;
+      r.loserNeedsChoice = "player";
+      log.push(`Opponent plays Discipline — it blocks your ${pCard.type}. They take the round, ${pwSigned(r.candleDelta)}.`);
+      return r;
+    }
+
+    // one Class-A special against a normal card
+    function oneClassA(card, owner, ownerSide, otherCard) {
+      const eff = classAEffect(card, ownerSide);
+      const isWin = card.resolveKind === "win";
+      log.push(`${owner === "player" ? "You play" : "Opponent plays"} ${card.type} — ${card.desc}`);
+      r.candleDelta = eff.delta;
+      r.outcome = isWin ? owner : "wash";
+      if (isWin) {
+        // the voided card is gone; its owner draws nothing this round and
+        // instead gets the loser's choice of pile
+        if (owner === "player") { r.aDrawOwn = 0; r.loserNeedsChoice = "ai"; }
+        else { r.pDrawOwn = 0; r.loserNeedsChoice = "player"; }
+      } else {
+        // a wash: the other player's card was never beaten, so it goes back
+        if (otherCard.kind === "tier") {
+          if (owner === "player") r.aReturnCard = true; else r.pReturnCard = true;
+        }
+        if (owner === "player") { r.pExtraOwn = eff.extra; r.pRefill = eff.refill; }
+        else { r.aExtraOwn = eff.extra; r.aRefill = eff.refill; }
+        if (eff.refill) { r.pRefill = true; r.aRefill = true; }   // Market News refills both
+      }
+      return r;
+    }
+
+    if (pIsA && !aIsA) return oneClassA(pCard, "player", playerSide, aCard);
+    if (aIsA && !pIsA) return oneClassA(aCard, "ai", aiSide, pCard);
+
+    // both played a Class-A: the effects stack and the round is a wash
+    if (pIsA && aIsA) {
+      const e1 = classAEffect(pCard, playerSide);
+      const e2 = classAEffect(aCard, aiSide);
+      r.candleDelta = e1.delta + e2.delta;
+      r.pExtraOwn = e1.extra; r.aExtraOwn = e2.extra;
+      r.pRefill = e1.refill || e2.refill;
+      r.aRefill = e1.refill || e2.refill;
+      r.outcome = "wash";
+      log.push(`You play ${pCard.type} — ${pCard.desc}`);
+      log.push(`Opponent plays ${aCard.type} — ${aCard.desc}`);
+      return r;
+    }
+
+    // plain comparison
+    const pPts = pwEffPts(pCard, aCard);
+    const aPts = pwEffPts(aCard, pCard);
+    const pLabel = `${pCard.type} (${pPts})`;
+    const aLabel = `${aCard.type} (${aPts})`;
+
+    if (pPts === aPts) {
+      r.outcome = "wash";
+      r.pRecycle = true;
+      r.aRecycle = true;
+      log.push(`You play ${pLabel}, opponent plays ${aLabel} — a wash. Both cards go to the bottom of their decks.`);
+    } else if (pPts > aPts) {
+      r.outcome = "player";
+      r.candleDelta = pwSign(playerSide) * pPts;
+      r.loserNeedsChoice = "ai";
+      log.push(`You play ${pLabel}, opponent plays ${aLabel} — you win the round, ${pwSigned(r.candleDelta)}.`);
+    } else {
+      r.outcome = "ai";
+      r.candleDelta = pwSign(aiSide) * aPts;
+      r.loserNeedsChoice = "player";
+      log.push(`Opponent plays ${aLabel}, you play ${pLabel} — opponent wins the round, ${pwSigned(r.candleDelta)}.`);
+    }
+    return r;
+  }
+
+  /* ---- the AI ---- */
+  function pwAiChooseCard(hand) {
+    const specials = hand.filter((c) => c.kind === "special");
+    const behind = pwSign(pw.aiSide) * pw.candle < -6;
+    if (specials.length && (behind || Math.random() < 0.2)) {
+      return specials[Math.floor(Math.random() * specials.length)];
+    }
+    const normals = hand.filter((c) => c.kind === "tier");
+    const pool = normals.length ? normals : hand;
+    if (Math.random() < 0.4) {
+      return pool.reduce((best, c) => (c.pts > best.pts ? c : best), pool[0]);
+    }
+    return pool[Math.floor(Math.random() * pool.length)];
+  }
+  function pwAiDrawSource(specialCount) {
+    if (specialCount === 0) return "own";
+    const behind = pwSign(pw.aiSide) * pw.candle < -3;
+    return behind || Math.random() < 0.35 ? "special" : "own";
+  }
+
+  /* ---- state ---- */
+  function pwNewGame() {
+    return {
+      phase: "setup", playerSide: null, aiSide: null, candle: 0,
+      bull: [], bear: [], special: [],
+      playerHand: [], aiHand: [], playerPlayed: null, aiPlayed: null,
+      round: 1, log: [], winner: null, pendingCandle: 0, pending: null,
+      showLegend: false, showCounts: false, seen: pwEmptyCounts(),
+    };
+  }
+
+  function pwStart(side) {
+    const other = side === "bull" ? "bear" : "bull";
+    const bull = pwShuffle(pwBuildTierDeck("bull"));
+    const bear = pwShuffle(pwBuildTierDeck("bear"));
+    const special = pwShuffle(pwBuildSpecialDeck());
+    const mine = side === "bull" ? bull : bear;
+    const theirs = side === "bull" ? bear : bull;
+    Object.assign(pw, pwNewGame(), {
+      playerSide: side, aiSide: other,
+      bull, bear, special,
+      playerHand: mine.splice(0, PW_HAND_SIZE),
+      aiHand: theirs.splice(0, PW_HAND_SIZE),
+      log: [`Sides set — you are ${side === "bull" ? "Bull" : "Bear"}. Decks shuffled. Opening print: 0.`],
+      phase: "selecting",
+    });
+    renderPointaeway();
+  }
+
+  const pwOwnDeck = (side) => (side === "bull" ? pw.bull : pw.bear);
+
+  function pwPlay(cardId) {
+    if (pw.phase !== "selecting") return;
+    const card = pw.playerHand.find((c) => c.id === cardId);
+    if (!card) return;
+    const aCard = pwAiChooseCard(pw.aiHand);
+    pw.playerHand = pw.playerHand.filter((c) => c.id !== card.id);
+    pw.aiHand = pw.aiHand.filter((c) => c.id !== aCard.id);
+    pw.playerPlayed = card;
+    pw.aiPlayed = aCard;
+    pw.phase = "resolving";
+    /* The round is decided the moment both cards are down; the delay is only
+       so the reveal can be seen. Holding the outcome here rather than in the
+       timer's closure means leaving the screen mid-reveal can still settle the
+       round instead of stranding the match in "resolving" with nothing
+       clickable on it. */
+    pw.pending = { result: pwResolveRound(card, aCard, pw.playerSide, pw.aiSide, pw.candle), card, aCard };
+    renderPointaeway();
+    pwTimer = setTimeout(() => { pwTimer = null; pwCommitPending(false); }, PW_REVEAL_MS);
+  }
+
+  function pwCommitPending(silent) {
+    if (!pw || !pw.pending) return;
+    const { result, card, aCard } = pw.pending;
+    pw.pending = null;
+    pwApplyResult(result, card, aCard, silent);
+  }
+
+  /* Local bags, one commit. Everything that draws does so against these
+     copies; pw's own decks are only replaced once, at the end. */
+  function pwApplyResult(result, pCard, aCard, silent) {
+    const newCandle = pwClamp(pw.candle + result.candleDelta);
+    pw.log = result.log.concat(pw.log);
+
+    // an opponent tier card, once seen, is known for the rest of the match
+    if (aCard.kind === "tier") pw.seen[aCard.type] = (pw.seen[aCard.type] || 0) + 1;
+
+    const bags = { bull: pw.bull.slice(), bear: pw.bear.slice(), special: pw.special.slice() };
+    const draw = (source, side) => {
+      const deck = bags[source === "special" ? "special" : side];
+      return deck && deck.length ? deck.shift() : null;
+    };
+
+    let pHand = pw.playerHand.slice();
+    let aHand = pw.aiHand.slice();
+
+    if (result.pReturnCard) pHand.push(pCard);
+    if (result.aReturnCard) aHand.push(aCard);
+    if (result.pRecycle) bags[pCard.kind === "tier" ? pCard.side : "special"].push(pCard);
+    if (result.aRecycle) bags[aCard.kind === "tier" ? aCard.side : "special"].push(aCard);
+
+    for (let i = 0; i < result.aExtraOwn; i++) { const c = draw("own", pw.aiSide); if (c) aHand.push(c); }
+    for (let i = 0; i < result.pExtraOwn; i++) { const c = draw("own", pw.playerSide); if (c) pHand.push(c); }
+    if (result.aRefill) { while (aHand.length < PW_HAND_SIZE) { const c = draw("own", pw.aiSide); if (!c) break; aHand.push(c); } }
+    if (result.pRefill) { while (pHand.length < PW_HAND_SIZE) { const c = draw("own", pw.playerSide); if (!c) break; pHand.push(c); } }
+
+    // the winner's replacement is automatic; the loser gets the choice
+    if (result.loserNeedsChoice !== "ai" && result.aDrawOwn > 0) {
+      const c = draw("own", pw.aiSide); if (c) aHand.push(c);
+    }
+    if (result.loserNeedsChoice === "ai") {
+      const src = pwAiDrawSource(bags.special.length);
+      const c = draw(src, pw.aiSide);
+      if (c) {
+        aHand.push(c);
+        pw.log = [`Opponent draws from ${src === "special" ? "the wild pile" : "their own deck"}.`].concat(pw.log);
+      }
+    }
+
+    if (result.loserNeedsChoice === "player") {
+      // commit what is settled and stop for the player's choice of pile
+      pw.candle = newCandle;
+      pw.bull = bags.bull; pw.bear = bags.bear; pw.special = bags.special;
+      pw.playerHand = pHand; pw.aiHand = aHand;
+      pw.pendingCandle = newCandle;
+      pw.phase = "draw-choice";
+      if (!silent) renderPointaeway();
+      return;
+    }
+
+    if (result.pDrawOwn > 0) { const c = draw("own", pw.playerSide); if (c) pHand.push(c); }
+
+    pw.candle = newCandle;
+    pw.bull = bags.bull; pw.bear = bags.bear; pw.special = bags.special;
+    pw.playerHand = pHand; pw.aiHand = aHand;
+    pwFinishRound(newCandle, silent);
+  }
+
+  function pwChooseDraw(source) {
+    if (pw.phase !== "draw-choice") return;
+    const bags = { bull: pw.bull.slice(), bear: pw.bear.slice(), special: pw.special.slice() };
+    const deck = bags[source === "special" ? "special" : pw.playerSide];
+    const c = deck && deck.length ? deck.shift() : null;
+    if (c) {
+      pw.playerHand = pw.playerHand.concat([c]);
+      pw.log = [`You draw from ${source === "special" ? "the wild pile" : "your own deck"}.`].concat(pw.log);
+    } else {
+      pw.log = ["Nothing left in that pile."].concat(pw.log);
+    }
+    pw.bull = bags.bull; pw.bear = bags.bear; pw.special = bags.special;
+    pwFinishRound(pw.pendingCandle);
+  }
+
+  /* Win checks, in the documented order: the track first, then depletion —
+     which looks only at a player's hand and their OWN deck, never the wild
+     pile. An exact 0 at depletion is a Doji, and a draw. */
+  function pwFinishRound(finalCandle, silent) {
+    const done = (w) => { pw.winner = w; pw.phase = "gameover"; if (!silent) renderPointaeway(); };
+    if (finalCandle >= PW_TARGET) return done("bull");
+    if (finalCandle <= -PW_TARGET) return done("bear");
+    const playerOut = pw.playerHand.length === 0 && pwOwnDeck(pw.playerSide).length === 0;
+    const aiOut = pw.aiHand.length === 0 && pwOwnDeck(pw.aiSide).length === 0;
+    if (playerOut || aiOut) return done(finalCandle === 0 ? "draw" : finalCandle > 0 ? "bull" : "bear");
+    pw.playerPlayed = null;
+    pw.aiPlayed = null;
+    pw.round++;
+    pw.phase = "selecting";
+    if (!silent) renderPointaeway();
+  }
+
+  /* Leaving the screen stops the reveal timer, but the round it was waiting on
+     is already decided — so settle it rather than drop it, or coming back would
+     find the match stuck in "resolving" with nothing on it to click. */
+  function pwAbort() {
+    if (pwTimer) { clearTimeout(pwTimer); pwTimer = null; }
+    pwCommitPending(true);
+  }
+
+  /* ---- drawing ---- */
+
+  /* The icon is the tier's real shape: body and wick lengths come straight
+     from the tier data, so a Hammer reads as a hammer at 30px. */
+  function pwCandleSvg(visual, side, size) {
+    const cls = side === "bull" ? "pw-c-bull" : side === "bear" ? "pw-c-bear" : "pw-c-wild";
+    if (!visual) {
+      return `<svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 40 40" aria-hidden="true">
+        <polyline points="4,24 12,10 18,28 24,6 30,22 36,14" fill="none"
+          stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
+    }
+    const h = size, w = size * 0.42, cx = size / 2;
+    const bodyH = Math.max(2, visual.body * h * 0.9);
+    const upH = visual.up * h * 0.9;
+    const downH = visual.down * h * 0.9;
+    const top = (h - bodyH) / 2;
+    return `<svg class="${cls}" width="${size}" height="${h}" aria-hidden="true">
+      <line x1="${cx}" y1="${top - upH}" x2="${cx}" y2="${top}" stroke="currentColor" stroke-width="2"/>
+      <line x1="${cx}" y1="${top + bodyH}" x2="${cx}" y2="${top + bodyH + downH}" stroke="currentColor" stroke-width="2"/>
+      <rect x="${cx - w / 2}" y="${top}" width="${w}" height="${bodyH}" fill="currentColor" rx="1.5"/></svg>`;
+  }
+
+  function pwCardHTML(card, opts) {
+    const o = opts || {};
+    const special = card.side === "special";
+    const sideCls = card.side === "bull" ? "bull" : card.side === "bear" ? "bear" : "wild";
+    const pts = special ? (card.cls === "B" ? card.pts : null) : card.pts;
+    const tag = o.play ? "button" : "div";
+    const attrs = o.play ? ` type="button" data-pw-play="${esc(card.id)}"` : "";
+    return `<${tag} class="pw-card ${sideCls}${o.small ? " sm" : ""}"${attrs}>
+      <span class="pw-card-side">${special ? "WILD" : card.side.toUpperCase()}</span>
+      <span class="pw-card-icon">${pwCandleSvg(card.visual, card.side, o.small ? 28 : 34)}</span>
+      <span class="pw-card-foot">
+        <span class="pw-card-name">${esc(card.type)}</span>
+        ${pts != null ? `<span class="pw-card-pts">${pts}</span>` : ""}
+      </span>
+    </${tag}>`;
+  }
+
+  function pwTrackHTML() {
+    const c = pw.candle;
+    const pct = Math.min(1, Math.abs(c) / PW_TARGET);
+    const tone = c === 0 ? "flat" : c > 0 ? "bull" : "bear";
+    /* The fill grows from the midline toward whichever side is ahead. Its size
+       goes out as a custom property and its direction as a class, so the CSS
+       can spend it on height when the track is upright and on width when the
+       narrow layout lays it on its side — the same number either way. */
+    const style = `--pw-fill:${(pct * 50).toFixed(2)}%`;
+    return `
+      <div class="pw-track-panel">
+        <div class="pw-track-cap">Candle Points</div>
+        <div class="pw-track-val ${tone}">${c > 0 ? "+" : ""}${c}</div>
+        <div class="pw-track-row">
+          <div class="pw-track-end top">+${PW_TARGET}</div>
+          <div class="pw-track">
+            <div class="pw-track-mid">OPEN</div>
+            <div class="pw-track-fill ${tone} ${c >= 0 ? "up" : "down"}" style="${style}"></div>
+          </div>
+          <div class="pw-track-end bot">−${PW_TARGET}</div>
+        </div>
+      </div>`;
+  }
+
+  function pwCountsHTML() {
+    const rows = (counts, side, mode) => PW_TIERS.map((t) => {
+      const n = counts[t.type] || 0;
+      const notable = mode === "remaining" ? n === 0 : n > 0;
+      return `<div class="pw-count-row${notable ? " on" : ""}">
+        <span>${esc(t.type)}</span><span class="${side}">${n}/5</span></div>`;
+    }).join("");
+    return `
+      <div class="pw-counts">
+        <div class="pw-count-box">
+          <div class="pw-count-cap">Your deck — remaining</div>
+          ${rows(pwTierCounts(pwOwnDeck(pw.playerSide)), pw.playerSide, "remaining")}
+        </div>
+        <div class="pw-count-box">
+          <div class="pw-count-cap">Opponent — cards seen</div>
+          ${rows(pw.seen, pw.aiSide, "revealed")}
+        </div>
+      </div>`;
+  }
+
+  function pwLegendHTML() {
+    return `<div class="pw-legend">
+      ${PW_SPECIALS.map((s) => `<div class="pw-legend-row">
+        <span class="pw-legend-name">${esc(s.type)}</span> ${esc(s.desc)}</div>`).join("")}
+    </div>`;
+  }
+
+  function renderPointaeway() {
+    barTitle.textContent = "Pointæway";
+    const pickName = document.querySelector("#pickBar .pick-name");
+    if (pickName) pickName.textContent = "Cool Down Game";
+    cardFooter.style.display = "none";
+
+    if (pw.phase === "setup") {
+      cardScroll.innerHTML = `
+        <div class="pw-setup">
+          <div class="pw-kicker">Pointæway</div>
+          <div class="pw-lede">Draw, choose, reveal. Every round the candle moves —
+            first side to push it ${PW_TARGET} points their way wins the day.
+            Pick your side to shuffle in.</div>
+          <div class="pw-sides">
+            <button class="pw-side bull" data-pw-side="bull">
+              ${pwCandleSvg(PW_TIERS[0], "bull", 42)}<span>Trade as Bull</span></button>
+            <button class="pw-side bear" data-pw-side="bear">
+              ${pwCandleSvg(PW_TIERS[0], "bear", 42)}<span>Trade as Bear</span></button>
+          </div>
+          <button class="pw-ghost" data-pw-legend>${pw.showLegend ? "Hide wild cards" : "How wild cards work"}</button>
+          ${pw.showLegend ? pwLegendHTML() : ""}
+        </div>`;
+      cardScroll.scrollTop = 0;
+      return;
+    }
+
+    if (pw.phase === "gameover") {
+      const label = pw.winner === "draw" ? "Doji — Draw"
+        : pw.winner === "bull" ? "Bulls Win" : "Bears Win";
+      const tone = pw.winner === "draw" ? "flat" : pw.winner;
+      cardScroll.innerHTML = `
+        <div class="pw-over">
+          <div class="pw-kicker">Round ${pw.round} · Final print ${pw.candle > 0 ? "+" : ""}${pw.candle}</div>
+          <div class="pw-over-title ${tone}">${label}</div>
+          <button class="btn-primary" data-pw-again>Play again</button>
+        </div>`;
+      cardScroll.scrollTop = 0;
+      return;
+    }
+
+    const ownCount = pwOwnDeck(pw.playerSide).length;
+    const choosing = pw.phase === "draw-choice";
+    cardScroll.innerHTML = `
+      <div class="pw-top">
+        <div class="pw-word">Pointæway</div>
+        <div class="pw-pills">
+          <span class="pw-pill">Round ${pw.round}</span>
+          <span class="pw-pill ${pw.playerSide}">You · ${pw.playerSide.toUpperCase()}</span>
+          <span class="pw-pill">Deck ${pw.playerSide.toUpperCase()} ${ownCount}</span>
+          <span class="pw-pill wild">Wild ${pw.special.length}</span>
+        </div>
+        <button class="pw-specials" data-pw-legend aria-pressed="${pw.showLegend}">Specials</button>
+      </div>
+      ${pw.showLegend ? pwLegendHTML() : ""}
+
+      <div class="pw-arena">
+        <div class="pw-slot">
+          <div class="pw-slot-cap">Opponent</div>
+          ${pw.aiPlayed ? pwCardHTML(pw.aiPlayed, {}) : `<div class="pw-empty"></div>`}
+        </div>
+        ${pwTrackHTML()}
+        <div class="pw-slot">
+          <div class="pw-slot-cap">You</div>
+          ${pw.playerPlayed ? pwCardHTML(pw.playerPlayed, {}) : `<div class="pw-empty"></div>`}
+        </div>
+      </div>
+
+      ${choosing ? `
+      <div class="pw-choice">
+        <div class="pw-choice-cap">You lost that round. Draw your replacement from —</div>
+        <div class="pw-choice-btns">
+          <button class="pw-choice-btn ${pw.playerSide}" data-pw-draw="own">Your deck (${ownCount})</button>
+          <button class="pw-choice-btn wild" data-pw-draw="special"
+            ${pw.special.length === 0 ? "disabled" : ""}>Wild pile (${pw.special.length})</button>
+        </div>
+      </div>` : ""}
+
+      <div class="pw-log">
+        ${pw.log.map((l, i) => `<div class="pw-log-row${i === 0 ? " new" : ""}">${esc(l)}</div>`).join("")}
+      </div>
+
+      <button class="pw-ghost pw-counts-toggle" data-pw-counts>
+        ${pw.showCounts ? "Hide deck counts" : "Deck counts"}</button>
+      ${pw.showCounts ? pwCountsHTML() : ""}
+
+      <div class="pw-hand-cap">Your hand${pw.phase === "selecting" ? " — choose a card" : ""}</div>
+      <div class="pw-hand">
+        ${pw.playerHand.length
+          ? pw.playerHand.map((c) => pwCardHTML(c, { play: pw.phase === "selecting", small: true })).join("")
+          : `<div class="pw-hand-empty">Empty — nothing left to play.</div>`}
+      </div>
+      <button class="pw-ghost pw-restart" data-pw-restart>Restart match</button>`;
+    if (pw.phase !== "resolving" && pw.phase !== "draw-choice") cardScroll.scrollTop = 0;
+  }
+
+  function openPointaeway() {
+    stopAudio();
+    if (!pw) pw = pwNewGame();
+    state.view = "pointaeway";
+    state.slideDir = 0;
+    closeOverlay();
+    render();
   }
 
   /* ---------------- Trade Journal ----------------
@@ -4197,8 +4831,9 @@
     return state.view === "checkin" || state.view === "beforetrade";
   }
 
-  /* every Pickæway view shares the same bar and dock slot */
-  const PK_VIEWS = ["pickaeway", "buildmatch", "match", "result", "replay"];
+  /* every Gameæway view — the selector and both games — shares the same bar
+     and the same dock slot */
+  const PK_VIEWS = ["games", "pickaeway", "buildmatch", "match", "result", "replay", "pointaeway"];
   function inPickaeway() { return PK_VIEWS.indexOf(state.view) >= 0; }
 
   /* ring behind whichever dock icon matches the section you're in */
@@ -4232,6 +4867,7 @@
     // leaving mid-match forfeits it: stop the clock rather than leave a rAF
     // loop repainting a canvas that is no longer on screen
     if (state.view !== "match" && mk.on) mkAbort();
+    if (state.view !== "pointaeway") pwAbort();
     const listy = state.view === "home" || state.view === "videos"
       || inChecklist() || state.view === "journal" || state.view === "profile" || inPickaeway();
     $("cardOuter").classList.toggle("outline-bg", listy);
@@ -4243,7 +4879,9 @@
     else if (state.view === "checkin") renderCheckin();
     else if (state.view === "beforetrade") renderBeforeTrade();
     else if (state.view === "journal") renderJournal();
+    else if (state.view === "games") renderGames();
     else if (state.view === "pickaeway") renderPickaeway();
+    else if (state.view === "pointaeway") renderPointaeway();
     else if (state.view === "buildmatch") renderBuildMatch();
     else if (state.view === "match") renderMatch();
     else if (state.view === "result") renderResult();
@@ -4963,7 +5601,7 @@
   $("navAdd").addEventListener("click", openJournal);
   $("btnJournalHome").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
   $("btnJournalProfile").addEventListener("click", openProfile);
-  $("navBattle").addEventListener("click", openPickaeway);
+  $("navBattle").addEventListener("click", openGames);
   $("navProfile").addEventListener("click", openProfile);
   $("btnPickHome").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
   $("btnProfileHome").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
@@ -4983,7 +5621,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pw-side],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-counts],[data-pw-restart],[data-pw-again],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -5172,6 +5810,18 @@
       save();
       syncProfilePhoto();
       if (state.view === "profile") renderProfile(); else openSettings();
+    }
+    else if (t.hasAttribute("data-game")) {
+      if (t.getAttribute("data-game") === "pointaeway") openPointaeway();
+      else openPickaeway();
+    }
+    else if (t.hasAttribute("data-pw-side")) pwStart(t.getAttribute("data-pw-side"));
+    else if (t.hasAttribute("data-pw-play")) pwPlay(t.getAttribute("data-pw-play"));
+    else if (t.hasAttribute("data-pw-draw")) pwChooseDraw(t.getAttribute("data-pw-draw"));
+    else if (t.hasAttribute("data-pw-legend")) { pw.showLegend = !pw.showLegend; renderPointaeway(); }
+    else if (t.hasAttribute("data-pw-counts")) { pw.showCounts = !pw.showCounts; renderPointaeway(); }
+    else if (t.hasAttribute("data-pw-restart") || t.hasAttribute("data-pw-again")) {
+      pwAbort(); pw = pwNewGame(); renderPointaeway();
     }
     else if (t.hasAttribute("data-pk-build")) openBuildMatch();
     else if (t.hasAttribute("data-pk-replay")) {
