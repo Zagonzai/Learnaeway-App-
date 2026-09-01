@@ -4395,9 +4395,22 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 }
 .pw-slot { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .pw-slot-cap {
+  display: flex; align-items: center; justify-content: center; gap: 5px;
   font-size: calc(9px * var(--fs));
   font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
   color: var(--pw-muted);
+}
+/* what the opponent has left, grouped with their own side of the board rather
+   than mixed into the player's stat bar */
+.pw-slot-deck {
+  min-width: 17px;
+  padding: 1px 4px;
+  border-radius: 999px;
+  border: 1px solid var(--pw-line);
+  background: rgba(4,7,18,.8);
+  font-size: calc(9px * var(--fs));
+  letter-spacing: 0;
+  color: var(--text);
 }
 .pw-empty {
   width: 82px; height: 112px;
@@ -4512,6 +4525,49 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
   text-align: center;
 }
 
+/* ---- a wild turned over ----
+   Its effect will not fit on the face, so the card turns to show it. */
+.pw-card.back {
+  justify-content: center;
+  gap: 4px;
+  text-align: center;
+  border-color: var(--pw-wild);
+  background: linear-gradient(160deg, var(--pw-wild-dim), rgba(7,10,24,.94));
+}
+.pw-back-name {
+  font-size: calc(9.5px * var(--fs));
+  font-weight: 800; line-height: 1.1;
+  color: var(--pw-wild);
+}
+.pw-back-desc {
+  font-size: calc(7.5px * var(--fs));
+  line-height: 1.28; color: #C9DDF2;
+}
+.pw-back-hint {
+  font-size: calc(6.5px * var(--fs));
+  letter-spacing: .06em; text-transform: uppercase;
+  color: var(--pw-muted);
+}
+/* the mark that turns a wild while it is still playable in one tap */
+.pw-card-flip {
+  position: absolute;
+  top: 3px; right: 4px;
+  width: 15px; height: 15px;
+  border-radius: 999px;
+  border: 1px solid var(--pw-wild);
+  background: rgba(4,7,18,.85);
+  color: var(--pw-wild);
+  font-size: calc(9px * var(--fs));
+  font-weight: 800; line-height: 13px;
+  text-align: center;
+}
+/* one turn per tap: the animation is on the render that follows it */
+.pw-card.flipping { animation: pw-turn .26s ease; }
+@keyframes pw-turn {
+  from { transform: rotateY(84deg); }
+  to   { transform: rotateY(0); }
+}
+
 /* ---- the one bar: what is left in each pile ---- */
 .pw-bar {
   display: flex; align-items: center; gap: 10px;
@@ -4528,8 +4584,18 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
 .pw-bar-stat b { font-size: calc(13px * var(--fs)); font-weight: 800; color: var(--text); }
 .pw-bar-stat.wild b { color: var(--pw-wild); }
 .pw-bar-sep { width: 1px; height: 14px; background: var(--pw-line); }
-.pw-bar-restart {
+.pw-bar-seen {
   margin-left: auto;
+  padding: 3px 9px;
+  border: 1px solid var(--pw-line);
+  border-radius: 999px;
+  font-size: calc(9px * var(--fs));
+  font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--pw-muted);
+}
+.pw-bar-seen.on { border-color: var(--pw-wild); color: var(--pw-wild); }
+.pw-bar-restart {
+  margin-left: 8px;
   font-size: calc(9.5px * var(--fs));
   font-weight: 700; letter-spacing: .08em;
   color: var(--pw-muted);
@@ -4558,6 +4624,34 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
 .pw-choice-btn.bear { border-color: var(--pw-bear); background: linear-gradient(160deg, var(--pw-bear-dim), var(--pw-panel)); }
 .pw-choice-btn.wild { border-color: var(--pw-wild); background: linear-gradient(160deg, var(--pw-wild-dim), var(--pw-panel)); }
 .pw-choice-btn:disabled { opacity: .4; }
+
+/* ---- what the opponent has shown ----
+   Stands where the hand does, like the draw choice: it is a thing to read, and
+   the screen must not start scrolling to read it. */
+.pw-seen {
+  margin-top: 10px;
+  padding: 10px 12px;
+  border: 1px solid var(--pw-line);
+  border-radius: 14px;
+  background: rgba(4,7,18,.72);
+}
+.pw-seen-cap {
+  font-size: calc(9px * var(--fs));
+  font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--pw-muted);
+  margin-bottom: 6px;
+}
+.pw-seen-row {
+  display: flex; justify-content: space-between; gap: 8px;
+  padding: 2px 0;
+  font-size: calc(11px * var(--fs));
+  color: #5B6E85;
+}
+.pw-seen-row.on { color: var(--text); }
+.pw-seen-n { font-weight: 700; }
+.pw-seen-row.on .pw-seen-n.bull { color: var(--pw-bull); }
+.pw-seen-row.on .pw-seen-n.bear { color: var(--pw-bear); }
+.pw-seen .pw-ghost { margin-top: 8px; }
 
 /* ---- hand ----
    A fixed four across rather than wrapping by width, so a hand of six sits in
@@ -4603,6 +4697,10 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
   .pw-arena { padding: 2px 2px 6px; gap: 6px; }
   .pw-hand { margin-top: 7px; gap: 5px; }
   .pw-bar { padding: 5px 10px; }
+  /* the breakdown stands where the hand does and has to stay inside it */
+  .pw-seen { margin-top: 7px; padding: 8px 10px; }
+  .pw-seen-row { padding: 1px 0; font-size: calc(10px * var(--fs)); }
+  .pw-seen .pw-ghost { margin-top: 5px; padding: 5px 14px; }
 }
 
 /* Very narrow phones: the arena stops being three columns. The two card slots stay

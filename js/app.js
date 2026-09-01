@@ -2573,7 +2573,7 @@
       pDrawOwn: 1, aDrawOwn: 1, pExtraOwn: 0, aExtraOwn: 0,
       pReturnCard: false, aReturnCard: false,
       pRefill: false, aRefill: false,
-      pRecycle: false, aRecycle: false,
+      pDiscard: false, aDiscard: false,
       loserNeedsChoice: null, log,
     };
 
@@ -2659,10 +2659,13 @@
     const aLabel = `${aCard.type} (${aPts})`;
 
     if (pPts === aPts) {
+      /* Equal points is a wash and both cards are spent — discarded outright,
+         not returned to a hand and not put back under either deck. Any equal
+         total ties, whether or not the two cards share a name. */
       r.outcome = "wash";
-      r.pRecycle = true;
-      r.aRecycle = true;
-      log.push(`You play ${pLabel}, opponent plays ${aLabel} — a wash. Both cards go to the bottom of their decks.`);
+      r.pDiscard = true;
+      r.aDiscard = true;
+      log.push(`You play ${pLabel}, opponent plays ${aLabel} — a wash. Both cards are discarded.`);
     } else if (pPts > aPts) {
       r.outcome = "player";
       r.candleDelta = pwSign(playerSide) * pPts;
@@ -2705,6 +2708,9 @@
       playerHand: [], aiHand: [], playerPlayed: null, aiPlayed: null,
       round: 1, log: [], winner: null, pendingCandle: 0, pending: null,
       showLegend: false, seen: pwEmptyCounts(),
+      flipped: {},          // wild card ids currently showing their effect text
+      flipAnim: null,       // the one card that just turned, for a single render
+      showSeen: false,      // the opponent's per-tier breakdown, on demand
     };
   }
 
@@ -2762,11 +2768,11 @@
     pw.log = result.log.concat(pw.log);
 
     /* An opponent tier card, once seen, is known for the rest of the match —
-       but only five of each exist, so the tally stops there. A tie recycles
-       both played cards to the bottom of their own decks, which means the same
-       physical card can come back and be revealed again; counting those repeats
-       is what pushed the tally past 5 into 6/5, 7/5. Past five the tier is
-       fully accounted for and another reveal carries no new information. */
+       but only five of each exist, so the tally stops there. A card can still
+       be revealed more than once: a Class-A wash hands the untouched card back
+       to its owner's hand to be played again. Counting those repeats is what
+       pushed the tally past five into 6/5 and 7/5. Past five the tier is fully
+       accounted for and another reveal carries no new information. */
     if (aCard.kind === "tier") {
       pw.seen[aCard.type] = Math.min(PW_TIER_COPIES, (pw.seen[aCard.type] || 0) + 1);
     }
@@ -2782,8 +2788,9 @@
 
     if (result.pReturnCard) pHand.push(pCard);
     if (result.aReturnCard) aHand.push(aCard);
-    if (result.pRecycle) bags[pCard.kind === "tier" ? pCard.side : "special"].push(pCard);
-    if (result.aRecycle) bags[aCard.kind === "tier" ? aCard.side : "special"].push(aCard);
+    /* Discarded cards leave play. They were already out of their owner's hand
+       when they were played, so there is nothing to do but not put them back —
+       which is exactly what a tie now means. */
 
     for (let i = 0; i < result.aExtraOwn; i++) { const c = draw("own", pw.aiSide); if (c) aHand.push(c); }
     for (let i = 0; i < result.pExtraOwn; i++) { const c = draw("own", pw.playerSide); if (c) pHand.push(c); }
@@ -2803,7 +2810,11 @@
       }
     }
 
-    if (result.loserNeedsChoice === "player") {
+    /* Nothing to choose between when both piles are empty: skip the screen and
+       let the round finish with no replacement drawn, which is what either
+       button would have done. The depletion check downstream is unchanged. */
+    const nothingToDraw = bags[pw.playerSide].length === 0 && bags.special.length === 0;
+    if (result.loserNeedsChoice === "player" && !nothingToDraw) {
       // commit what is settled and stop for the player's choice of pile
       pw.candle = newCandle;
       pw.bull = bags.bull; pw.bear = bags.bear; pw.special = bags.special;
@@ -2907,15 +2918,44 @@
        already know their own deck. Nothing to show on a wild, which has no
        tier, or on the opponent's slot. */
     const left = o.depth && card.kind === "tier" ? pwTierLeft(card.type) : null;
-    return `<${tag} class="pw-card ${sideCls}${o.small ? " sm" : ""}"${attrs}>
+    const size = o.small ? " sm" : "";
+    const anim = pw.flipAnim === card.id ? " flipping" : "";
+
+    /* A wild's whole point is its effect, and the face has no room for it — so
+       it turns over. In hand the body still plays the card in one tap and a
+       corner mark does the turning, because a card that had to be turned over
+       and back before it could be played would be worse than not explaining
+       itself. A played wild has nothing else to do, so the whole face turns. */
+    if (special && pw.flipped[card.id]) {
+      return `<button type="button" class="pw-card wild back${size}${anim}" data-pw-flip="${esc(card.id)}">
+        <span class="pw-back-name">${esc(card.type)}</span>
+        <span class="pw-back-desc">${esc(card.desc)}</span>
+        <span class="pw-back-hint">tap to turn back</span>
+      </button>`;
+    }
+    const flipMark = special
+      ? (o.play
+          /* A plain span, not a nested button: a button may not contain
+             interactive content, and the card face itself is the play button.
+             The same effect text is on the setup screen's legend for anyone
+             who cannot reach this by tap. */
+          ? `<span class="pw-card-flip" data-pw-flip="${esc(card.id)}"
+                   title="What does ${esc(card.type)} do?">?</span>`
+          : "")
+      : "";
+    const wholeFaceFlips = special && !o.play;
+    const ftag = wholeFaceFlips ? "button" : tag;
+    const fattrs = wholeFaceFlips ? ` type="button" data-pw-flip="${esc(card.id)}"` : attrs;
+    return `<${ftag} class="pw-card ${sideCls}${size}${anim}"${fattrs}>
       ${left != null ? `<span class="pw-card-left" title="${left} of this candle left in your deck">${left}</span>` : ""}
+      ${flipMark}
       <span class="pw-card-side">${special ? "WILD" : card.side.toUpperCase()}</span>
       <span class="pw-card-icon">${pwCandleSvg(card.visual, card.side, o.small ? 26 : 32)}</span>
       <span class="pw-card-foot">
         <span class="pw-card-name">${esc(card.type)}</span>
         ${pts != null ? `<span class="pw-card-pts">${pts}</span>` : ""}
       </span>
-    </${tag}>`;
+    </${ftag}>`;
   }
 
   /* The hand is always two rows, whatever it holds. A fixed column count would
@@ -3010,7 +3050,9 @@
     cardScroll.innerHTML = `
       <div class="pw-arena">
         <div class="pw-slot">
-          <div class="pw-slot-cap">Opponent</div>
+          <div class="pw-slot-cap">Opponent
+            <span class="pw-slot-deck">${pwOwnDeck(pw.aiSide).length}</span>
+          </div>
           ${pw.aiPlayed ? pwCardHTML(pw.aiPlayed, {}) : `<div class="pw-empty"></div>`}
         </div>
         ${pwTrackHTML()}
@@ -3024,14 +3066,28 @@
         <span class="pw-bar-stat"><b>${ownCount}</b> deck</span>
         <span class="pw-bar-sep"></span>
         <span class="pw-bar-stat wild"><b>${pw.special.length}</b> wild</span>
+        <button class="pw-bar-seen${pw.showSeen ? " on" : ""}" data-pw-seen
+                aria-pressed="${pw.showSeen}" aria-label="What the opponent has played">Seen</button>
         <button class="pw-bar-restart" data-pw-restart aria-label="Restart match">Restart</button>
       </div>
 
-      ${choosing ? `
+      ${pw.showSeen ? `
+      <div class="pw-seen">
+        <div class="pw-seen-cap">Opponent has played</div>
+        ${PW_TIERS.map((t) => {
+          const n = pw.seen[t.type] || 0;
+          return `<div class="pw-seen-row${n ? " on" : ""}">
+            <span>${esc(t.type)}</span>
+            <span class="pw-seen-n ${pw.aiSide}">${n}/${PW_TIER_COPIES}</span>
+          </div>`;
+        }).join("")}
+        <button class="pw-ghost" data-pw-seen>Close</button>
+      </div>` : choosing ? `
       <div class="pw-choice">
         <div class="pw-choice-cap">You lost that round. Draw from —</div>
         <div class="pw-choice-btns">
-          <button class="pw-choice-btn ${pw.playerSide}" data-pw-draw="own">Your deck (${ownCount})</button>
+          <button class="pw-choice-btn ${pw.playerSide}" data-pw-draw="own"
+            ${ownCount === 0 ? "disabled" : ""}>Your deck (${ownCount})</button>
           <button class="pw-choice-btn wild" data-pw-draw="special"
             ${pw.special.length === 0 ? "disabled" : ""}>Wild pile (${pw.special.length})</button>
         </div>
@@ -3041,6 +3097,7 @@
           ? pw.playerHand.map((c) => pwCardHTML(c, { play: pw.phase === "selecting", small: true, depth: true })).join("")
           : `<div class="pw-hand-empty">Empty — nothing left to play.</div>`}
       </div>`}`;
+    pw.flipAnim = null;      // the turn animation plays once, on the render after the tap
     cardScroll.scrollTop = 0;
   }
 
@@ -5626,7 +5683,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pw-side],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pw-side],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -5823,6 +5880,13 @@
     else if (t.hasAttribute("data-pw-side")) pwStart(t.getAttribute("data-pw-side"));
     else if (t.hasAttribute("data-pw-play")) pwPlay(t.getAttribute("data-pw-play"));
     else if (t.hasAttribute("data-pw-draw")) pwChooseDraw(t.getAttribute("data-pw-draw"));
+    else if (t.hasAttribute("data-pw-flip")) {
+      const id = t.getAttribute("data-pw-flip");
+      if (pw.flipped[id]) delete pw.flipped[id]; else pw.flipped[id] = true;
+      pw.flipAnim = id;
+      renderPointaeway();
+    }
+    else if (t.hasAttribute("data-pw-seen")) { pw.showSeen = !pw.showSeen; renderPointaeway(); }
     else if (t.hasAttribute("data-pw-legend")) { pw.showLegend = !pw.showLegend; renderPointaeway(); }
     else if (t.hasAttribute("data-pw-restart") || t.hasAttribute("data-pw-again")) {
       pwAbort(); pw = pwNewGame(); renderPointaeway();
