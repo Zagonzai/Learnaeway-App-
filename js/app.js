@@ -2473,37 +2473,73 @@
          round logic testable at all.
        - pwApplyResult() draws against local copies of the decks ("bags") and
          commits once at the end. The reference hit a bug where multi-card
-         effects — Market News refilling a hand, FOMO drawing two — read stale
+         effects — FOMO drawing two, a hand refilling — read stale
          deck state between draws and handed out the same card repeatedly.
          Vanilla JS would not batch the way React did, but the pattern is worth
          keeping: one commit means one place where the decks can go wrong.
-       - A special card's own outcome classification is called resolveKind, not
-         kind. The reference briefly spread these objects in an order that let
-         the card's own field overwrite the engine's, which silently broke every
-         special in the deck. Separate names cannot collide. */
+       - A special card's own fields never share a name with the engine's. The
+         reference briefly spread these objects in an order that let a card's
+         own classification overwrite the engine's `kind`, which silently broke
+         every special in the deck; the card's own is `effect`. */
 
-  const PW_TIERS = [
-    { type: "Marubozu",       pts: 5, body: 0.92, up: 0.02, down: 0.02 },
-    { type: "Hammer",         pts: 4, body: 0.28, up: 0.06, down: 0.58 },
-    { type: "Standard",       pts: 3, body: 0.46, up: 0.22, down: 0.22 },
-    { type: "Spinning Top",   pts: 2, body: 0.18, up: 0.36, down: 0.36 },
-    { type: "Weak Rejection", pts: 1, body: 0.10, up: 0.14, down: 0.66 },
-  ];
+  /* The two decks are not recolours of each other. The same candle means
+     different things depending on which way the market is read, so each side
+     has its own names — and two shapes appear on both sides at opposite
+     values: small body high with a long lower wick is the bull's 4-point
+     Hammer and the bear's 1-point Hanging Man; small body low with a long
+     upper wick is the bull's 1-point Inverted Hammer and the bear's 4-point
+     Shooting Star. Name, shape and points therefore have to be looked up
+     together, per side — there is no shared shape-to-points mapping. */
+  const PW_TIERS_BY_SIDE = {
+    bull: [
+      { type: "Bullish Marubozu",     pts: 5, body: 0.92, up: 0.02, down: 0.02 },
+      { type: "Hammer",               pts: 4, body: 0.28, up: 0.06, down: 0.58 },
+      { type: "Standard",             pts: 3, body: 0.46, up: 0.22, down: 0.22 },
+      { type: "Bullish Spinning Top", pts: 2, body: 0.18, up: 0.36, down: 0.36 },
+      { type: "Inverted Hammer",      pts: 1, body: 0.28, up: 0.58, down: 0.06 },
+    ],
+    bear: [
+      { type: "Bearish Marubozu",     pts: 5, body: 0.92, up: 0.02, down: 0.02 },
+      { type: "Shooting Star",        pts: 4, body: 0.28, up: 0.58, down: 0.06 },
+      { type: "Standard",             pts: 3, body: 0.46, up: 0.22, down: 0.22 },
+      { type: "Bearish Spinning Top", pts: 2, body: 0.18, up: 0.36, down: 0.36 },
+      { type: "Hanging Man",          pts: 1, body: 0.28, up: 0.06, down: 0.58 },
+    ],
+  };
+  const pwTiers = (side) => PW_TIERS_BY_SIDE[side] || PW_TIERS_BY_SIDE.bull;
 
+  /* The ten wilds, v1. `effect` is what the engine switches on; `cls` is only
+     what the card shows. Three of them read the opponent's revealed card and
+     score off it — Stop Loss at its value, Momentum at double, Market News
+     doubling whatever wins — so they are resolved with both cards in hand
+     rather than as standalone effects. Discipline is not resolved here at all:
+     it is a peek, and the card that scores is the one chosen after it. */
   const PW_SPECIALS = [
-    { type: "Volatility Spike", cls: "A", resolveKind: "wash", desc: "Candle snaps back to 0 — the opening print." },
-    { type: "Canceled Order",   cls: "A", resolveKind: "win",  swing: 3, desc: "Voids opponent's card. You take the round, +3." },
-    { type: "Liquidated",       cls: "A", resolveKind: "win",  swing: 5, desc: "Destroys opponent's card. You take the round, +5." },
-    { type: "FOMO",             cls: "A", resolveKind: "wash", extra: 2, desc: "Draw 2 extra cards. Round is a wash." },
-    { type: "Stop Loss",        cls: "A", resolveKind: "wash", pull: 4, desc: "Pulls the candle 4 pts back toward 0." },
-    { type: "Market News",      cls: "A", resolveKind: "wash", refill: true, desc: "Both players refill their hand. Wash." },
-    { type: "Reversal",         cls: "A", resolveKind: "wash", reverse: true, desc: "Flips the candle to the other side of 0." },
-    { type: "Fear",             cls: "B", pts: 1, debuff: 2, desc: "Base 1 pt. Opponent's card is -2 pts before scoring." },
-    { type: "Momentum",         cls: "B", pts: 4, desc: "Base 4 pts. A confidence surge, no other effect." },
-    { type: "Discipline",       cls: "B", pts: 2, negatesA: true, desc: "Base 2 pts. Negates an opposing Class-A special this round." },
+    { type: "Volatility Spike", cls: "A", effect: "zero", keepsOther: true,
+      desc: "The candle snaps back to 0. Nobody scores." },
+    { type: "Canceled Order",   cls: "A", effect: "cancel",
+      desc: "Cancels their card — but scores nothing itself. Total wash, both discarded." },
+    { type: "Liquidated",       cls: "A", effect: "liquidate", swing: 5,
+      desc: "Destroys their card. You take the round, +5 your way." },
+    { type: "FOMO",             cls: "A", effect: "fomo", extra: 2, keepsOther: true,
+      desc: "Draw 2 more cards from your deck. The round is a wash." },
+    { type: "Stop Loss",        cls: "A", effect: "absorb", mult: 1,
+      desc: "Their card scores for YOU instead, at its own value. Their attack, your protection." },
+    { type: "Market News",      cls: "A", effect: "double",
+      desc: "Doubles the value of whatever wins the round." },
+    { type: "Reversal",         cls: "A", effect: "flip", keepsOther: true,
+      desc: "Flips the candle to the same distance the other side of 0." },
+    { type: "Fear",             cls: "B", pts: 1, debuff: 2,
+      desc: "Base 1 pt. Their card is worth 2 less before scoring." },
+    { type: "Momentum",         cls: "A", effect: "absorb", mult: 2,
+      desc: "Their card scores DOUBLE for YOU instead of its value for them." },
+    { type: "Discipline",       cls: "D", effect: "peek",
+      desc: "See their card first, then pick a numbered card from your hand to answer it." },
   ];
 
   const PW_CLASS_A = PW_SPECIALS.filter((s) => s.cls === "A").map((s) => s.type);
+  const PW_SPEC = {};
+  PW_SPECIALS.forEach((s) => { PW_SPEC[s.type] = s; });
   const PW_HAND_SIZE = 6;
   const PW_TIER_COPIES = 5;      // per tier, per side
   const PW_TARGET = 25;
@@ -2518,7 +2554,7 @@
 
   function pwBuildTierDeck(side) {
     const cards = [];
-    PW_TIERS.forEach((t) => {
+    pwTiers(side).forEach((t) => {
       for (let i = 0; i < PW_TIER_COPIES; i++) {
         cards.push({ id: pwId(), side, kind: "tier", type: t.type, pts: t.pts, visual: t });
       }
@@ -2542,17 +2578,12 @@
   const pwSign = (side) => (side === "bull" ? 1 : -1);
   const pwClamp = (v) => Math.max(-PW_TARGET, Math.min(PW_TARGET, v));
   const pwSigned = (n) => (n > 0 ? `+${n}` : String(n));
-  function pwEmptyCounts() {
+  // keyed by the tier names of one side, since the two decks no longer share any
+  function pwEmptyCounts(side) {
     const c = {};
-    PW_TIERS.forEach((t) => { c[t.type] = 0; });
+    pwTiers(side).forEach((t) => { c[t.type] = 0; });
     return c;
   }
-  function pwTierCounts(deck) {
-    const c = pwEmptyCounts();
-    deck.forEach((card) => { if (card.kind === "tier") c[card.type] = (c[card.type] || 0) + 1; });
-    return c;
-  }
-
   /* Fear is the only card that changes what the other card is worth, and only
      against a plain tier card. */
   function pwEffPts(card, other) {
@@ -2572,7 +2603,6 @@
       candleDelta: 0, outcome: "wash",
       pDrawOwn: 1, aDrawOwn: 1, pExtraOwn: 0, aExtraOwn: 0,
       pReturnCard: false, aReturnCard: false,
-      pRefill: false, aRefill: false,
       pDiscard: false, aDiscard: false,
       loserNeedsChoice: null, log,
     };
@@ -2580,72 +2610,85 @@
     const pIsA = pCard.kind === "special" && PW_CLASS_A.indexOf(pCard.type) >= 0;
     const aIsA = aCard.kind === "special" && PW_CLASS_A.indexOf(aCard.type) >= 0;
 
-    function classAEffect(card, ownerSide) {
-      switch (card.type) {
-        case "Volatility Spike": return { delta: -candle, extra: 0, refill: false };
-        case "Canceled Order":   return { delta: pwSign(ownerSide) * card.swing, extra: 0, refill: false };
-        case "Liquidated":       return { delta: pwSign(ownerSide) * card.swing, extra: 0, refill: false };
-        case "FOMO":             return { delta: 0, extra: card.extra, refill: false };
-        case "Stop Loss":        return { delta: Math.sign(candle) * -Math.min(card.pull, Math.abs(candle)), extra: 0, refill: false };
-        case "Market News":      return { delta: 0, extra: 0, refill: true };
-        case "Reversal":         return { delta: -2 * candle, extra: 0, refill: false };
-        default:                 return { delta: 0, extra: 0, refill: false };
+    /* Discipline never reaches here as a played card — it is a peek, and the
+       card chosen after it is what arrives. The one exception is both players
+       playing it at once, which cancels out: neither gets to answer the other. */
+    if (pCard.type === "Discipline" && aCard.type === "Discipline") {
+      r.outcome = "wash";
+      r.pDiscard = true;
+      r.aDiscard = true;
+      log.push("Both hold their discipline — neither commits. The round is a wash.");
+      return r;
+    }
+
+    /* What one Class-A does, given the card it was played against. Three of
+       them score off that card, so the opponent's card is an input here rather
+       than something resolved separately. Returns the candle delta from the
+       owner's point of view plus who, if anyone, took the round. */
+    function classAEffect(card, owner, ownerSide, otherCard, otherSide) {
+      const spec = PW_SPEC[card.type] || {};
+      const otherPts = otherCard && otherCard.kind === "tier" ? otherCard.pts : null;
+      switch (spec.effect) {
+        case "zero":
+          return { delta: -candle, extra: 0, outcome: "wash" };
+        case "flip":
+          return { delta: -2 * candle, extra: 0, outcome: "wash" };
+        case "fomo":
+          return { delta: 0, extra: spec.extra, outcome: "wash" };
+        case "cancel":
+          // voids their card and scores nothing of its own: a total wash
+          return { delta: 0, extra: 0, outcome: "wash" };
+        case "liquidate":
+          return { delta: pwSign(ownerSide) * spec.swing, extra: 0, outcome: owner };
+        case "absorb":
+          /* Stop Loss at face value, Momentum at double: their numbered card
+             scores in the owner's direction instead of their own. Against
+             anything without a number there is nothing to absorb. */
+          if (otherPts == null) return { delta: 0, extra: 0, outcome: "wash" };
+          return { delta: pwSign(ownerSide) * otherPts * spec.mult, extra: 0, outcome: owner };
+        case "double": {
+          /* Market News doubles whatever wins the round. It carries no value of
+             its own, so the other card is what wins — at twice its worth. */
+          if (otherPts == null) return { delta: 0, extra: 0, outcome: "wash" };
+          const them = owner === "player" ? "ai" : "player";
+          return { delta: pwSign(otherSide) * otherPts * 2, extra: 0, outcome: them };
+        }
+        default:
+          return { delta: 0, extra: 0, outcome: "wash" };
       }
     }
 
-    // Discipline blocks an opposing Class-A outright and takes the round
-    if (pCard.type === "Discipline" && aIsA) {
-      r.candleDelta = pwSign(playerSide) * pCard.pts;
-      r.outcome = "player";
-      r.aDrawOwn = 0;
-      r.loserNeedsChoice = "ai";
-      log.push(`You play Discipline — it blocks ${aCard.type} entirely. You take the round, ${pwSigned(r.candleDelta)}.`);
-      return r;
-    }
-    if (aCard.type === "Discipline" && pIsA) {
-      r.candleDelta = pwSign(aiSide) * aCard.pts;
-      r.outcome = "ai";
-      r.pDrawOwn = 0;
-      r.loserNeedsChoice = "player";
-      log.push(`Opponent plays Discipline — it blocks your ${pCard.type}. They take the round, ${pwSigned(r.candleDelta)}.`);
-      return r;
-    }
-
-    // one Class-A special against a normal card
-    function oneClassA(card, owner, ownerSide, otherCard) {
-      const eff = classAEffect(card, ownerSide);
-      const isWin = card.resolveKind === "win";
+    // one Class-A special against the other player's card
+    function oneClassA(card, owner, ownerSide, otherCard, otherSide) {
+      const eff = classAEffect(card, owner, ownerSide, otherCard, otherSide);
+      const spec = PW_SPEC[card.type] || {};
       log.push(`${owner === "player" ? "You play" : "Opponent plays"} ${card.type} — ${card.desc}`);
       r.candleDelta = eff.delta;
-      r.outcome = isWin ? owner : "wash";
-      if (isWin) {
-        // the voided card is gone; its owner draws nothing this round and
-        // instead gets the loser's choice of pile
-        if (owner === "player") { r.aDrawOwn = 0; r.loserNeedsChoice = "ai"; }
-        else { r.pDrawOwn = 0; r.loserNeedsChoice = "player"; }
-      } else {
-        // a wash: the other player's card was never beaten, so it goes back
-        if (otherCard.kind === "tier") {
-          if (owner === "player") r.aReturnCard = true; else r.pReturnCard = true;
-        }
-        if (owner === "player") { r.pExtraOwn = eff.extra; r.pRefill = eff.refill; }
-        else { r.aExtraOwn = eff.extra; r.aRefill = eff.refill; }
-        if (eff.refill) { r.pRefill = true; r.aRefill = true; }   // Market News refills both
+      r.outcome = eff.outcome;
+      if (owner === "player") r.pExtraOwn = eff.extra; else r.aExtraOwn = eff.extra;
+
+      /* Only the effects that leave the other card alone give it back. A card
+         that was destroyed, cancelled or scored off has been spent. */
+      if (spec.keepsOther && otherCard.kind === "tier") {
+        if (owner === "player") r.aReturnCard = true; else r.pReturnCard = true;
       }
+      // whoever lost the round replaces their card from a pile of their choosing
+      if (eff.outcome === "player") { r.aDrawOwn = 0; r.loserNeedsChoice = "ai"; }
+      else if (eff.outcome === "ai") { r.pDrawOwn = 0; r.loserNeedsChoice = "player"; }
       return r;
     }
 
-    if (pIsA && !aIsA) return oneClassA(pCard, "player", playerSide, aCard);
-    if (aIsA && !pIsA) return oneClassA(aCard, "ai", aiSide, pCard);
+    if (pIsA && !aIsA) return oneClassA(pCard, "player", playerSide, aCard, aiSide);
+    if (aIsA && !pIsA) return oneClassA(aCard, "ai", aiSide, pCard, playerSide);
 
-    // both played a Class-A: the effects stack and the round is a wash
+    /* Both played a Class-A. Neither has a number for the other to read, so
+       any effect that scores off the opponent's card finds nothing; what is
+       left is the candle effects, which stack. */
     if (pIsA && aIsA) {
-      const e1 = classAEffect(pCard, playerSide);
-      const e2 = classAEffect(aCard, aiSide);
+      const e1 = classAEffect(pCard, "player", playerSide, aCard, aiSide);
+      const e2 = classAEffect(aCard, "ai", aiSide, pCard, playerSide);
       r.candleDelta = e1.delta + e2.delta;
       r.pExtraOwn = e1.extra; r.aExtraOwn = e2.extra;
-      r.pRefill = e1.refill || e2.refill;
-      r.aRefill = e1.refill || e2.refill;
       r.outcome = "wash";
       log.push(`You play ${pCard.type} — ${pCard.desc}`);
       log.push(`Opponent plays ${aCard.type} — ${aCard.desc}`);
@@ -2694,6 +2737,16 @@
     }
     return pool[Math.floor(Math.random() * pool.length)];
   }
+  /* Cheapest card that beats what the peek showed, else the weakest held. */
+  function pwAiAnswerPeek(playerCard) {
+    const numbered = pw.aiHand.filter((c) => c.kind === "tier");
+    if (!numbered.length) return null;
+    const target = playerCard.kind === "tier" ? playerCard.pts : 0;
+    const winners = numbered.filter((c) => c.pts > target).sort((x, y) => x.pts - y.pts);
+    if (winners.length) return winners[0];
+    return numbered.slice().sort((x, y) => x.pts - y.pts)[0];
+  }
+
   function pwAiDrawSource(specialCount) {
     if (specialCount === 0) return "own";
     const behind = pwSign(pw.aiSide) * pw.candle < -3;
@@ -2707,7 +2760,8 @@
       bull: [], bear: [], special: [],
       playerHand: [], aiHand: [], playerPlayed: null, aiPlayed: null,
       round: 1, log: [], winner: null, pendingCandle: 0, pending: null,
-      showLegend: false, seen: pwEmptyCounts(),
+      showLegend: false, seen: {},
+      discipline: null,     // a peek in progress: the Discipline card and theirs
       flipped: {},          // wild card ids currently showing their effect text
       flipAnim: null,       // the one card that just turned, for a single render
       showSeen: false,      // the opponent's per-tier breakdown, on demand
@@ -2726,6 +2780,7 @@
       bull, bear, special,
       playerHand: mine.splice(0, PW_HAND_SIZE),
       aiHand: theirs.splice(0, PW_HAND_SIZE),
+      seen: pwEmptyCounts(other),      // the opponent's tiers, by their own names
       log: [`Sides set — you are ${side === "bull" ? "Bull" : "Bear"}. Decks shuffled. Opening print: 0.`],
       phase: "selecting",
     });
@@ -2738,17 +2793,82 @@
     if (pw.phase !== "selecting") return;
     const card = pw.playerHand.find((c) => c.id === cardId);
     if (!card) return;
-    const aCard = pwAiChooseCard(pw.aiHand);
+    let aCard = pwAiChooseCard(pw.aiHand);
     pw.playerHand = pw.playerHand.filter((c) => c.id !== card.id);
     pw.aiHand = pw.aiHand.filter((c) => c.id !== aCard.id);
+    /* The AI's Discipline resolves here and now: the player's card is already
+       chosen, so the peek has nothing to wait for. It answers with the cheapest
+       card that beats what it sees, and with its weakest if nothing does —
+       spending no more than the round is worth. */
+    if (aCard.type === "Discipline") {
+      const answer = pwAiAnswerPeek(card);
+      if (answer) {
+        pw.aiHand = pw.aiHand.filter((c) => c.id !== answer.id);
+        pw.log = [`Opponent plays Discipline, reads your card, and answers with ${answer.type}.`].concat(pw.log);
+        aCard = answer;
+      } else {
+        pw.log = ["Opponent plays Discipline but holds nothing numbered to answer with."].concat(pw.log);
+      }
+    }
     pw.playerPlayed = card;
     pw.aiPlayed = aCard;
+    /* Discipline is a peek, not a play. Their card is revealed now and the
+       real answer is chosen against it — which means this one case genuinely
+       breaks simultaneous reveal, deliberately. */
+    if (card.type === "Discipline") {
+      pw.playerPlayed = null;          // Discipline itself never reaches the table
+      pw.aiPlayed = aCard;
+      pw.discipline = { card, aCard };
+      if (!pw.playerHand.some((c) => c.kind === "tier")) {
+        // nothing numbered left to answer with: the peek is spent for nothing
+        pw.log = ["You play Discipline, but hold no numbered card to answer with — the round is a wash."].concat(pw.log);
+        pw.discipline = null;
+        pw.phase = "resolving";
+        renderPointaeway();
+        pwTimer = setTimeout(() => {
+          pwTimer = null;
+          pwApplyResult(pwDisciplineWash(card, aCard), card, aCard);
+        }, PW_REVEAL_MS);
+        return;
+      }
+      pw.phase = "discipline-pick";
+      renderPointaeway();
+      return;
+    }
+
     pw.phase = "resolving";
     /* The round is decided the moment both cards are down; the delay is only
        so the reveal can be seen. Holding the outcome here rather than in the
        timer's closure means leaving the screen mid-reveal can still settle the
        round instead of stranding the match in "resolving" with nothing
        clickable on it. */
+    pw.pending = { result: pwResolveRound(card, aCard, pw.playerSide, pw.aiSide, pw.candle), card, aCard };
+    renderPointaeway();
+    pwTimer = setTimeout(() => { pwTimer = null; pwCommitPending(false); }, PW_REVEAL_MS);
+  }
+
+  /* A Discipline that cannot be answered: both cards are spent, nobody scores. */
+  function pwDisciplineWash(pCard, aCard) {
+    return {
+      candleDelta: 0, outcome: "wash",
+      pDrawOwn: 1, aDrawOwn: 1, pExtraOwn: 0, aExtraOwn: 0,
+      pReturnCard: false, aReturnCard: false,
+      pDiscard: true, aDiscard: true,
+      loserNeedsChoice: null, log: [],
+    };
+  }
+
+  /* The answer to a peeked card. Discipline is discarded and the chosen card is
+     what actually plays, resolved as any normal round would be. */
+  function pwDisciplineAnswer(cardId) {
+    if (pw.phase !== "discipline-pick" || !pw.discipline) return;
+    const card = pw.playerHand.find((c) => c.id === cardId);
+    if (!card || card.kind !== "tier") return;      // wilds cannot answer a peek
+    const { aCard } = pw.discipline;
+    pw.discipline = null;
+    pw.playerHand = pw.playerHand.filter((c) => c.id !== card.id);
+    pw.playerPlayed = card;
+    pw.phase = "resolving";
     pw.pending = { result: pwResolveRound(card, aCard, pw.playerSide, pw.aiSide, pw.candle), card, aCard };
     renderPointaeway();
     pwTimer = setTimeout(() => { pwTimer = null; pwCommitPending(false); }, PW_REVEAL_MS);
@@ -2794,8 +2914,6 @@
 
     for (let i = 0; i < result.aExtraOwn; i++) { const c = draw("own", pw.aiSide); if (c) aHand.push(c); }
     for (let i = 0; i < result.pExtraOwn; i++) { const c = draw("own", pw.playerSide); if (c) pHand.push(c); }
-    if (result.aRefill) { while (aHand.length < PW_HAND_SIZE) { const c = draw("own", pw.aiSide); if (!c) break; aHand.push(c); } }
-    if (result.pRefill) { while (pHand.length < PW_HAND_SIZE) { const c = draw("own", pw.playerSide); if (!c) break; pHand.push(c); } }
 
     // the winner's replacement is automatic; the loser gets the choice
     if (result.loserNeedsChoice !== "ai" && result.aDrawOwn > 0) {
@@ -2912,8 +3030,10 @@
     const special = card.side === "special";
     const sideCls = card.side === "bull" ? "bull" : card.side === "bear" ? "bear" : "wild";
     const pts = special ? (card.cls === "B" ? card.pts : null) : card.pts;
-    const tag = o.play ? "button" : "div";
-    const attrs = o.play ? ` type="button" data-pw-play="${esc(card.id)}"` : "";
+    const clickable = o.play || o.answer;
+    const tag = clickable ? "button" : "div";
+    const attrs = o.play ? ` type="button" data-pw-play="${esc(card.id)}"`
+                : o.answer ? ` type="button" data-pw-answer="${esc(card.id)}"` : "";
     /* Deck depth for this tier, on the player's own hand cards only — they
        already know their own deck. Nothing to show on a wild, which has no
        tier, or on the opponent's slot. */
@@ -2946,7 +3066,7 @@
     const wholeFaceFlips = special && !o.play;
     const ftag = wholeFaceFlips ? "button" : tag;
     const fattrs = wholeFaceFlips ? ` type="button" data-pw-flip="${esc(card.id)}"` : attrs;
-    return `<${ftag} class="pw-card ${sideCls}${size}${anim}"${fattrs}>
+    return `<${ftag} class="pw-card ${sideCls}${size}${anim}${o.dim ? " dim" : ""}"${fattrs}>
       ${left != null ? `<span class="pw-card-left" title="${left} of this candle left in your deck">${left}</span>` : ""}
       ${flipMark}
       <span class="pw-card-side">${special ? "WILD" : card.side.toUpperCase()}</span>
@@ -3012,9 +3132,9 @@
             Pick your side to shuffle in.</div>
           <div class="pw-sides">
             <button class="pw-side bull" data-pw-side="bull">
-              ${pwCandleSvg(PW_TIERS[0], "bull", 42)}<span>Trade as Bull</span></button>
+              ${pwCandleSvg(pwTiers("bull")[0], "bull", 42)}<span>Trade as Bull</span></button>
             <button class="pw-side bear" data-pw-side="bear">
-              ${pwCandleSvg(PW_TIERS[0], "bear", 42)}<span>Trade as Bear</span></button>
+              ${pwCandleSvg(pwTiers("bear")[0], "bear", 42)}<span>Trade as Bear</span></button>
           </div>
           <button class="pw-ghost" data-pw-legend>${pw.showLegend ? "Hide wild cards" : "How wild cards work"}</button>
           ${pw.showLegend ? pwLegendHTML() : ""}
@@ -3039,6 +3159,7 @@
 
     const ownCount = pwOwnDeck(pw.playerSide).length;
     const choosing = pw.phase === "draw-choice";
+    const peeking = pw.phase === "discipline-pick";
     /* Everything the match needs, in one screenful and in reading order: the
        two played cards with the meter between them, the two running totals,
        then your hand. The round log, the stat pills and the per-tier deck
@@ -3074,7 +3195,7 @@
       ${pw.showSeen ? `
       <div class="pw-seen">
         <div class="pw-seen-cap">Opponent has played</div>
-        ${PW_TIERS.map((t) => {
+        ${pwTiers(pw.aiSide).map((t) => {
           const n = pw.seen[t.type] || 0;
           return `<div class="pw-seen-row${n ? " on" : ""}">
             <span>${esc(t.type)}</span>
@@ -3092,9 +3213,14 @@
             ${pw.special.length === 0 ? "disabled" : ""}>Wild pile (${pw.special.length})</button>
         </div>
       </div>` : `
-      <div class="pw-hand" style="--pw-cols:${pwHandCols(pw.playerHand.length)}">
+      ${peeking ? `<div class="pw-peek-cap">Their card is up — answer it with a numbered card.</div>` : ""}
+      <div class="pw-hand${peeking ? " peeking" : ""}" style="--pw-cols:${pwHandCols(pw.playerHand.length)}">
         ${pw.playerHand.length
-          ? pw.playerHand.map((c) => pwCardHTML(c, { play: pw.phase === "selecting", small: true, depth: true })).join("")
+          ? pw.playerHand.map((c) => pwCardHTML(c, {
+              play: pw.phase === "selecting",
+              answer: peeking && c.kind === "tier",
+              dim: peeking && c.kind !== "tier",
+              small: true, depth: true })).join("")
           : `<div class="pw-hand-empty">Empty — nothing left to play.</div>`}
       </div>`}`;
     pw.flipAnim = null;      // the turn animation plays once, on the render after the tap
@@ -5683,7 +5809,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pw-side],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pw-side],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -5879,6 +6005,7 @@
     }
     else if (t.hasAttribute("data-pw-side")) pwStart(t.getAttribute("data-pw-side"));
     else if (t.hasAttribute("data-pw-play")) pwPlay(t.getAttribute("data-pw-play"));
+    else if (t.hasAttribute("data-pw-answer")) pwDisciplineAnswer(t.getAttribute("data-pw-answer"));
     else if (t.hasAttribute("data-pw-draw")) pwChooseDraw(t.getAttribute("data-pw-draw"));
     else if (t.hasAttribute("data-pw-flip")) {
       const id = t.getAttribute("data-pw-flip");

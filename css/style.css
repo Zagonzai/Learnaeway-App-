@@ -4625,6 +4625,24 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
 .pw-choice-btn.wild { border-color: var(--pw-wild); background: linear-gradient(160deg, var(--pw-wild-dim), var(--pw-panel)); }
 .pw-choice-btn:disabled { opacity: .4; }
 
+/* ---- Discipline's peek ---- */
+/* One compact line: the peek adds a row the other phases do not have, and the
+   match still has to sit inside one screen. */
+.pw-peek-cap {
+  margin-top: 8px;
+  padding: 5px 10px;
+  border: 1px solid var(--pw-wild);
+  border-radius: 999px;
+  background: rgba(7,10,24,.8);
+  text-align: center;
+  font-size: calc(10px * var(--fs));
+  line-height: 1.3;
+  color: var(--text);
+}
+.pw-hand.peeking { margin-top: 6px; }
+/* a wild cannot answer a peek, so it reads as unavailable */
+.pw-card.dim { opacity: .32; }
+
 /* ---- what the opponent has shown ----
    Stands where the hand does, like the draw choice: it is a thing to read, and
    the screen must not start scrolling to read it. */
