@@ -6695,22 +6695,38 @@
 
   /* ---------------- boot ---------------- */
 
-  /* How tall the app column is: what the browser reports the viewport to be,
-     and nothing cleverer than that. iOS can under-report dvh in standalone
-     mode, which is why this is measured here rather than left to CSS.
+  /* How tall the app column is.
 
-     Do NOT reach for screen.height. In standalone mode the web view does not
-     own the whole display — it is shorter than the screen by the status bar —
-     while screen.height IS the display. Sizing the column to it puts the dock
-     below the visible area, where html/body's overflow:hidden clips it in
-     half. The band of #050614 visible below the dock on a screenshot is the
-     manifest's background_color, painted by iOS outside the web view; it is
-     the same colour as the page background and an entirely different thing,
-     and it is not ours to reclaim. */
+     Three sources, and the largest wins. Every one of them is bounded by the
+     web view, so the largest can never be bigger than the view itself — which
+     is the whole difference from screen.height, which IS the display and once
+     put the dock below the visible area where overflow:hidden cut it in half.
+     Do not add that one back.
+
+     The largest rather than innerHeight alone because any single source can
+     come back short, and a short answer leaves the column standing above the
+     bottom of the view with a band of the manifest's background_color showing
+     under the dock on every screen — the reported symptom.
+
+     Measured again after the first paint as well: iOS settles the standalone
+     view over the launch image, and the figure available at boot can be the
+     pre-settle one with no resize event afterwards to correct it. */
+  function viewportHeight() {
+    const vv = window.visualViewport;
+    return Math.max(
+      window.innerHeight || 0,
+      document.documentElement.clientHeight || 0,
+      vv ? vv.height || 0 : 0
+    );
+  }
   function syncViewportHeight() {
-    document.documentElement.style.setProperty("--vhpx", window.innerHeight + "px");
+    const h = viewportHeight();
+    if (h > 0) document.documentElement.style.setProperty("--vhpx", h + "px");
   }
   syncViewportHeight();
+  // the settling ticks: cheap, and the only thing that catches a stale boot value
+  [60, 300, 1000].forEach((ms) => setTimeout(syncViewportHeight, ms));
+  window.addEventListener("pageshow", syncViewportHeight);
   window.addEventListener("resize", syncViewportHeight);
   // the battle chart repaints every animation frame; the replay chart is
   // static, so it needs a nudge when the viewport changes width
