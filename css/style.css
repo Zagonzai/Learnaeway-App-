@@ -4381,6 +4381,60 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 .pw-legend-row { font-size: calc(11.5px * var(--fs)); line-height: 1.45; color: var(--pw-muted); }
 .pw-legend-name { color: var(--pw-wild); font-weight: 700; }
 
+/* ---- random side picker ----
+   One card turning on its Y axis with Bull on one face and Bear on the other,
+   so the side that is up is the rotation itself and not a separate decision.
+   The angle comes from JS every frame; nothing here animates on its own. */
+.pw-random { margin-top: 18px; display: grid; justify-items: center; gap: 14px; }
+.pw-random .pw-ghost { margin: 0; }
+.pw-random-go { border-color: var(--pw-wild); color: var(--pw-wild); }
+.pw-flip-wrap { perspective: 700px; width: 82px; height: 112px; }
+.pw-flipper {
+  position: relative;
+  width: 100%; height: 100%;
+  transform-style: preserve-3d;
+  will-change: transform;
+}
+/* two selectors deep so it beats .pw-card's own fixed size whatever the
+   order of these blocks ends up being */
+.pw-flipper .pw-flip-face {
+  position: absolute; inset: 0;
+  width: 100%; height: 100%;
+  backface-visibility: hidden;
+  -webkit-backface-visibility: hidden;
+}
+.pw-flipper .pw-flip-face.bear { transform: rotateY(180deg); }
+/* the freeze: a short ease onto square rather than a cut, so the card visibly
+   settles on the side it stopped on */
+.pw-flipper.locked { transition: transform .18s ease-out; }
+
+/* STOP — the dock's "+" button asset and glow, carrying a word instead */
+.pw-stop {
+  position: relative;
+  width: 72px; height: 72px;
+  border: 0;
+  border-radius: 50%;
+  background: url("../assets/buttons-icon/plus-button@2x.png") center / contain no-repeat;
+  box-shadow: 0 0 22px -6px rgba(61,223,255,.7);
+  display: grid; place-items: center;
+}
+.pw-stop span {
+  font-size: calc(13px * var(--fs));
+  font-weight: 800; letter-spacing: .08em;
+  color: #EAF6FF;
+  text-shadow: 0 0 10px rgba(61,223,255,.85);
+}
+.pw-stop:active { transform: scale(.94); filter: brightness(1.3); }
+/* same box the STOP button occupied, so freezing does not move the card */
+.pw-random-lock {
+  height: 72px;
+  display: grid; place-items: center;
+  font-size: calc(12px * var(--fs));
+  font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+}
+.pw-random-lock.bull { color: var(--pw-bull); }
+.pw-random-lock.bear { color: var(--pw-bear); }
+
 /* ---- arena ----
    The match has to sit in one screenful: the two played cards with the meter
    between them, a two-number bar, and the hand. Nothing else is on this
