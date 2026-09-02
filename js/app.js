@@ -2529,8 +2529,8 @@
       desc: "Doubles the value of whatever wins the round." },
     { type: "Reversal",         cls: "A", effect: "flip", keepsOther: true,
       desc: "Flips the candle to the same distance the other side of 0." },
-    { type: "Fear",             cls: "B", pts: 1, debuff: 2,
-      desc: "Base 1 pt. Their card is worth 2 less before scoring." },
+    { type: "Take Profit",      cls: "A", effect: "absorb", mult: 1, doubleUp: true,
+      desc: "Take their profit: their card scores for YOU at its value. Hold its match and you can double it." },
     { type: "Momentum",         cls: "A", effect: "absorb", mult: 2,
       desc: "Their card scores DOUBLE for YOU instead of its value for them." },
     { type: "Discipline",       cls: "D", effect: "peek",
@@ -2584,15 +2584,10 @@
     pwTiers(side).forEach((t) => { c[t.type] = 0; });
     return c;
   }
-  /* Fear is the only card that changes what the other card is worth, and only
-     against a plain tier card. */
-  function pwEffPts(card, other) {
-    if (card.kind === "tier") {
-      if (other && other.kind === "special" && other.type === "Fear") {
-        return Math.max(0, card.pts - other.debuff);
-      }
-      return card.pts;
-    }
+  /* What a card is worth in a plain comparison. Nothing alters the other
+     card's value any more — Fear was the only card that did, and Take Profit
+     replaced it. */
+  function pwEffPts(card) {
     return card.pts;
   }
 
@@ -2696,8 +2691,8 @@
     }
 
     // plain comparison
-    const pPts = pwEffPts(pCard, aCard);
-    const aPts = pwEffPts(aCard, pCard);
+    const pPts = pwEffPts(pCard);
+    const aPts = pwEffPts(aCard);
     const pLabel = `${pCard.type} (${pPts})`;
     const aLabel = `${aCard.type} (${aPts})`;
 
@@ -2737,6 +2732,21 @@
     }
     return pool[Math.floor(Math.random() * pool.length)];
   }
+  /* A card in hand that matches the one just revealed. The spec asks for the
+     same tier NAME and the same point value — but the two decks stopped
+     sharing names when the tiers were split per side, so a name match can only
+     ever be Standard against Standard and the option would almost never
+     appear. Matching on value keeps the rule playable and means the same
+     thing: equal points is the equal rank. Tighten `pwCardsMatch` to compare
+     type as well if the literal reading is wanted. */
+  function pwCardsMatch(a, b) {
+    return a.kind === "tier" && b.kind === "tier" && a.pts === b.pts;
+  }
+  function pwTakeProfitMatch(hand, theirCard) {
+    if (!theirCard || theirCard.kind !== "tier") return null;
+    return hand.find((c) => pwCardsMatch(c, theirCard)) || null;
+  }
+
   /* Cheapest card that beats what the peek showed, else the weakest held. */
   function pwAiAnswerPeek(playerCard) {
     const numbered = pw.aiHand.filter((c) => c.kind === "tier");
@@ -2762,6 +2772,8 @@
       round: 1, log: [], winner: null, pendingCandle: 0, pending: null,
       showLegend: false, seen: {},
       discipline: null,     // a peek in progress: the Discipline card and theirs
+      tp: null,             // a Take Profit waiting on the double-up answer
+      aiDoubledUp: null,    // the card the AI spent doubling its own Take Profit
       flipped: {},          // wild card ids currently showing their effect text
       flipAnim: null,       // the one card that just turned, for a single render
       showSeen: false,      // the opponent's per-tier breakdown, on demand
@@ -2800,6 +2812,15 @@
        chosen, so the peek has nothing to wait for. It answers with the cheapest
        card that beats what it sees, and with its weakest if nothing does —
        spending no more than the round is worth. */
+    /* The AI's Take Profit doubles itself when it can: more points its way is
+       a straight gain, and the card it spends was going to be spent anyway. */
+    if (aCard.type === "Take Profit") {
+      const m = pwTakeProfitMatch(pw.aiHand, card);
+      if (m) {
+        pw.aiHand = pw.aiHand.filter((c) => c.id !== m.id);
+        pw.aiDoubledUp = m;
+      }
+    }
     if (aCard.type === "Discipline") {
       const answer = pwAiAnswerPeek(card);
       if (answer) {
@@ -2878,7 +2899,43 @@
     if (!pw || !pw.pending) return;
     const { result, card, aCard } = pw.pending;
     pw.pending = null;
+
+    // the AI's double-up was decided when it played; fold it in now
+    if (pw.aiDoubledUp) {
+      result.candleDelta *= 2;
+      pw.log = [`Opponent doubles up with a matching ${pw.aiDoubledUp.type}.`].concat(pw.log);
+      pw.aiDoubledUp = null;
+    }
+
+    /* The player's Take Profit stops here to ask. Leaving the screen settles
+       the round instead, which passes — the safe half of the choice, since it
+       keeps the card in hand. */
+    if (card.type === "Take Profit" && !silent) {
+      const match = pwTakeProfitMatch(pw.playerHand, aCard);
+      if (match) {
+        pw.tp = { result, card, aCard, match };
+        pw.phase = "takeprofit-choice";
+        renderPointaeway();
+        return;
+      }
+    }
     pwApplyResult(result, card, aCard, silent);
+  }
+
+  function pwTakeProfitChoose(doubleUp) {
+    if (pw.phase !== "takeprofit-choice" || !pw.tp) return;
+    const { result, card, aCard, match } = pw.tp;
+    pw.tp = null;
+    if (doubleUp) {
+      result.candleDelta *= 2;
+      // the matching card is spent: discarded, not returned and not recycled
+      pw.playerHand = pw.playerHand.filter((c) => c.id !== match.id);
+      pw.log = [`You double up with your matching ${match.type} — ${pwSigned(result.candleDelta)}.`].concat(pw.log);
+    } else {
+      pw.log = ["You pass on doubling up — your matching card stays in hand."].concat(pw.log);
+    }
+    pw.phase = "resolving";
+    pwApplyResult(result, card, aCard, false);
   }
 
   /* Local bags, one commit. Everything that draws does so against these
@@ -2976,8 +3033,10 @@
     const playerOut = pw.playerHand.length === 0 && pwOwnDeck(pw.playerSide).length === 0;
     const aiOut = pw.aiHand.length === 0 && pwOwnDeck(pw.aiSide).length === 0;
     if (playerOut || aiOut) return done(finalCandle === 0 ? "draw" : finalCandle > 0 ? "bull" : "bear");
-    pw.playerPlayed = null;
-    pw.aiPlayed = null;
+    /* The played cards stay where they are — win, loss or wash alike. They are
+       the round that just happened, and clearing them the instant it resolves
+       leaves nothing to read in the gap before the next one. The next play
+       replaces them. */
     pw.round++;
     pw.phase = "selecting";
     if (!silent) renderPointaeway();
@@ -3160,6 +3219,7 @@
     const ownCount = pwOwnDeck(pw.playerSide).length;
     const choosing = pw.phase === "draw-choice";
     const peeking = pw.phase === "discipline-pick";
+    const doubling = pw.phase === "takeprofit-choice";
     /* Everything the match needs, in one screenful and in reading order: the
        two played cards with the meter between them, the two running totals,
        then your hand. The round log, the stat pills and the per-tier deck
@@ -3203,6 +3263,16 @@
           </div>`;
         }).join("")}
         <button class="pw-ghost" data-pw-seen>Close</button>
+      </div>` : doubling ? `
+      <div class="pw-choice">
+        <div class="pw-choice-cap">You hold a matching ${esc(pw.tp.match.type)}
+          — play it too and double what you take?</div>
+        <div class="pw-choice-btns">
+          <button class="pw-choice-btn wild" data-pw-tp="double">Double up
+            (${pwSigned(pw.tp.result.candleDelta * 2)})</button>
+          <button class="pw-choice-btn ${pw.playerSide}" data-pw-tp="pass">Pass
+            (${pwSigned(pw.tp.result.candleDelta)})</button>
+        </div>
       </div>` : choosing ? `
       <div class="pw-choice">
         <div class="pw-choice-cap">You lost that round. Draw from —</div>
@@ -5809,7 +5879,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pw-side],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pw-side],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -6006,6 +6076,7 @@
     else if (t.hasAttribute("data-pw-side")) pwStart(t.getAttribute("data-pw-side"));
     else if (t.hasAttribute("data-pw-play")) pwPlay(t.getAttribute("data-pw-play"));
     else if (t.hasAttribute("data-pw-answer")) pwDisciplineAnswer(t.getAttribute("data-pw-answer"));
+    else if (t.hasAttribute("data-pw-tp")) pwTakeProfitChoose(t.getAttribute("data-pw-tp") === "double");
     else if (t.hasAttribute("data-pw-draw")) pwChooseDraw(t.getAttribute("data-pw-draw"));
     else if (t.hasAttribute("data-pw-flip")) {
       const id = t.getAttribute("data-pw-flip");
