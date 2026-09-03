@@ -20,13 +20,11 @@
      support it, so every inset in this file goes through these two. */
   --sat: env(safe-area-inset-top, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
-  /* What the bottom of the column actually reserves. The inset already clears
-     the home indicator on its own, so it is the boundary rather than a base to
-     stack a buffer on: max() takes the inset where there is one, and a small
-     breathing gap on the flat-bottomed devices where it is 0. Stacking the two
-     was costing every notched phone the buffer on top of an inset that had
-     already done the job. */
-  --gap-bottom: max(8px, var(--sab));
+  /* There is deliberately no shared --gap-bottom here any more. The dock was
+     its last user and now spends the inset as padding inside itself rather
+     than as a gap under itself (see .bottom-nav); every other layer that
+     clears the bottom writes its own max(n, var(--sab)) inline, because the
+     minimum differs per layer and a single shared number only ever hid that. */
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -462,6 +460,22 @@ img { user-select: none; -webkit-user-drag: none; }
 
 /* one continuous dock bar (background-bar-pill@2x.png via 9-slice) with
    plain icon buttons inside — no individual boxed buttons */
+/* Where the bottom inset is spent. It used to be an outer margin, which lifted
+   the whole dock — pill and all — clear of the bottom of the screen, so on a
+   notched phone the pill floated 34pt up and that band read as a gap under the
+   dock. It is inner padding now: the pill runs to the true bottom edge and the
+   inset keeps the icons off the home indicator from inside.
+
+   The 8px cushion those devices used to get on top of the inset is gone with
+   it, but only there — margin-bottom still pays it in full on a flat-bottomed
+   device, where there is no inset to stand in for it, and tapers as the inset
+   grows to cover it. Desktop and Android are byte-identical to before.
+
+   Height is definite rather than auto + min-height: `.dock-btn` sizes itself
+   at height:100%, and a percentage against an auto height resolves to auto —
+   which would collapse the 52px tap targets onto the 24px icons. Stated as
+   content + inset with box-sizing:border-box, the content box stays exactly
+   the clamp it always was and the buttons never notice. */
 .bottom-nav {
   position: relative;
   isolation: isolate;
@@ -469,8 +483,9 @@ img { user-select: none; -webkit-user-drag: none; }
   display: flex;
   align-items: center;
   justify-content: space-around;
-  margin: 2px 4% var(--gap-bottom);
-  height: clamp(48px, 6.2vh, 58px);
+  margin: 2px 4% max(0px, calc(8px - var(--sab)));
+  height: calc(clamp(48px, 6.2vh, 58px) + var(--sab));
+  padding-bottom: var(--sab);
   border-radius: 999px;
 }
 .bottom-nav::before {
