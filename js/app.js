@@ -6854,6 +6854,64 @@
   // static, so it needs a nudge when the viewport changes width
   window.addEventListener("resize", () => { if (state.view === "replay") mkPaintReplay(); });
   window.addEventListener("orientationchange", syncViewportHeight);
+
+  /* ---- on-device viewport readout ----
+     Five quick taps on the clock. Nothing in the layout can be checked from
+     a screenshot alone: the dock sits where the column ends, and the column
+     is as tall as iOS says the viewport is — which, on a home-screen install,
+     has not matched the screen. This puts the numbers the column is built
+     from on the screen next to the result, plus two fixed stripes: the one
+     at bottom:0 lands wherever the browser believes the bottom of the
+     viewport is, so if it stops short of the physical edge, the band under it
+     is outside the page and no CSS can reach it. Tap the panel to close. */
+  let diagTaps = 0, diagTapAt = 0;
+  function diagText() {
+    const cs = getComputedStyle(document.documentElement);
+    const app = document.querySelector(".app");
+    const dock = $("dock");
+    const r = (el) => el ? el.getBoundingClientRect() : null;
+    const a = r(app), d = r(dock);
+    const vv = window.visualViewport;
+    const one = (v) => (v == null ? "?" : Math.round(v * 10) / 10);
+    return [
+      `standalone ${matchMedia("(display-mode: standalone)").matches} · navigator.standalone ${!!navigator.standalone}`,
+      `innerHeight ${one(innerHeight)} · clientHeight ${one(document.documentElement.clientHeight)}`,
+      `visualViewport ${vv ? one(vv.height) + " @" + one(vv.offsetTop) : "none"} · screen ${one(screen.height)}`,
+      `--sat ${cs.getPropertyValue("--sat").trim() || "?"} · --sab ${cs.getPropertyValue("--sab").trim() || "?"} · --vhpx ${cs.getPropertyValue("--vhpx").trim() || "unset"}`,
+      `app ${a ? one(a.top) + "→" + one(a.bottom) + " (h " + one(a.height) + ")" : "?"} · dock bottom ${d ? one(d.bottom) : "?"}`,
+      `innerWidth ${one(innerWidth)} · dpr ${devicePixelRatio}`,
+    ].join("\n");
+  }
+  function diagShow() {
+    let p = $("vhDiag");
+    if (!p) {
+      p = document.createElement("pre");
+      p.id = "vhDiag";
+      p.setAttribute("role", "status");
+      document.body.appendChild(p);
+      ["top", "bottom"].forEach((side) => {
+        const s = document.createElement("div");
+        s.className = "vh-diag-stripe " + side;
+        s.dataset.side = side;
+        s.textContent = side === "top" ? "fixed top:0" : "fixed bottom:0";
+        document.body.appendChild(s);
+      });
+      p.addEventListener("click", diagHide);
+    }
+    p.textContent = diagText();
+  }
+  function diagHide() {
+    ["vhDiag"].forEach((id) => { const el = $(id); if (el) el.remove(); });
+    document.querySelectorAll(".vh-diag-stripe").forEach((el) => el.remove());
+  }
+  const waveClock = $("waveClock");
+  if (waveClock) waveClock.addEventListener("click", () => {
+    const now = Date.now();
+    diagTaps = now - diagTapAt < 600 ? diagTaps + 1 : 1;
+    diagTapAt = now;
+    if (diagTaps >= 5) { diagTaps = 0; diagShow(); }
+  });
+  window.addEventListener("resize", () => { if ($("vhDiag")) diagShow(); });
   if (window.visualViewport) window.visualViewport.addEventListener("resize", syncViewportHeight);
 
   /* Keyboard handling for the login/gate screen: iOS keeps window.innerHeight

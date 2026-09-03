@@ -21,17 +21,18 @@
   --sat: env(safe-area-inset-top, 0px);
   --sab: env(safe-area-inset-bottom, 0px);
   /* What the dock reserves under itself. The inset is the boundary, and this
-     sits 10px inside it: the home indicator needs less room than iOS reserves,
+     sits 14px inside it: the home indicator needs less room than iOS reserves,
      so trimming the reservation moves the dock down and hands the difference
-     to the card, without the pill ever reaching the indicator. max() floors it
-     at 6px so the flat-bottomed devices, where the inset is 0, still get a
-     breathing gap rather than sitting flush on the edge.
+     to the card. At a 34pt inset that leaves 20pt under the pill, 7pt above
+     the indicator's top edge. max() floors it at 4px so the flat-bottomed
+     devices, where the inset is 0, still get a sliver rather than sitting
+     flush on the edge.
 
      Not padding inside the dock, and not an auto height: either one grows the
      pill, and the 9-slice's 11px middle band stretched four times over reads
      as a different shape. The pill keeps its size; only the space under it
      changes. */
-  --gap-bottom: max(6px, calc(var(--sab) - 10px));
+  --gap-bottom: max(4px, calc(var(--sab) - 14px));
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -313,7 +314,7 @@ img { user-select: none; -webkit-user-drag: none; }
   isolation: isolate;
   flex: 1 1 auto;
   min-height: 0;
-  margin: 8px 3.5% 3px;
+  margin: 8px 3.5% 0;
   border-radius: var(--radius-card);
 }
 /* card backgrounds as 9-slices: glowing corners stay crisp, centers stretch */
@@ -469,8 +470,8 @@ img { user-select: none; -webkit-user-drag: none; }
    plain icon buttons inside — no individual boxed buttons */
 /* The pill's own box is fixed and stays that way — height is the clamp, no
    padding, and ::before below is untouched. Everything about where the dock
-   sits is margin: none on top so the card starts where the dock used to, and
-   --gap-bottom underneath, which is the inset less the 10px the home indicator
+   sits is margin: none on top so the card runs right down to it, and
+   --gap-bottom underneath, which is the inset less the 14px the home indicator
    does not need. */
 .bottom-nav {
   position: relative;
@@ -4095,11 +4096,11 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
      the bars and panels line up with the app shell instead of approximately
      matching it:
        .bar        margin-top 5px, height clamp(40px, 5.3vh, 48px)  x2
-       .card-outer margin 8px top / 3px bottom
+       .card-outer margin 8px top / 0 bottom
        .bottom-nav margin 0 top / --gap-bottom bottom, height clamp(48px, 6.2vh, 58px)
      so a side bar spans both centre bars (2 x height + the 5px between them),
      and the panels below start where the card starts and end where it ends.
-     --gap-bottom is 6px here: desktop has no safe-area inset, so its max()
+     --gap-bottom is 4px here: desktop has no safe-area inset, so its max()
      floor is what applies. If that floor ever changes, this padding follows. */
   .dt-col {
     grid-row: 2;
@@ -4107,7 +4108,7 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
     flex-direction: column;
     gap: 8px;                                   /* == .card-outer's top margin */
     min-height: 0;
-    padding: 0 14px 6px;     /* == .bottom-nav's own bottom margin here */
+    padding: 0 14px 4px;     /* == .bottom-nav's own bottom margin here */
   }
   .dt-left  { grid-column: 1 / 4; }
   .dt-right { grid-column: 6 / 9; }
@@ -4824,4 +4825,36 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
   .pw-track-mid { display: none; }
   .pw-empty, .pw-arena .pw-card { width: 74px; height: 102px; }
 }
+
+/* ===================== VIEWPORT READOUT =====================
+   Five taps on the clock. Not styled to belong — it is a measuring tool that
+   should look like one, and it has to stay legible over anything. The two
+   stripes are the point of it: fixed to the viewport's own edges, so where
+   they land is where the browser believes the screen ends. */
+#vhDiag {
+  position: fixed;
+  left: 8px; right: 8px; bottom: 28px;
+  z-index: 100000;
+  margin: 0;
+  padding: 10px 12px;
+  border: 1px solid #FF3D9A;
+  border-radius: 8px;
+  background: rgba(0,0,0,.92);
+  color: #EAF6FF;
+  font: 600 12px/1.5 ui-monospace, Menlo, Consolas, monospace;
+  white-space: pre-wrap;
+  word-break: break-word;
 }
+.vh-diag-stripe {
+  position: fixed;
+  left: 0; right: 0;
+  height: 8px;
+  z-index: 100001;
+  background: #FF3D9A;
+  color: #000;
+  font: 700 7px/8px ui-monospace, Menlo, Consolas, monospace;
+  text-align: center;
+  pointer-events: none;
+}
+.vh-diag-stripe.top { top: 0; background: #3DDFFF; }
+.vh-diag-stripe.bottom { bottom: 0; }
