@@ -4751,11 +4751,15 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
 .pw-hand-empty { grid-column: 1 / -1; font-size: calc(11px * var(--fs)); color: #5B6E85; }
 
 /* ---- game over ---- */
-.pw-over { text-align: center; padding: 28px 8px; }
+/* The result screen carries the meter now, so the padding it used to spend on
+   empty space goes to the meter instead — the whole thing still has to land
+   inside one screenful on a short phone without scrolling. */
+.pw-over { text-align: center; padding: 14px 8px; }
+.pw-over .pw-track-panel { margin: 10px 0 2px; }
 .pw-over-title {
   font-size: calc(28px * var(--fs));
   font-weight: 800; letter-spacing: .02em;
-  margin: 10px 0 22px;
+  margin: 10px 0 18px;
 }
 .pw-over-title.flat { color: var(--pw-muted); }
 .pw-over-title.bull { color: var(--pw-bull); }

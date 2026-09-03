@@ -3090,15 +3090,46 @@
     pwFinishRound(pw.pendingCandle);
   }
 
-  /* Win checks, in the documented order: the track first, then depletion —
-     which looks only at a player's hand and their OWN deck, never the wild
-     pile. An exact 0 at depletion is a Doji, and a draw. */
+  /* Fully out of cards: hand empty, own deck empty, AND the shared wild pile
+     empty too. All three, because the first two alone are not the end of
+     anything — a player with an empty hand and an empty deck can still draw a
+     wild, and does. The wild pile is shared, so its being empty is a fact
+     about the table rather than about the player, which is why it joins both
+     sides of the test rather than sitting outside it. */
+  const pwFullyOut = (hand, side) =>
+    hand.length === 0 && pwOwnDeck(side).length === 0 && pw.special.length === 0;
+
+  /* An empty hand now has to be refilled rather than ending the match, which
+     is new: under the old two-part rule an empty hand and an empty deck WAS
+     the end, so no round could ever begin with nothing to play. Now the wild
+     pile keeps that player in the game, and a card has to actually reach their
+     hand or the next round asks them to play one they do not have — the AI
+     reads .type straight off its choice and throws on nothing.
+
+     Own deck first, wild pile second. It runs before the depletion check, so
+     a hand is only still empty afterwards when every pile is empty too, which
+     is exactly the case that ends the match. */
+  function pwTopUp(hand, side) {
+    if (hand.length) return;
+    const own = pwOwnDeck(side);
+    const c = own.length ? own.shift() : (pw.special.length ? pw.special.shift() : null);
+    if (c) hand.push(c);
+  }
+
+  /* Win checks, in the documented order: the track first, then depletion.
+     Depletion is asymmetric on purpose — one player hitting it ends the match
+     even with the other holding a full hand, because the depleted player can
+     never play or draw again and there is no game left to play against them.
+     An exact 0 at depletion is a Doji, and a draw. */
   function pwFinishRound(finalCandle, silent) {
     const done = (w) => { pw.winner = w; pw.phase = "gameover"; if (!silent) renderPointaeway(); };
     if (finalCandle >= PW_TARGET) return done("bull");
     if (finalCandle <= -PW_TARGET) return done("bear");
-    const playerOut = pw.playerHand.length === 0 && pwOwnDeck(pw.playerSide).length === 0;
-    const aiOut = pw.aiHand.length === 0 && pwOwnDeck(pw.aiSide).length === 0;
+    // draw before judging: a hand that can be refilled is not a depleted one
+    pwTopUp(pw.playerHand, pw.playerSide);
+    pwTopUp(pw.aiHand, pw.aiSide);
+    const playerOut = pwFullyOut(pw.playerHand, pw.playerSide);
+    const aiOut = pwFullyOut(pw.aiHand, pw.aiSide);
     if (playerOut || aiOut) return done(finalCandle === 0 ? "draw" : finalCandle > 0 ? "bull" : "bear");
     /* The played cards stay where they are — win, loss or wash alike. They are
        the round that just happened, and clearing them the instant it resolves
@@ -3328,7 +3359,13 @@
       const tone = pw.winner === "draw" ? "flat" : pw.winner;
       cardScroll.innerHTML = `
         <div class="pw-over">
-          <div class="pw-kicker">Round ${pw.round} · Final print ${pw.candle > 0 ? "+" : ""}${pw.candle}</div>
+          <div class="pw-kicker">Round ${pw.round} · Final print</div>
+          ${/* The same meter the match was played on, holding where the candle
+                stopped. The number that used to sit in the kicker is gone from
+                there: the track carries it at three times the size, and the
+                same figure twice within a few lines of itself reads as a
+                mistake rather than emphasis. */""}
+          ${pwTrackHTML()}
           <div class="pw-over-title ${tone}">${label}</div>
           <button class="btn-primary" data-pw-again>Play again</button>
         </div>`;
