@@ -4975,7 +4975,37 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
 .pa-ready .btn-primary { max-width: 300px; margin: 18px auto 10px; }
 
 /* ---- the round ---- */
-.pa-stats { display: flex; justify-content: space-between; align-items: flex-end; flex: 0 0 auto; }
+/* Reaction's own setup and round furniture. The three-across pace row, the
+   computed window, the running deviation, and the candles that have not
+   printed yet — which keep their box so the chart never reflows as the tape
+   advances, and only stop being drawn. */
+.bm-row-3 { grid-template-columns: repeat(3, 1fr); }
+.bm-rect .pa-diff-ms {
+  display: block;
+  font-size: calc(10px * var(--fs)); font-weight: 700;
+  opacity: .75; margin-top: 1px;
+}
+.bm-rect { flex-direction: column; gap: 0; }
+.pa-window {
+  margin: 2px 0 4px;
+  padding: 10px 12px;
+  border: 1px solid var(--pw-line, rgba(61,223,255,.24));
+  border-radius: 12px;
+  background: rgba(7,10,24,.7);
+  text-align: center;
+}
+.pa-window-row { font-size: calc(12px * var(--fs)); line-height: 1.5; color: #C9DDF2; }
+.pa-window-row b { color: var(--cyan); font-variant-numeric: tabular-nums; }
+.pa-window-row.sub { font-size: calc(11px * var(--fs)); color: #8FA9C4; }
+.pa-window-row.sub b { color: var(--magenta); }
+.pa-col.pending { visibility: hidden; }
+.pa-stat.mid { text-align: center; }
+.pa-stat-val.on { color: var(--pw-bull, #1FCBA0); }
+.pa-stat-val.off { color: var(--pw-wild, #E8B23A); }
+.pa-time.on { color: var(--pw-bull, #1FCBA0); }
+.pa-time.off { color: var(--pw-wild, #E8B23A); }
+
+.pa-stats { display: flex; justify-content: space-between; align-items: flex-end; gap: 8px; flex: 0 0 auto; }
 .pa-stat { display: flex; flex-direction: column; gap: 1px; min-width: 0; }
 .pa-stat.right { text-align: right; }
 .pa-stat-cap {
@@ -5192,6 +5222,8 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
 .pa-confirm-btns { display: flex; gap: 8px; margin-top: 9px; }
 .pa-confirm-btns .pa-ghost { flex: 1 1 0; }
 .pa-setup > .pa-ghost { margin: 10px auto 0; display: block; }
+/* the mode cards carry no icon; without one the text should fill the card */
+.gs-card:not(:has(.gs-icon)) .gs-text { width: 100%; }
 
 /* Short screens: the round still has to fit, so the fixed rows give first. */
 @media (max-height: 740px) {
@@ -5214,6 +5246,11 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
   .pa-links { margin-top: 10px; }
   .pa-mini-cell b { font-size: calc(13px * var(--fs)); }
   .pa-seedline { margin-bottom: 6px; }
+  .pa-window { padding: 7px 10px; margin: 0 0 2px; }
+  .pa-window-row { font-size: calc(11px * var(--fs)); line-height: 1.4; }
+  .pa-window-row.sub { font-size: calc(10px * var(--fs)); }
+  .pa-setup .pa-links { margin-top: 8px; }
+  .pa-setup .btn-primary { padding: 10px; }
 }
 @media (max-height: 620px) {
   /* the blurb is the one thing here that is only ever read once */
@@ -5234,4 +5271,13 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
   .pa-seed-tail { display: none; }
   .pa-time { font-size: calc(22px * var(--fs)); }
   .pa-ready { padding: 14px 8px; }
+  /* the two window figures both matter, so they stay — the room comes out of
+     the space around them and out of the pace buttons' second line */
+  .pa-window { padding: 5px 8px; }
+  .pa-window-row { font-size: calc(10.5px * var(--fs)); line-height: 1.35; }
+  .bm-rect .pa-diff-ms { font-size: calc(9px * var(--fs)); }
+  .pa-setup .bm-label { margin-bottom: 4px; }
+  .pa-setup .btn-primary { margin-top: 8px; padding: 9px; }
+  .pa-setup .pa-links { margin-top: 7px; }
+  .pa-setup .pa-ghost { padding: 6px 13px; }
 }
