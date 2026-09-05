@@ -236,8 +236,17 @@
   let heroSoundWanted = false;   // what the listener last asked for
 
   const state = {
+    /* which inline center panel is up, if any: "tools" (hamburger) or
+       "settings" (gear). One slot, so the two can never both be open. */
+    panel: null,
+    tpTab: "chart",          // which of the hamburger's four sections
+    tpTf: "5m",              // practice chart timeframe
+    tpMa: false,             // practice chart moving average
+    tpLevel: null,           // the level the player tapped onto the chart, in %
+    tpCourse: false,         // the course menu, folded away under the sections
     view: "home",            // 'home' | 'screen' | 'videos' | 'checkin' | 'beforetrade'
                              // | 'journal' | 'pickaeway' | 'buildmatch' | 'match' | 'result' | 'replay'
+                             // | 'aehome' — the Æway hub the bar-2 home icon opens
     homeTab: "sections",     // 'sections' | 'liked' | 'saved'
     homeModule: 0,           // module index shown on home
     expanded: null,          // section id expanded into subsection deck
@@ -6154,11 +6163,16 @@
     if (!inChecklist()) cardScroll.classList.remove("ci-resulting");
     syncCheckinChrome();
     syncDockActive();
+    /* The panel owns the middle of the screen while it is open. It renders
+       after the view so the view's own bar title and chrome are still set —
+       only the body is taken over, and closing the panel puts the view back
+       without it having to re-run anything. */
     if (state.view === "home") renderHome();
     else if (state.view === "videos") renderVideos();
     else if (state.view === "checkin") renderCheckin();
     else if (state.view === "beforetrade") renderBeforeTrade();
     else if (state.view === "journal") renderJournal();
+    else if (state.view === "aehome") renderAeHome();
     else if (state.view === "games") renderGames();
     else if (state.view === "placeaway") renderPlaceaway();
     else if (state.view === "pickaeway") renderPickaeway();
@@ -6169,6 +6183,29 @@
     else if (state.view === "replay") renderReplay();
     else if (state.view === "profile") renderProfile();
     else renderScreen();
+
+    /* Last, so it takes the body over from whatever just wrote it. The view
+       keeps its bars and its footer state; only cardScroll changes hands. */
+    /* A panel sits over the view it was opened on. Navigating anywhere — the
+       dock, a tile, a bar icon — is leaving that view, so the panel goes with
+       it rather than hanging over the new screen. */
+    if (state.panel && state.panelView !== state.view) { state.panel = null; state.panelView = null; }
+    cardScroll.classList.toggle("has-panel", !!state.panel);
+    $("btnMenu").classList.toggle("on", state.panel === "tools");
+    $("btnSettings").classList.toggle("on", state.panel === "settings");
+    if (state.panel) {
+      stopAudio();
+      cardFooter.style.display = "none";
+      cardScroll.classList.remove("pa-playing", "ci-resulting");
+      cardScroll.innerHTML = `<div class="ip-panel">
+        <div class="ip-head">
+          <span class="ip-title">${state.panel === "settings" ? "Settings" : "Tools"}</span>
+          <button class="ip-close" data-panel-close aria-label="Close">✕</button>
+        </div>
+        ${state.panel === "settings" ? settingsPanelHTML() : toolsPanelHTML()}
+      </div>`;
+      cardScroll.scrollTop = 0;
+    }
   }
 
   /* ---------------- navigation ---------------- */
@@ -6242,9 +6279,368 @@
       <button class="panel-close" data-close>✕</button></div>`;
   }
 
+  /* ---------------- the Æway home page ----------------
+     A hub, not a screen with content of its own: everything on it is either a
+     real number the app already holds or a way into somewhere else. The
+     snapshot reads the same sources the Check-In bar and the Journal read, so
+     it cannot drift from them. */
+
+  /* Every trade the journal knows about, imported or typed. */
+  function aeAllTrades() {
+    const out = [];
+    (store.journalAccounts || []).forEach((a) => {
+      (store.journalTrades[a.id] || []).forEach((t) => out.push(t));
+      Object.keys((store.journalManual || {})[a.id] || {}).forEach((day) => {
+        ((store.journalManual[a.id] || {})[day] || []).forEach((e) =>
+          out.push({ date: day, pnl: Number(e.pnl) || 0 }));
+      });
+    });
+    return out;
+  }
+
+  /* The next session boundary in New York hours: 3am Europe, 7am New York,
+     5pm Asia — the same three the header clock names. */
+  function aeNextSession() {
+    const h = easternHour(new Date());
+    const marks = [[3, "Europe"], [7, "New York"], [17, "Asia"]];
+    for (const [at, name] of marks) if (h < at) return { name, at };
+    return { name: "Europe", at: 3, tomorrow: true };
+  }
+
+  function aeHomeHTML() {
+    const streak = disciplineStreak();
+    const doneToday = sectionsDone(todayKey());
+    const trades = aeAllTrades();
+    const key = todayKey();
+    const today = trades.filter((t) => t.date === key).reduce((a, t) => a + (Number(t.pnl) || 0), 0);
+    const all = trades.reduce((a, t) => a + (Number(t.pnl) || 0), 0);
+    const nx = aeNextSession();
+    const prog = overallProgress();
+    const entry = screens[state.current];
+    const lesson = entry ? entry.scr.title || entry.sec.title : null;
+
+    const TILES = [
+      { id: "journal", label: "Trade Journal", icon: "assets/nav-icons/icon-trade-journal@2x.png" },
+      { id: "checkin", label: "Trade Day Check-In", icon: "assets/nav-icons/icon-trade-day@2x.png" },
+      { id: "games", label: "Gameæway", icon: "assets/nav-icons/icon-dock-match-replay@2x.png" },
+      { id: "learn", label: "Learn", icon: "assets/nav-icons/icon-learn@2x.png" },
+    ];
+
+    return `
+      <div class="ae-home">
+        <div class="ae-feature">
+          <div class="ae-feature-cap">Featured connection</div>
+          <div class="ae-feature-row">
+            <span class="ae-feature-ring"><img src="assets/nav-icons/icon-user@2x.png" alt=""></span>
+            <span class="ae-feature-text">
+              <span class="ae-feature-name">${esc((store.featured && store.featured.name) || "Nobody featured yet")}</span>
+              <span class="ae-feature-sub">${esc((store.featured && store.featured.sub)
+                || "This slot spotlights a trader or platform. Curation is not wired up yet.")}</span>
+            </span>
+          </div>
+        </div>
+
+        <div class="ae-cap">Today</div>
+        <div class="ae-snap">
+          <div class="ae-snap-cell">
+            <b class="${streak > 0 ? "on" : ""}">${streak}</b>
+            <span>Day streak</span>
+          </div>
+          <div class="ae-snap-cell">
+            <b class="${today > 0 ? "up" : today < 0 ? "down" : ""}">${trades.length ? money(today) : "—"}</b>
+            <span>P&amp;L today</span>
+          </div>
+          <div class="ae-snap-cell">
+            <b class="${all > 0 ? "up" : all < 0 ? "down" : ""}">${trades.length ? money(all) : "—"}</b>
+            <span>All time</span>
+          </div>
+        </div>
+        <div class="ae-line">
+          <span>Check-In</span><b>${doneToday} of ${DAY_SECTIONS.length} done today</b>
+        </div>
+        <div class="ae-line">
+          <span>Next session</span><b>${esc(nx.name)} at ${nx.at > 12 ? nx.at - 12 : nx.at}${
+            nx.at >= 12 ? "pm" : "am"} ET${nx.tomorrow ? " tomorrow" : ""}</b>
+        </div>
+
+        <button class="ae-resume" data-ae-go="resume">
+          <span class="ae-resume-cap">Continue where you left off</span>
+          <span class="ae-resume-name">${esc(lesson || "Start the course")}</span>
+          <span class="ae-resume-sub">${prog.done} of ${prog.total} screens · ${prog.pct}%</span>
+        </button>
+
+        <div class="ae-cap">Jump in</div>
+        <div class="ae-tiles">
+          ${TILES.map((t) => `
+            <button class="ae-tile" data-ae-go="${t.id}">
+              <img src="${t.icon}" alt="">
+              <span>${esc(t.label)}</span>
+            </button>`).join("")}
+        </div>
+      </div>`;
+  }
+
+  function renderAeHome() {
+    barTitle.textContent = "Æway";
+    cardFooter.style.display = "none";
+    cardScroll.innerHTML = aeHomeHTML();
+    cardScroll.scrollTop = 0;
+  }
+
+  function openAeHome() {
+    stopAudio();
+    state.view = "aehome";
+    state.slideDir = 0;
+    state.panel = null;
+    closeOverlay();
+    render();
+  }
+
+  /* ---------------- the hamburger's four sections ----------------
+
+     WHAT IS REAL AND WHAT IS NOT. The brief said this content already existed
+     as desktop panels to surface here. It does not: .dt-panel-square,
+     -chart and -wide are decorative 9-slice frames with no content — app.js
+     never writes into them, which is why this had to be built rather than
+     moved. So each section below is real UI, and the ones with no data source
+     yet say so on screen rather than pretending:
+
+       Practice chart   — real. Seeded candles, a timeframe switch, a moving
+                          average and a tap-placed level. Nothing to connect.
+       MarketWatch      — SAMPLE PRICES. Deterministic per instrument per day
+                          so the list is stable rather than flickering, but no
+                          feed is wired. ==> BACKEND
+       Plan             — reads store.plan, which nothing sets yet, so it shows
+                          the free tier. ==> BACKEND for real billing.
+       Economic calendar— SAMPLE EVENTS on this week's real dates. ==> BACKEND
+
+     The Trade Journal already ships on the same footing and says so, so this
+     is the app's existing convention rather than a new one. */
+
+  const TP_TABS = [
+    { id: "chart", label: "Practice" },
+    { id: "watch", label: "Market" },
+    { id: "plan", label: "Plan" },
+    { id: "cal", label: "Calendar" },
+  ];
+
+  const TP_TFS = [
+    { id: "5m", label: "5M", n: 40 },
+    { id: "1h", label: "1H", n: 60 },
+    { id: "1d", label: "1D", n: 80 },
+  ];
+
+  const TP_WATCH = [
+    { sym: "ES",   name: "E-mini S&P 500",  base: 5480 },
+    { sym: "NQ",   name: "E-mini Nasdaq",   base: 19240 },
+    { sym: "YM",   name: "E-mini Dow",      base: 40120 },
+    { sym: "CL",   name: "Crude Oil",       base: 78.4 },
+    { sym: "GC",   name: "Gold",            base: 2412 },
+    { sym: "6E",   name: "Euro FX",         base: 1.084 },
+    { sym: "BTC",  name: "Bitcoin",         base: 64150 },
+  ];
+
+  const TP_EVENTS = [
+    { d: 0, t: "08:30", cur: "USD", imp: 3, name: "Non-Farm Payrolls" },
+    { d: 0, t: "10:00", cur: "USD", imp: 2, name: "ISM Services PMI" },
+    { d: 1, t: "04:00", cur: "EUR", imp: 2, name: "ECB Economic Bulletin" },
+    { d: 1, t: "14:00", cur: "USD", imp: 3, name: "FOMC Rate Decision" },
+    { d: 2, t: "08:30", cur: "USD", imp: 3, name: "CPI m/m" },
+    { d: 2, t: "23:50", cur: "JPY", imp: 2, name: "BoJ Summary of Opinions" },
+    { d: 3, t: "07:00", cur: "GBP", imp: 2, name: "BoE Rate Decision" },
+    { d: 3, t: "08:30", cur: "USD", imp: 2, name: "Unemployment Claims" },
+    { d: 4, t: "08:30", cur: "USD", imp: 3, name: "Retail Sales m/m" },
+  ];
+
+  /* One number per instrument per day, from the symbol and the date. Stable
+     while the app is open and across a reload, which a Math.random() would
+     not be — a watchlist that reshuffles on every render reads as broken
+     rather than as a placeholder. */
+  function tpQuote(row, dayKey) {
+    let h = 2166136261;
+    for (const ch of row.sym + dayKey) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+    const r = ((h >>> 0) % 10000) / 10000;
+    const pct = (r - 0.5) * 2 * 1.8;                 // ±1.8%
+    const last = row.base * (1 + pct / 100);
+    const dp = row.base < 10 ? 4 : row.base < 200 ? 2 : row.base < 5000 ? 2 : 0;
+    return { last: last.toFixed(dp), pct };
+  }
+
+  function tpChartHTML() {
+    const tf = TP_TFS.find((t) => t.id === state.tpTf) || TP_TFS[0];
+    /* the same generator Placeæway's rounds use, seeded off the timeframe so
+       switching tabs and coming back shows the same chart it showed before */
+    const series = paGenerateSeries(tf.n, paMakeRng("practice-" + tf.id));
+    const closes = series.map((c) => c.close);
+    const ma = closes.map((_, i) => {
+      const from = Math.max(0, i - 9);
+      const w = closes.slice(from, i + 1);
+      return w.reduce((a, b) => a + b, 0) / w.length;
+    });
+    const gMax = Math.max.apply(null, series.map((c) => c.high));
+    const gMin = Math.min.apply(null, series.map((c) => c.low));
+    const range = Math.max(1, gMax - gMin);
+    const PAD = 8, USABLE = 100 - PAD * 2;
+    const pct = (v) => PAD + USABLE - ((v - gMin) / range) * USABLE;
+    const cols = series.map((c) => {
+      const wt = pct(c.high), wh = Math.max(0.6, pct(c.low) - wt);
+      const bt = pct(Math.max(c.open, c.close));
+      const bh = Math.max(1.2, pct(Math.min(c.open, c.close)) - bt);
+      return `<div class="tp-col ${c.dir}">
+        <span class="pa-wick" style="top:${wt.toFixed(2)}%;height:${wh.toFixed(2)}%"></span>
+        <span class="pa-body" style="top:${bt.toFixed(2)}%;height:${bh.toFixed(2)}%"></span></div>`;
+    }).join("");
+    // the average as one polyline across the same percentage space
+    const pts = ma.map((v, i) =>
+      `${((i + 0.5) / series.length * 100).toFixed(2)},${pct(v).toFixed(2)}`).join(" ");
+    const lvl = state.tpLevel;
+    const last = series[series.length - 1].close;
+    const chg = (last - series[0].open) / series[0].open * 100;
+    return `
+      <div class="tp-chart-head">
+        <div class="tp-quote">
+          <b>PRACTICE</b>
+          <span class="${chg >= 0 ? "up" : "down"}">${chg >= 0 ? "+" : ""}${chg.toFixed(2)}%</span>
+        </div>
+        <div class="tp-tf">
+          ${TP_TFS.map((t) => `<button class="tp-tf-btn${t.id === tf.id ? " on" : ""}"
+            data-tp-tf="${t.id}">${t.label}</button>`).join("")}
+        </div>
+      </div>
+      <div class="tp-chart" id="tpChart" data-tp-place>
+        <div class="tp-track">${cols}</div>
+        ${state.tpMa ? `<svg class="tp-ma" viewBox="0 0 100 100" preserveAspectRatio="none">
+          <polyline points="${pts}" /></svg>` : ""}
+        ${lvl != null ? `<div class="tp-level" style="top:${lvl.toFixed(2)}%"><span>${
+          (gMin + (1 - (lvl - PAD) / USABLE) * range).toFixed(2)}</span></div>` : ""}
+      </div>
+      <div class="tp-tools">
+        <button class="pa-ghost${state.tpMa ? " on" : ""}" data-tp-ma>10 MA</button>
+        <button class="pa-ghost${lvl != null ? " on" : ""}" data-tp-clear>${
+          lvl != null ? "Clear level" : "Tap the chart to set a level"}</button>
+      </div>`;
+  }
+
+  function tpWatchHTML() {
+    const key = todayKey();
+    return `
+      <div class="tp-rows">
+        ${TP_WATCH.map((row) => {
+          const q = tpQuote(row, key);
+          return `<div class="tp-row">
+            <span class="tp-sym">${esc(row.sym)}<small>${esc(row.name)}</small></span>
+            <span class="tp-last">${q.last}</span>
+            <span class="tp-chg ${q.pct >= 0 ? "up" : "down"}">${q.pct >= 0 ? "+" : ""}${q.pct.toFixed(2)}%</span>
+          </div>`;
+        }).join("")}
+      </div>
+      <div class="tp-note">Sample prices, steady for the day — no market feed is
+        connected yet.</div>`;
+  }
+
+  function tpPlanHTML() {
+    const plan = (store.plan && store.plan.id) || "free";
+    const TIERS = [
+      { id: "free", name: "Beta", price: "Free", lines: ["The full course", "Trade Journal", "Gameæway", "Practice chart"] },
+      { id: "pro", name: "Pro", price: "$19/mo", lines: ["Everything in Beta", "Live market data", "Unlimited journal imports", "Priority Ask Æway"] },
+      { id: "desk", name: "Desk", price: "$49/mo", lines: ["Everything in Pro", "Prop firm tracking", "Connections and leaderboards", "Early access to new games"] },
+    ];
+    return `
+      <div class="tp-plans">
+        ${TIERS.map((t) => `
+          <div class="tp-plan${t.id === plan ? " on" : ""}">
+            <div class="tp-plan-top">
+              <span class="tp-plan-name">${esc(t.name)}</span>
+              <span class="tp-plan-price">${esc(t.price)}</span>
+            </div>
+            <ul class="tp-plan-list">${t.lines.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>
+            ${t.id === plan
+              ? `<div class="tp-plan-cur">Your plan</div>`
+              : `<button class="pa-ghost" data-tp-plan="${t.id}">Upgrade</button>`}
+          </div>`).join("")}
+      </div>
+      <div class="tp-note">Billing is not connected yet — upgrading tells us you
+        are interested and changes nothing else.</div>`;
+  }
+
+  function tpCalHTML() {
+    const now = new Date();
+    const monday = new Date(now);
+    monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+    const impLabel = (n) => n >= 3 ? "High" : n === 2 ? "Med" : "Low";
+    const byDay = {};
+    TP_EVENTS.forEach((e) => (byDay[e.d] || (byDay[e.d] = [])).push(e));
+    return `
+      <div class="tp-cal">
+        ${Object.keys(byDay).map((d) => {
+          const day = new Date(monday);
+          day.setDate(monday.getDate() + Number(d));
+          const isToday = dayKeyOf(day) === todayKey();
+          return `<div class="tp-cal-day${isToday ? " today" : ""}">
+            <div class="tp-cal-head">${day.toLocaleDateString(undefined,
+              { weekday: "short", month: "short", day: "numeric" })}${isToday ? " · today" : ""}</div>
+            ${byDay[d].map((e) => `
+              <div class="tp-ev">
+                <span class="tp-ev-t">${esc(e.t)}</span>
+                <span class="tp-ev-c">${esc(e.cur)}</span>
+                <span class="tp-ev-n">${esc(e.name)}</span>
+                <span class="tp-ev-i i${e.imp}">${impLabel(e.imp)}</span>
+              </div>`).join("")}
+          </div>`;
+        }).join("")}
+      </div>
+      <div class="tp-note">Sample events on this week's real dates — no calendar
+        feed is connected yet.</div>`;
+  }
+
+  function toolsPanelHTML() {
+    const tab = state.tpTab || "chart";
+    const body = tab === "watch" ? tpWatchHTML()
+      : tab === "plan" ? tpPlanHTML()
+      : tab === "cal" ? tpCalHTML()
+      : tpChartHTML();
+    return `
+      <div class="tp-tabs">
+        ${TP_TABS.map((t) => `<button class="tp-tab${t.id === tab ? " on" : ""}"
+          data-tp-tab="${t.id}">${esc(t.label)}</button>`).join("")}
+      </div>
+      <div class="tp-body">${body}</div>
+      <div class="tp-course">
+        <button class="pa-ghost${state.tpCourse ? " on" : ""}" data-tp-course>
+          ${state.tpCourse ? "Hide course menu" : "Course menu"}</button>
+        ${state.tpCourse ? menuHTML() : ""}
+      </div>`;
+  }
+
+  /* ---------------- the two inline center panels ----------------
+     The hamburger and the gear used to open overlays. They render into the
+     middle of the screen now, over whatever view is underneath, and they are
+     one slot rather than two: state.panel holds "tools", "settings" or null,
+     so opening one closes the other by construction rather than by a pair of
+     handlers remembering to. Tapping the lit icon again closes it.
+
+     Nothing else in the app changed: every other overlay, modal and popup is
+     out of scope and still uses openOverlay. */
+  /* The name is a live input, so it lives in the DOM until something asks for
+     it. Every route out of settings — the overlay's Done, the panel's X, the
+     gear that closes it, a tab away — comes through here first, or a typed
+     name would be lost. */
+  function commitSettingsName() {
+    const el = $("setName");
+    if (el) { store.settings.name = el.value.trim(); save(); }
+  }
+
+  function togglePanel(which) {
+    if (state.panel === "settings") commitSettingsName();
+    state.panel = state.panel === which ? null : which;
+    state.panelView = state.panel ? state.view : null;
+    if (state.panel) closeOverlay();
+    render();
+  }
+
   /* menu drawer — full section/subsection navigation (same as All Sections) */
-  function openMenu() {
-    const html = panelHead("Course Menu") + DATA.modules.map((mod) => `
+  function menuHTML() {
+    return DATA.modules.map((mod) => `
       <div class="menu-module">
         <div class="menu-module-title">Module ${mod.num} — ${esc(mod.tagline)}</div>
         ${mod.sections.map((sec) => {
@@ -6254,7 +6650,6 @@
             ${esc(sec.title)}<span class="mi-pct">${p.pct}%</span></button>`;
         }).join("")}
       </div>`).join("");
-    openOverlay(html);
   }
 
   /* settings */
@@ -6295,6 +6690,46 @@
       <button class="btn-secondary" data-reset-progress>Reset course progress</button>
       <button class="btn-secondary" data-logout>Log Out</button>`;
     openOverlay(html);
+  }
+
+  /* The same settings, without the overlay's head and Done button — those
+     belong to a panel that had to be dismissed, and this one is dismissed by
+     the gear that opened it. */
+  function settingsPanelHTML() {
+    const s = store.settings;
+    return `
+      <div class="set-group">
+        <div class="set-label">Audio narration (default)</div>
+        <div class="set-options">
+          <button class="set-opt ${s.sound ? "active" : ""}" data-set-sound="1">On</button>
+          <button class="set-opt ${!s.sound ? "active" : ""}" data-set-sound="0">Off</button>
+        </div>
+      </div>
+      <div class="set-group">
+        <div class="set-label">Text size</div>
+        <div class="set-options">
+          ${["S", "M", "L"].map((t) => `<button class="set-opt ${s.textSize === t ? "active" : ""}" data-set-size="${t}">${t}</button>`).join("")}
+        </div>
+      </div>
+      <div class="set-group">
+        <div class="set-label">Profile photo</div>
+        <div class="set-photo">
+          <span class="set-photo-ring">
+            <img src="${store.profilePhoto || "assets/nav-icons/icon-user@2x.png"}"
+                 class="${store.profilePhoto ? "shot" : ""}" alt="">
+          </span>
+          <div class="set-photo-btns">
+            <button class="set-opt" data-photo-pick>${store.profilePhoto ? "Change Photo" : "Upload Profile Photo"}</button>
+            ${store.profilePhoto ? `<button class="set-opt" data-photo-clear>Remove</button>` : ""}
+          </div>
+        </div>
+      </div>
+      <div class="set-group">
+        <div class="set-label">Account</div>
+        <input class="set-input" id="setName" placeholder="Your name" value="${esc(s.name || "")}" maxlength="40">
+      </div>
+      <button class="btn-secondary" data-reset-progress>Reset course progress</button>
+      <button class="btn-secondary" data-logout>Log Out</button>`;
   }
 
   function applyTextSize() {
@@ -6861,9 +7296,22 @@
 
   /* ---------------- static buttons ---------------- */
 
-  $("btnMenu").addEventListener("click", openMenu);
-  $("btnSettings").addEventListener("click", openSettings);
-  $("btnProfile").addEventListener("click", openProfile);
+  /* Tap anywhere on the practice chart to drop a level there. Delegated on
+     the scroller because the chart is rebuilt on every render, and read as a
+     percentage of the box so the line stays put when the box resizes — the
+     same reason the candles are drawn in percent. */
+  cardScroll.addEventListener("click", (e) => {
+    const box = e.target.closest("[data-tp-place]");
+    if (!box || e.target.closest(".tp-level")) return;
+    const r = box.getBoundingClientRect();
+    if (!r.height) return;
+    state.tpLevel = Math.max(0, Math.min(100, (e.clientY - r.top) / r.height * 100));
+    render();
+  });
+
+  $("btnMenu").addEventListener("click", () => togglePanel("tools"));
+  $("btnSettings").addEventListener("click", () => togglePanel("settings"));
+  $("btnProfile").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
   $("btnHeart").addEventListener("click", toggleLike);
   $("btnNotes").innerHTML = SVG.notes;
   $("btnHeart").innerHTML = SVG.heart;
@@ -6876,16 +7324,16 @@
     setTimeout(() => el.classList.remove("glow-cyan"), 600);
   });
   $("navCheckin").addEventListener("click", openCheckin);
-  $("btnBarHome").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
-  $("btnCheckinHome").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
-  $("btnCheckinProfile").addEventListener("click", openProfile);
+  $("btnBarHome").addEventListener("click", openAeHome);
+  $("btnCheckinHome").addEventListener("click", openAeHome);
+  $("btnCheckinProfile").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
   $("navAdd").addEventListener("click", openJournal);
-  $("btnJournalHome").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
-  $("btnJournalProfile").addEventListener("click", openProfile);
+  $("btnJournalHome").addEventListener("click", openAeHome);
+  $("btnJournalProfile").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
   $("navBattle").addEventListener("click", openGames);
   $("navProfile").addEventListener("click", openProfile);
-  $("btnPickHome").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
-  $("btnProfileHome").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
+  $("btnPickHome").addEventListener("click", openAeHome);
+  $("btnProfileHome").addEventListener("click", openAeHome);
   $("btnProfileEdit").addEventListener("click", () => {
     if (state.view !== "profile") return;
     if (state.profileMode === "edit") readProfileForm();
@@ -6893,7 +7341,7 @@
     state.profileNotice = null;
     renderProfile();
   });
-  $("btnPickProfile").addEventListener("click", openProfile);
+  $("btnPickProfile").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
   $("photoInput").addEventListener("change", (e) => {
     readProfilePhoto(e.target.files && e.target.files[0]);
     e.target.value = "";     // same file twice in a row still fires change
@@ -6902,7 +7350,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-ma],[data-tp-clear],[data-tp-plan],[data-tp-course],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -7230,8 +7678,33 @@
         }
       }
     }
-    else if (t.dataset.setSound !== undefined) { store.settings.sound = t.dataset.setSound === "1"; save(); syncVolume(); openSettings(); }
-    else if (t.dataset.setSize) { store.settings.textSize = t.dataset.setSize; save(); applyTextSize(); openSettings(); }
+    else if (t.hasAttribute("data-panel-close")) { commitSettingsName(); state.panel = null; render(); }
+    else if (t.hasAttribute("data-tp-tab")) { state.tpTab = t.getAttribute("data-tp-tab"); render(); }
+    else if (t.hasAttribute("data-tp-tf")) { state.tpTf = t.getAttribute("data-tp-tf"); state.tpLevel = null; render(); }
+    else if (t.hasAttribute("data-tp-ma")) { state.tpMa = !state.tpMa; render(); }
+    else if (t.hasAttribute("data-tp-clear")) { state.tpLevel = null; render(); }
+    else if (t.hasAttribute("data-tp-course")) { state.tpCourse = !state.tpCourse; render(); }
+    else if (t.hasAttribute("data-tp-plan")) {
+      store.plan = { id: t.getAttribute("data-tp-plan"), wantedAt: new Date().toISOString() };
+      /* ==> BACKEND: this only records the interest on the device. Real
+         billing has to take over here before a plan means anything. */
+      save(); render();
+    }
+    else if (t.hasAttribute("data-ae-go")) {
+      const to = t.getAttribute("data-ae-go");
+      if (to === "journal") openJournal();
+      else if (to === "checkin") openCheckin();
+      else if (to === "games") openGames();
+      else if (to === "learn" || to === "resume") goHome();
+    }
+    else if (t.dataset.setSound !== undefined) {
+      store.settings.sound = t.dataset.setSound === "1"; save(); syncVolume();
+      if (state.panel === "settings") render(); else openSettings();
+    }
+    else if (t.dataset.setSize) {
+      store.settings.textSize = t.dataset.setSize; save(); applyTextSize();
+      if (state.panel === "settings") render(); else openSettings();
+    }
     else if (t.hasAttribute("data-save-note")) {
       const txt = $("noteText");
       const id = t.getAttribute("data-save-note");
@@ -7258,14 +7731,11 @@
         store.lastScreen = null;
         save();
         closeOverlay();
+        state.panel = null;
         render();
       }
     }
-    else if (t.hasAttribute("data-close")) {
-      const name = $("setName");
-      if (name) { store.settings.name = name.value.trim(); save(); }
-      closeOverlay();
-    }
+    else if (t.hasAttribute("data-close")) { commitSettingsName(); closeOverlay(); }
   });
 
   /* ---------------- auth screen (UI only — Firebase wiring is a follow-up) */
