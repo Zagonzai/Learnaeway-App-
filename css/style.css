@@ -5070,6 +5070,8 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
   background: linear-gradient(160deg, var(--pw-bear-dim, #4A1E20), rgba(7,10,24,.92));
   box-shadow: 0 0 18px -8px var(--pw-bear, #E5484D);
 }
+/* no double-tap-zoom detection delay on the one control that is timed */
+.pa-tap { touch-action: manipulation; -webkit-tap-highlight-color: transparent; }
 .pa-tap:active { transform: scale(.96); filter: brightness(1.3); }
 @keyframes pa-shake {
   0%,100% { transform: translateX(0); }
@@ -5121,8 +5123,29 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
 .pa-mini-cell b { display: block; font-size: calc(14px * var(--fs)); font-weight: 800; font-variant-numeric: tabular-nums; }
 .pa-mini-cell span { display: block; font-size: calc(9.5px * var(--fs)); color: #8FA9C4; margin-top: 1px; }
 
-.pa-seedline { font-size: calc(11.5px * var(--fs)); color: #8FA9C4; margin-bottom: 8px; }
+.pa-seedline {
+  display: flex; align-items: center; justify-content: center;
+  flex-wrap: wrap; gap: 6px 8px;
+  font-size: calc(11.5px * var(--fs)); color: #8FA9C4; margin-bottom: 8px;
+}
 .pa-seedline b { color: var(--pw-wild, #E8B23A); letter-spacing: .08em; }
+.pa-copy {
+  flex: 0 0 auto;
+  padding: 5px 12px;
+  border: 1px solid var(--pw-wild, #E8B23A);
+  border-radius: 999px;
+  background: rgba(4,7,18,.6);
+  color: var(--pw-wild, #E8B23A);
+  font-size: calc(10.5px * var(--fs)); font-weight: 800; letter-spacing: .06em;
+  white-space: nowrap;
+  touch-action: manipulation;
+}
+.pa-copy:active { filter: brightness(1.4); transform: scale(.96); }
+.pa-copy.done { border-color: var(--pw-bull, #1FCBA0); color: var(--pw-bull, #1FCBA0); }
+/* the row expands, the copy button does not — so they are siblings */
+.pa-hhead { display: flex; align-items: center; gap: 8px; padding-right: 11px; }
+.pa-hhead .pa-hrow { flex: 1 1 auto; min-width: 0; }
+.pa-hd .pa-seedline { margin: 8px 0 0; }
 .pa-btn-row { display: flex; gap: 8px; }
 .pa-btn-row .pa-ghost { flex: 1 1 0; min-width: 0; padding: 11px 6px; }
 
@@ -5206,6 +5229,9 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
   .pa-mini-cell { padding: 4px 3px; }
   .pa-seedline { margin-bottom: 5px; }
   .pa-btn-row .pa-ghost { padding: 9px 6px; }
+  /* the button says Copy code; the sentence explaining it is what gives on a
+     screen this short, where it would only wrap the line and cost a row */
+  .pa-seed-tail { display: none; }
   .pa-time { font-size: calc(22px * var(--fs)); }
   .pa-ready { padding: 14px 8px; }
 }

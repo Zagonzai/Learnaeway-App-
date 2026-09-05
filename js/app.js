@@ -2513,10 +2513,12 @@
 
   /* The ten wilds, v1. `effect` is what the engine switches on; `cls` is only
      what the card shows. Three of them read the opponent's revealed card and
-     score off it — Stop Loss at its value, Momentum at double, Market News
-     doubling whatever wins — so they are resolved with both cards in hand
-     rather than as standalone effects. Discipline is not resolved here at all:
-     it is a peek, and the card that scores is the one chosen after it. */
+     score off it in the player's own direction, at rising multiples — Stop
+     Loss at its value, Momentum at double, Market News at triple — so they
+     are resolved with both cards in hand rather than as standalone effects.
+     One `absorb` effect covers all three; only `mult` separates them.
+     Discipline is not resolved here at all: it is a peek, and the card that
+     scores is the one chosen after it. */
   const PW_SPECIALS = [
     { type: "Volatility Spike", cls: "A", effect: "zero", keepsOther: true,
       desc: "The candle snaps back to 0. Nobody scores." },
@@ -2528,8 +2530,8 @@
       desc: "Draw 2 more cards from your deck. The round is a wash." },
     { type: "Stop Loss",        cls: "A", effect: "absorb", mult: 1,
       desc: "Their card scores for YOU instead, at its own value. Their attack, your protection." },
-    { type: "Market News",      cls: "A", effect: "double",
-      desc: "Doubles the value of whatever wins the round." },
+    { type: "Market News",      cls: "A", effect: "absorb", mult: 3,
+      desc: "Their card scores for YOU instead, at triple its value." },
     { type: "Reversal",         cls: "A", effect: "flip", keepsOther: true,
       desc: "Flips the candle to the same distance the other side of 0." },
     { type: "Take Profit",      cls: "A", effect: "absorb", mult: 1, doubleUp: true,
@@ -2648,18 +2650,12 @@
         case "liquidate":
           return { delta: pwSign(ownerSide) * spec.swing, extra: 0, outcome: owner };
         case "absorb":
-          /* Stop Loss at face value, Momentum at double: their numbered card
-             scores in the owner's direction instead of their own. Against
-             anything without a number there is nothing to absorb. */
+          /* Stop Loss at face value, Momentum at double, Market News at
+             triple: their numbered card scores in the owner's direction
+             instead of their own. Against anything without a number there is
+             nothing to absorb. */
           if (otherPts == null) return { delta: 0, extra: 0, outcome: "wash" };
           return { delta: pwSign(ownerSide) * otherPts * spec.mult, extra: 0, outcome: owner };
-        case "double": {
-          /* Market News doubles whatever wins the round. It carries no value of
-             its own, so the other card is what wins — at twice its worth. */
-          if (otherPts == null) return { delta: 0, extra: 0, outcome: "wash" };
-          const them = owner === "player" ? "ai" : "player";
-          return { delta: pwSign(otherSide) * otherPts * 2, extra: 0, outcome: them };
-        }
         default:
           return { delta: 0, extra: 0, outcome: "wash" };
       }
@@ -3518,7 +3514,39 @@
       historyRound: 0,       // which round of it is on the chart
       confirmClear: false,
       saveFailed: false,
+      copied: null,          // the seed whose button is showing "Copied ✓"
     };
+  }
+
+  /* Share sheet where the device has one, clipboard otherwise — the same order
+     the profile's connect code uses. The button says so itself rather than
+     through a notice, since there is one per seed and a shared notice could
+     not say which. Cleared on the next render that is not a copy. */
+  let paCopyTimer = null;
+  function paCopySeed(seed) {
+    const done = () => {
+      pa.copied = seed;
+      renderPlaceaway();
+      if (paCopyTimer) clearTimeout(paCopyTimer);
+      paCopyTimer = setTimeout(() => {
+        if (pa && pa.copied === seed) { pa.copied = null; renderPlaceaway(); }
+      }, 2000);
+    };
+    if (navigator.share) {
+      navigator.share({ title: "Placæway match code", text: seed })
+        .then(done).catch(() => { /* dismissed — say nothing */ });
+      return;
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(seed).then(done).catch(() => {
+        /* clipboard writes need a secure context and reject silently in a few
+           embedded browsers; the seed is on screen to read either way */
+        pa.copied = null; renderPlaceaway();
+      });
+      return;
+    }
+    pa.copied = null;
+    renderPlaceaway();
   }
 
   /* ---- seeded RNG, exactly as the reference: same seed, same match ---- */
@@ -3671,6 +3699,27 @@
     if (el) el.textContent = paFmt(pa.elapsed);
   }
 
+  /* The tap has to land the instant a finger touches, because the elapsed
+     time between the reveal and this call IS the score. A click listener on
+     mobile waits for the browser to finish translating touch into click —
+     tens of milliseconds, sometimes more, added to every single tap and so to
+     every time the game records. pointerdown fires on contact instead.
+
+     The click path below stays as the fallback for keyboards, assistive tech
+     and synthetic clicks, which never emit a pointerdown. paPointerTapAt keeps
+     the two from both firing for one finger: preventDefault on pointerdown
+     already suppresses the compatibility click in every browser we target,
+     and this is the belt to that pair of braces. It lapses on its own so a
+     stray pointerdown with no click behind it cannot swallow a later tap. */
+  let paPointerTapAt = 0;
+  cardScroll.addEventListener("pointerdown", (e) => {
+    const t = e.target.closest("[data-pa-tap]");
+    if (!t) return;
+    e.preventDefault();
+    paPointerTapAt = performance.now();
+    paTap(t.getAttribute("data-pa-tap"));
+  });
+
   function paTap(dir) {
     if (!pa || pa.screen !== "game" || pa.ended) return;
     const i = pa.nextIndex;
@@ -3809,13 +3858,24 @@
             <div class="pa-mini-cell"><b>${paFmt(total / m.rounds.length)}</b><span>Avg / round</span></div>
             <div class="pa-mini-cell"><b>${wrong}</b><span>Wrong taps</span></div>
           </div>
+          <div class="pa-seedline">
+            <span>Seed <b>${esc(m.seed)}</b><span class="pa-seed-tail"> — paste it into Match seed to run it again</span></span>
+            <button class="pa-copy${pa.copied === m.seed ? " done" : ""}" data-pa-copy="${esc(m.seed)}">
+              ${pa.copied === m.seed ? "Copied ✓" : (navigator.share ? "Share code" : "Copy code")}</button>
+          </div>
         </div>` ; })() : "";
+      /* The copy button is a sibling of the row, not inside it: a button may
+         not contain another button, and the row is itself the expand control. */
       return `<div class="pa-hitem${open ? " open" : ""}">
-        <button class="pa-hrow" data-pa-hopen="${i}">
-          <span class="pa-hseed">${esc(m.seed)}</span>
-          <span class="pa-htime">${paFmt(total)}</span>
-          <span class="pa-hmeta">${m.candleCount} candles · ${esc(when)}</span>
-        </button>
+        <div class="pa-hhead">
+          <button class="pa-hrow" data-pa-hopen="${i}">
+            <span class="pa-hseed">${esc(m.seed)}</span>
+            <span class="pa-htime">${paFmt(total)}</span>
+            <span class="pa-hmeta">${m.candleCount} candles · ${esc(when)}</span>
+          </button>
+          <button class="pa-copy${pa.copied === m.seed ? " done" : ""}" data-pa-copy="${esc(m.seed)}"
+            aria-label="Copy seed ${esc(m.seed)}">${pa.copied === m.seed ? "Copied ✓" : "Copy code"}</button>
+        </div>
         ${detail}
       </div>`;
     }).join("");
@@ -3911,7 +3971,11 @@
         <div class="pa-mini-cell"><b>${paFmt(avg)}</b><span>Avg / round</span></div>
         <div class="pa-mini-cell"><b>${paTotalWrong()}</b><span>Wrong taps</span></div>
       </div>
-      <div class="pa-seedline">Seed <b>${esc(pa.seed)}</b> — share to run this exact match</div>
+      <div class="pa-seedline">
+        <span>Seed <b>${esc(pa.seed)}</b><span class="pa-seed-tail"> — share to run this exact match</span></span>
+        <button class="pa-copy${pa.copied === pa.seed ? " done" : ""}" data-pa-copy="${esc(pa.seed)}">
+          ${pa.copied === pa.seed ? "Copied ✓" : (navigator.share ? "Share code" : "Copy code")}</button>
+      </div>
       ${pa.saveFailed ? `<div class="pa-hint pa-warn">Could not save — this browser
         is blocking local storage for the app.</div>` : ""}
       <div class="pa-btn-row">
@@ -6556,7 +6620,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -6753,6 +6817,7 @@
       else openPickaeway();
     }
     else if (t.hasAttribute("data-pa-count")) { paReadSeed(); pa.count = +t.getAttribute("data-pa-count"); renderPlaceaway(); }
+    else if (t.hasAttribute("data-pa-copy")) paCopySeed(t.getAttribute("data-pa-copy"));
     else if (t.hasAttribute("data-pa-dice")) { pa.seed = paRandomSeed(); renderPlaceaway(); }
     else if (t.hasAttribute("data-pa-start")) { paReadSeed(); paStartMatch(); }
     else if (t.hasAttribute("data-pa-howto")) { paReadSeed(); pa.showHowTo = !pa.showHowTo; renderPlaceaway(); }
@@ -6771,7 +6836,11 @@
       pa.confirmClear = false; pa.historyOpen = null; renderPlaceaway();
     }
     else if (t.hasAttribute("data-pa-reveal")) paStartRound();
-    else if (t.hasAttribute("data-pa-tap")) paTap(t.getAttribute("data-pa-tap"));
+    else if (t.hasAttribute("data-pa-tap")) {
+      // a real finger already went through pointerdown; this is its echo
+      if (performance.now() - paPointerTapAt < 700) return;
+      paTap(t.getAttribute("data-pa-tap"));
+    }
     else if (t.hasAttribute("data-pa-next")) paNextRound();
     else if (t.hasAttribute("data-pa-round")) { pa.reviewIdx = +t.getAttribute("data-pa-round"); renderPlaceaway(); }
     else if (t.hasAttribute("data-pa-save")) paSaveMatch();
