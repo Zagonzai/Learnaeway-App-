@@ -2426,6 +2426,9 @@
     { id: "pointaeway", name: "Pointæway", tag: "1v1 Card Game",
       blurb: "Bull against Bear. Play a candle, reveal together, and push the print 25 points your way.",
       icon: "assets/nav-icons/icon-knowledge-test-lightning@2x.png" },
+    { id: "placeaway", name: "Placæway", tag: "Solo Speed Run",
+      blurb: "The whole pattern prints at once. Place every candle in order against the clock.",
+      icon: "assets/nav-icons/icon-dock-match-replay@2x.png" },
   ];
 
   function renderGames() {
@@ -3461,6 +3464,521 @@
     state.slideDir = 0;
     closeOverlay();
     render();
+  }
+
+  /* ---------------- Placeæway ----------------
+     The third Gameæway game. The whole pattern prints at once and you place
+     every candle in order, Green or Red, against the clock.
+
+     Game logic — the seeded RNG, the series generator, the scoring, the round
+     flow — is carried over from the reference build unchanged; only the
+     chrome is the app's. The two things worth knowing before editing:
+
+     1. Candles are positioned in PERCENT of the chart box, never pixels. The
+        same render call has to look right in a tall box mid-round and in the
+        short one left over once the results panel opens under it. Percent is
+        what makes one function serve both; pixel math would need re-measuring
+        on every layout change and would be wrong for a frame either way.
+     2. Nothing scrolls vertically. While a round is up, cardScroll becomes a
+        flex column with overflow hidden and the chart takes `flex: 1 1 auto`,
+        so it absorbs whatever the fixed rows above and below leave. */
+
+  const PA_ROUNDS = 3;
+  const PA_COUNTS = [10, 20, 30, 40];
+  const PA_COL_W = 14;       // candle column, px — the band and the scroll share it
+  const PA_COL_GAP = 3;
+  /* Local only, on purpose and for now: there are no accounts or backend yet,
+     so history is per-device. SWAP POINT — once real accounts exist this
+     should move to per-account sync alongside the rest of the store, and this
+     key becomes a migration source rather than the record. */
+  const PA_HISTORY_KEY = "placeaway_history";
+
+  let pa = null;
+  let paTick = null;
+
+  function paNewGame() {
+    return {
+      screen: "setup",       // setup | ready | game
+      count: PA_COUNTS[0],
+      seed: paRandomSeed(),
+      rng: null,
+      roundIdx: 0,
+      candles: [],
+      nextIndex: 0,
+      startTime: 0,
+      elapsed: 0,
+      ended: false,
+      wrong: 0,
+      times: [], wrongs: [], series: [],
+      reviewIdx: null,       // which round the finished-match tabs are showing
+      saved: false,
+      showHowTo: false,
+      showHistory: false,
+      historyOpen: null,     // index of the expanded saved match
+      historyRound: 0,       // which round of it is on the chart
+      confirmClear: false,
+      saveFailed: false,
+    };
+  }
+
+  /* ---- seeded RNG, exactly as the reference: same seed, same match ---- */
+  function paXmur3(str) {
+    let h = 1779033703 ^ str.length;
+    for (let i = 0; i < str.length; i++) {
+      h = Math.imul(h ^ str.charCodeAt(i), 3432918353);
+      h = (h << 13) | (h >>> 19);
+    }
+    return function () {
+      h = Math.imul(h ^ (h >>> 16), 2246822507);
+      h = Math.imul(h ^ (h >>> 13), 3266489909);
+      h ^= h >>> 16;
+      return h >>> 0;
+    };
+  }
+  function paMulberry32(a) {
+    return function () {
+      a |= 0; a = (a + 0x6D2B79F5) | 0;
+      let t = Math.imul(a ^ (a >>> 15), 1 | a);
+      t = (t + Math.imul(t ^ (t >>> 7), 61 | t)) ^ t;
+      return ((t ^ (t >>> 14)) >>> 0) / 4294967296;
+    };
+  }
+  const paMakeRng = (seed) => paMulberry32(paXmur3(seed)());
+  const paRandomSeed = () => Math.random().toString(36).slice(2, 8).toUpperCase();
+  const paFmt = (ms) => (ms / 1000).toFixed(2) + "s";
+  const paRandInt = (min, max, r) => Math.floor(min + r() * (max - min + 1));
+
+  /* Impulse and consolidation, alternating. Straight from the reference — the
+     shape of the series is the game, so it is copied rather than rewritten. */
+  function paGenerateSeries(n, r) {
+    const trendDir = r() < 0.5 ? 1 : -1;
+    const baseStep = 4;
+    let price = 100;
+    const out = [];
+    let phase = r() < 0.8 ? "impulse" : "consolidation";
+
+    while (out.length < n) {
+      const remaining = n - out.length;
+      let len = phase === "impulse" ? paRandInt(2, 4, r) : paRandInt(3, 6, r);
+      len = Math.min(len, remaining);
+      for (let k = 0; k < len; k++) {
+        const open = price;
+        let drift, noiseAmp, wickAmp;
+        if (phase === "impulse") {
+          drift = trendDir * baseStep * (0.75 + r() * 0.45);
+          noiseAmp = baseStep * 0.35;
+          wickAmp = baseStep * 0.35;
+        } else {
+          drift = (r() - 0.5) * 2 * baseStep * 0.35;
+          noiseAmp = baseStep * 0.55;
+          wickAmp = baseStep * 0.7;
+        }
+        const noise = (r() - 0.5) * 2 * noiseAmp;
+        let close = open + drift + noise;
+        if (Math.abs(close - open) < 0.4) close = open + (close >= open ? 1 : -1) * 0.6;
+        const high = Math.max(open, close) + r() * wickAmp;
+        const low = Math.min(open, close) - r() * wickAmp;
+        out.push({ open, close, high, low, dir: close > open ? "up" : "down" });
+        price = close;
+        if (out.length >= n) break;
+      }
+      phase = phase === "impulse" ? "consolidation" : "impulse";
+    }
+    return out;
+  }
+
+  /* The chart, in percent. `pct` maps a price into 0-100 down the box with a
+     10% margin top and bottom, so the tallest wick never touches the edge. */
+  function paChartHTML(list, opts) {
+    const o = opts || {};
+    const gMax = Math.max.apply(null, list.map((c) => c.high));
+    const gMin = Math.min.apply(null, list.map((c) => c.low));
+    const range = Math.max(1, gMax - gMin);
+    const PAD = 10, USABLE = 100 - PAD * 2;
+    const pct = (v) => PAD + USABLE - ((v - gMin) / range) * USABLE;
+
+    const cols = list.map((c, i) => {
+      const wickTop = pct(c.high);
+      const wickH = Math.max(0.6, pct(c.low) - wickTop);
+      const bodyTop = pct(Math.max(c.open, c.close));
+      const bodyH = Math.max(1.2, pct(Math.min(c.open, c.close)) - bodyTop);
+      const done = o.allDone || (o.doneUpTo != null && i < o.doneUpTo);
+      return `<div class="pa-col ${c.dir}${i % 5 === 0 ? " grid" : ""}${done ? " done" : ""}"
+                   ${o.idPrefix ? `id="${o.idPrefix}${i}"` : ""}>
+        <span class="pa-wick" style="top:${wickTop.toFixed(2)}%;height:${wickH.toFixed(2)}%"></span>
+        <span class="pa-body" style="top:${bodyTop.toFixed(2)}%;height:${bodyH.toFixed(2)}%"></span>
+        <span class="pa-mark${done ? " done" : ""}"></span>
+      </div>`;
+    }).join("");
+
+    const band = o.interactive
+      ? `<div class="pa-band" id="paBand" style="transform:translateX(${
+          (o.doneUpTo || 0) * (PA_COL_W + PA_COL_GAP)}px)"></div>`
+      : "";
+    return `<div class="pa-track">${band}${cols}</div>`;
+  }
+
+  const paTotalMs = () => pa.times.reduce((a, b) => a + b, 0);
+  const paTotalWrong = () => pa.wrongs.reduce((a, b) => a + b, 0);
+
+  function paLoadHistory() {
+    try { return JSON.parse(localStorage.getItem(PA_HISTORY_KEY) || "[]"); }
+    catch (e) { return []; }
+  }
+  function paSaveHistory(list) {
+    try { localStorage.setItem(PA_HISTORY_KEY, JSON.stringify(list)); return true; }
+    catch (e) { return false; }
+  }
+
+  /* ---- flow ---- */
+
+  function paStartMatch() {
+    const seed = (pa.seed || paRandomSeed()).trim().toUpperCase() || paRandomSeed();
+    Object.assign(pa, {
+      seed, rng: paMakeRng(seed), roundIdx: 0,
+      times: [], wrongs: [], series: [], reviewIdx: null, saved: false,
+      saveFailed: false, showHowTo: false, showHistory: false,
+      screen: "ready",
+    });
+    renderPlaceaway();
+  }
+
+  function paStartRound() {
+    pa.candles = paGenerateSeries(pa.count, pa.rng);
+    pa.nextIndex = 0;
+    pa.ended = false;
+    pa.wrong = 0;
+    pa.elapsed = 0;
+    pa.reviewIdx = null;
+    pa.screen = "game";
+    renderPlaceaway();
+    /* after the paint, so the clock starts when the pattern is actually up —
+       the reference makes the same promise in its "Reveal & start" copy */
+    pa.startTime = performance.now();
+    paStopTick();
+    paTick = setInterval(paUpdateClock, 30);
+  }
+
+  function paStopTick() { if (paTick) { clearInterval(paTick); paTick = null; } }
+
+  /* The clock is the only thing that repaints per tick, so it writes to its
+     own node rather than going through a render — 33 renders a second would
+     rebuild the whole chart and lose the smooth scroll. */
+  function paUpdateClock() {
+    if (!pa || pa.ended) return;
+    pa.elapsed = performance.now() - pa.startTime;
+    const el = document.getElementById("paClock");
+    if (el) el.textContent = paFmt(pa.elapsed);
+  }
+
+  function paTap(dir) {
+    if (!pa || pa.screen !== "game" || pa.ended) return;
+    const i = pa.nextIndex;
+    if (i >= pa.count) return;
+
+    if (pa.candles[i].dir !== dir) {
+      // a wrong tap costs time, never the round: shake and stay put
+      pa.wrong++;
+      const btn = document.getElementById(dir === "up" ? "paTapUp" : "paTapDown");
+      if (btn) {
+        btn.classList.remove("shake");
+        void btn.offsetWidth;
+        btn.classList.add("shake");
+        setTimeout(() => btn.classList.remove("shake"), 300);
+      }
+      return;
+    }
+
+    /* Touch the two nodes that changed rather than re-rendering: a full render
+       between taps would rebuild the chart mid-run and fight the scroll. */
+    const col = document.getElementById("paC" + i);
+    if (col) { col.classList.add("done"); col.querySelector(".pa-mark").classList.add("done"); }
+    pa.nextIndex++;
+
+    const prog = document.getElementById("paProgress");
+    if (prog) prog.textContent = `${pa.nextIndex} / ${pa.count}`;
+    const fill = document.getElementById("paFill");
+    if (fill) fill.style.width = (pa.nextIndex / pa.count * 100) + "%";
+
+    if (pa.nextIndex < pa.count) {
+      const band = document.getElementById("paBand");
+      if (band) band.style.transform =
+        `translateX(${pa.nextIndex * (PA_COL_W + PA_COL_GAP)}px)`;
+      const next = document.getElementById("paC" + pa.nextIndex);
+      if (next) next.scrollIntoView({ inline: "center", block: "nearest", behavior: "smooth" });
+    } else {
+      paFinishRound();
+    }
+  }
+
+  function paFinishRound() {
+    pa.ended = true;
+    paStopTick();
+    pa.times.push(performance.now() - pa.startTime);
+    pa.wrongs.push(pa.wrong);
+    pa.series.push(pa.candles.slice());
+    // the finished match opens on its last round, the one just played
+    if (pa.times.length >= PA_ROUNDS) pa.reviewIdx = PA_ROUNDS - 1;
+    renderPlaceaway();
+  }
+
+  function paNextRound() {
+    pa.roundIdx++;
+    pa.screen = "ready";
+    renderPlaceaway();
+  }
+
+  function paSaveMatch() {
+    const list = paLoadHistory();
+    list.unshift({
+      seed: pa.seed,
+      candleCount: pa.count,
+      savedAt: new Date().toISOString(),
+      rounds: pa.series.map((c, i) => ({ candles: c, timeMs: pa.times[i], wrong: pa.wrongs[i] })),
+    });
+    while (list.length > 30) list.pop();
+    if (paSaveHistory(list)) { pa.saved = true; pa.saveFailed = false; }
+    else pa.saveFailed = true;
+    renderPlaceaway();
+  }
+
+  function paAbort() {
+    paStopTick();
+    /* cardScroll is shared with every other screen, and pa-playing makes it a
+       flex column with overflow hidden. Only renderPlaceaway sets it, so
+       leaving mid-round by the dock would carry it out of the game and leave
+       the journal — the whole app — unable to scroll. Taken off here, which
+       runs on every render that is not this view. */
+    cardScroll.classList.remove("pa-playing");
+    /* An abandoned round is not a result — it never reaches times[], so the
+       match is simply dropped. Coming back lands on setup. */
+    if (pa && pa.screen === "game" && !pa.ended) pa = paNewGame();
+  }
+
+  function openPlaceaway() {
+    stopAudio();
+    if (!pa) pa = paNewGame();
+    state.view = "placeaway";
+    state.slideDir = 0;
+    closeOverlay();
+    render();
+  }
+
+  /* The seed field is a real input, so what the player typed lives in the DOM
+     and not in `pa` until something asks for it. Every button that causes a
+     re-render reads it back first, or typing a seed and then changing the
+     candle count would silently throw the seed away. */
+  function paReadSeed() {
+    const el = document.getElementById("paSeed");
+    if (el) pa.seed = el.value.trim().toUpperCase();
+  }
+
+  const PA_HOWTO = [
+    "Each round shows the <b>full candle pattern at once</b> — nothing prints gradually.",
+    "Tap <b class=\"pa-c-up\">GREEN</b> or <b class=\"pa-c-down\">RED</b> to place every candle, left to right, as fast as you can.",
+    "A wrong tap won't fail you — you just can't advance until you tap the right one, and the clock keeps running.",
+    "A match is <b>3 rounds</b>, 3 different patterns. Lowest total time across all 3 wins.",
+    "Same <b>seed</b> = identical patterns. Share yours so someone else races the exact same match, then compare times.",
+  ];
+
+  function paHistoryHTML() {
+    const list = paLoadHistory();
+    if (!list.length) {
+      return `<div class="pa-empty">No saved matches yet — finish a match and
+        tap “Save match” to build your history.</div>`;
+    }
+    const rows = list.map((m, i) => {
+      const total = m.rounds.reduce((a, r) => a + r.timeMs, 0);
+      const d = new Date(m.savedAt);
+      const when = d.toLocaleDateString(undefined, { month: "short", day: "numeric" })
+        + " · " + d.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+      const open = pa.historyOpen === i;
+      const detail = open ? (() => {
+        const ri = Math.min(pa.historyRound, m.rounds.length - 1);
+        const wrong = m.rounds.reduce((a, r) => a + r.wrong, 0);
+        return `<div class="pa-hd">
+          <div class="pa-tabs">
+            ${m.rounds.map((r, k) => `
+              <button class="pa-tab${k === ri ? " on" : ""}" data-pa-hround="${k}">
+                <span class="pa-tab-n">R${k + 1}</span>
+                <span class="pa-tab-t">${paFmt(r.timeMs)}</span></button>`).join("")}
+          </div>
+          <div class="pa-chart pa-chart-sm">${paChartHTML(m.rounds[ri].candles, { allDone: true })}</div>
+          <div class="pa-mini">
+            <div class="pa-mini-cell"><b>${paFmt(total)}</b><span>Total</span></div>
+            <div class="pa-mini-cell"><b>${paFmt(total / m.rounds.length)}</b><span>Avg / round</span></div>
+            <div class="pa-mini-cell"><b>${wrong}</b><span>Wrong taps</span></div>
+          </div>
+        </div>` ; })() : "";
+      return `<div class="pa-hitem${open ? " open" : ""}">
+        <button class="pa-hrow" data-pa-hopen="${i}">
+          <span class="pa-hseed">${esc(m.seed)}</span>
+          <span class="pa-htime">${paFmt(total)}</span>
+          <span class="pa-hmeta">${m.candleCount} candles · ${esc(when)}</span>
+        </button>
+        ${detail}
+      </div>`;
+    }).join("");
+    return `<div class="pa-hlist">${rows}</div>
+      ${pa.confirmClear
+        ? `<div class="pa-confirm">
+             <span>Clear all saved matches? This cannot be undone.</span>
+             <div class="pa-confirm-btns">
+               <button class="pa-ghost danger" data-pa-clearok>Clear</button>
+               <button class="pa-ghost" data-pa-clearcancel>Keep</button>
+             </div>
+           </div>`
+        : `<button class="pa-ghost" data-pa-clear>Clear history</button>`}`;
+  }
+
+  function paSetupHTML() {
+    return `
+      <div class="pa-setup">
+        <div class="pa-lede">The pattern is already printed. Place every candle
+          in order, as fast as you can — three rounds, lowest total time wins.</div>
+
+        <div class="bm-label">Candles per round</div>
+        <div class="bm-row bm-row-4">
+          ${PA_COUNTS.map((n) => `
+            <button class="bm-rect ${pa.count === n ? "on" : ""}" data-pa-count="${n}">${n}</button>`).join("")}
+        </div>
+
+        <div class="bm-label">Match seed</div>
+        <div class="pa-seed-row">
+          <input class="pa-seed" id="paSeed" type="text" maxlength="12" autocomplete="off"
+                 autocapitalize="characters" spellcheck="false"
+                 aria-label="Match seed" value="${esc(pa.seed)}">
+          <button class="pa-dice" data-pa-dice aria-label="Random seed">⟳</button>
+        </div>
+        <div class="pa-hint">Same seed, same three patterns — share it to race someone.</div>
+
+        <button class="btn-primary" data-pa-start>Start match</button>
+
+        <div class="pa-links">
+          <button class="pa-ghost${pa.showHowTo ? " on" : ""}" data-pa-howto>
+            ${pa.showHowTo ? "Hide how to play" : "How to play"}</button>
+          <button class="pa-ghost${pa.showHistory ? " on" : ""}" data-pa-history>
+            ${pa.showHistory ? "Hide history" : "History"}</button>
+        </div>
+
+        ${pa.showHowTo ? `<ol class="pa-howto">
+          ${PA_HOWTO.map((t) => `<li>${t}</li>`).join("")}</ol>` : ""}
+        ${pa.showHistory ? paHistoryHTML() : ""}
+      </div>`;
+  }
+
+  function paReadyHTML() {
+    return `
+      <div class="pa-ready">
+        <div class="pa-kicker">Round ${pa.roundIdx + 1} of ${PA_ROUNDS}</div>
+        <div class="pa-ready-head">Pattern reveals on tap</div>
+        <button class="btn-primary" data-pa-reveal>Reveal &amp; start</button>
+        <div class="pa-hint">The clock starts the instant it appears.</div>
+      </div>`;
+  }
+
+  /* The round result and the match result both render UNDER the finished
+     chart, in the space the tap buttons were using. The pattern you just
+     placed stays on screen the whole time — that is the payoff, and sending it
+     to its own screen would take it away at exactly the wrong moment. */
+  function paResultHTML() {
+    const done = pa.times.length;
+    const isFinal = done >= PA_ROUNDS;
+    if (!isFinal) {
+      const ms = pa.times[done - 1], wrong = pa.wrongs[done - 1];
+      return `<div class="pa-result">
+        <div class="pa-kicker">Round ${done} complete</div>
+        <div class="pa-time">${paFmt(ms)}</div>
+        <div class="pa-hint">${wrong} wrong tap${wrong === 1 ? "" : "s"}</div>
+        <button class="btn-primary" data-pa-next>Next round</button>
+      </div>`;
+    }
+    const total = paTotalMs(), avg = total / PA_ROUNDS;
+    const perCandle = avg / pa.count;
+    const head = perCandle <= 350 ? { t: "Blazing match", c: "up" }
+      : perCandle <= 600 ? { t: "Strong pace", c: "mid" }
+      : { t: "Match complete", c: "flat" };
+    return `<div class="pa-result">
+      <div class="pa-head ${head.c}">${head.t}</div>
+      <div class="pa-tabs">
+        ${pa.times.map((ms, i) => `
+          <button class="pa-tab${i === pa.reviewIdx ? " on" : ""}" data-pa-round="${i}">
+            <span class="pa-tab-n">R${i + 1}</span>
+            <span class="pa-tab-t">${paFmt(ms)}</span></button>`).join("")}
+      </div>
+      <div class="pa-mini">
+        <div class="pa-mini-cell"><b>${paFmt(total)}</b><span>Total</span></div>
+        <div class="pa-mini-cell"><b>${paFmt(avg)}</b><span>Avg / round</span></div>
+        <div class="pa-mini-cell"><b>${paTotalWrong()}</b><span>Wrong taps</span></div>
+      </div>
+      <div class="pa-seedline">Seed <b>${esc(pa.seed)}</b> — share to run this exact match</div>
+      ${pa.saveFailed ? `<div class="pa-hint pa-warn">Could not save — this browser
+        is blocking local storage for the app.</div>` : ""}
+      <div class="pa-btn-row">
+        <button class="pa-ghost${pa.saved ? " done" : ""}" data-pa-save
+          ${pa.saved ? "disabled" : ""}>${pa.saved ? "Saved ✓" : "Save match"}</button>
+        <button class="pa-ghost" data-pa-new>New match</button>
+      </div>
+    </div>`;
+  }
+
+  function renderPlaceaway() {
+    barTitle.textContent = "Gameæway";
+    const pickName = document.querySelector("#pickBar .pick-name");
+    if (pickName) pickName.textContent = "Cool Down Game";
+    cardFooter.style.display = "none";
+
+    const playing = pa.screen === "game";
+    /* The no-scroll switch. Only while a round is on screen: setup and the
+       ready card are short enough to sit in the ordinary scroller, and the
+       history list genuinely can be longer than the card. */
+    cardScroll.classList.toggle("pa-playing", playing);
+
+    if (!playing) {
+      cardScroll.innerHTML = pa.screen === "ready" ? paReadyHTML() : paSetupHTML();
+      cardScroll.scrollTop = 0;
+      return;
+    }
+
+    // which pattern the chart is showing: the live one, or a round being reviewed
+    const reviewing = pa.reviewIdx != null && pa.series[pa.reviewIdx];
+    const list = reviewing ? pa.series[pa.reviewIdx] : pa.candles;
+    const shownMs = reviewing ? pa.times[pa.reviewIdx] : pa.elapsed;
+    const placed = reviewing ? list.length : pa.nextIndex;
+    const label = reviewing
+      ? `Round ${pa.reviewIdx + 1} — review`
+      : `Round ${pa.roundIdx + 1} of ${PA_ROUNDS}`;
+
+    cardScroll.innerHTML = `
+      <div class="pa-game">
+        <div class="pa-stats">
+          <div class="pa-stat">
+            <span class="pa-stat-cap">${esc(label)}</span>
+            <span class="pa-stat-val" id="paClock">${paFmt(shownMs)}</span>
+          </div>
+          <div class="pa-stat right">
+            <span class="pa-stat-cap">Placed</span>
+            <span class="pa-stat-val" id="paProgress">${placed} / ${list.length}</span>
+          </div>
+        </div>
+        <div class="pa-bar">
+          <div class="pa-bar-fill" id="paFill"
+               style="width:${(placed / Math.max(1, list.length) * 100).toFixed(1)}%"></div>
+        </div>
+        <div class="pa-chart" id="paChart">
+          ${paChartHTML(list, pa.ended
+            ? { allDone: true }
+            : { interactive: true, idPrefix: "paC", doneUpTo: pa.nextIndex })}
+        </div>
+        ${pa.ended ? paResultHTML() : `
+          <div class="pa-taps">
+            <button class="pa-tap up" id="paTapUp" data-pa-tap="up">
+              <span class="pa-tap-arrow">▲</span>GREEN</button>
+            <button class="pa-tap down" id="paTapDown" data-pa-tap="down">
+              <span class="pa-tap-arrow">▼</span>RED</button>
+          </div>`}
+      </div>`;
+    cardScroll.scrollTop = 0;
   }
 
   /* ---------------- Trade Journal ----------------
@@ -5248,7 +5766,7 @@
 
   /* every Gameæway view — the selector and both games — shares the same bar
      and the same dock slot */
-  const PK_VIEWS = ["games", "pickaeway", "buildmatch", "match", "result", "replay", "pointaeway"];
+  const PK_VIEWS = ["games", "pickaeway", "buildmatch", "match", "result", "replay", "pointaeway", "placeaway"];
   function inPickaeway() { return PK_VIEWS.indexOf(state.view) >= 0; }
 
   /* ring behind whichever dock icon matches the section you're in */
@@ -5283,6 +5801,7 @@
     // loop repainting a canvas that is no longer on screen
     if (state.view !== "match" && mk.on) mkAbort();
     if (state.view !== "pointaeway") pwAbort();
+    if (state.view !== "placeaway") paAbort();
     const listy = state.view === "home" || state.view === "videos"
       || inChecklist() || state.view === "journal" || state.view === "profile" || inPickaeway();
     $("cardOuter").classList.toggle("outline-bg", listy);
@@ -5295,6 +5814,7 @@
     else if (state.view === "beforetrade") renderBeforeTrade();
     else if (state.view === "journal") renderJournal();
     else if (state.view === "games") renderGames();
+    else if (state.view === "placeaway") renderPlaceaway();
     else if (state.view === "pickaeway") renderPickaeway();
     else if (state.view === "pointaeway") renderPointaeway();
     else if (state.view === "buildmatch") renderBuildMatch();
@@ -6036,7 +6556,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -6227,9 +6747,35 @@
       if (state.view === "profile") renderProfile(); else openSettings();
     }
     else if (t.hasAttribute("data-game")) {
-      if (t.getAttribute("data-game") === "pointaeway") openPointaeway();
+      const g = t.getAttribute("data-game");
+      if (g === "pointaeway") openPointaeway();
+      else if (g === "placeaway") openPlaceaway();
       else openPickaeway();
     }
+    else if (t.hasAttribute("data-pa-count")) { paReadSeed(); pa.count = +t.getAttribute("data-pa-count"); renderPlaceaway(); }
+    else if (t.hasAttribute("data-pa-dice")) { pa.seed = paRandomSeed(); renderPlaceaway(); }
+    else if (t.hasAttribute("data-pa-start")) { paReadSeed(); paStartMatch(); }
+    else if (t.hasAttribute("data-pa-howto")) { paReadSeed(); pa.showHowTo = !pa.showHowTo; renderPlaceaway(); }
+    else if (t.hasAttribute("data-pa-history")) { paReadSeed(); pa.showHistory = !pa.showHistory; pa.historyOpen = null; pa.confirmClear = false; renderPlaceaway(); }
+    else if (t.hasAttribute("data-pa-hopen")) {
+      const i = +t.getAttribute("data-pa-hopen");
+      pa.historyOpen = pa.historyOpen === i ? null : i;
+      pa.historyRound = 0;
+      renderPlaceaway();
+    }
+    else if (t.hasAttribute("data-pa-hround")) { pa.historyRound = +t.getAttribute("data-pa-hround"); renderPlaceaway(); }
+    else if (t.hasAttribute("data-pa-clear")) { pa.confirmClear = true; renderPlaceaway(); }
+    else if (t.hasAttribute("data-pa-clearcancel")) { pa.confirmClear = false; renderPlaceaway(); }
+    else if (t.hasAttribute("data-pa-clearok")) {
+      try { localStorage.removeItem(PA_HISTORY_KEY); } catch (e) { /* nothing to clear */ }
+      pa.confirmClear = false; pa.historyOpen = null; renderPlaceaway();
+    }
+    else if (t.hasAttribute("data-pa-reveal")) paStartRound();
+    else if (t.hasAttribute("data-pa-tap")) paTap(t.getAttribute("data-pa-tap"));
+    else if (t.hasAttribute("data-pa-next")) paNextRound();
+    else if (t.hasAttribute("data-pa-round")) { pa.reviewIdx = +t.getAttribute("data-pa-round"); renderPlaceaway(); }
+    else if (t.hasAttribute("data-pa-save")) paSaveMatch();
+    else if (t.hasAttribute("data-pa-new")) { pa = paNewGame(); renderPlaceaway(); }
     else if (t.hasAttribute("data-pw-side")) pwStart(t.getAttribute("data-pw-side"));
     else if (t.hasAttribute("data-pw-random")) pwSpinStart();
     else if (t.hasAttribute("data-pw-stop")) pwSpinStop();
