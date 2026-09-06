@@ -41,6 +41,7 @@
   if (!store.journalImport) store.journalImport = {};   // account -> YYYY-MM-DD -> day totals
   if (!store.journalManual) store.journalManual = {};   // account -> YYYY-MM-DD -> [manual trades]
   if (!store.journalAccounts) store.journalAccounts = [];  // user-added brokerage accounts
+  if (!store.watchlist) store.watchlist = ["ES", "NQ", "CL", "GC", "BTC"];
   if (!store.journalActive) store.journalActive = "__all";   // "__all" = combined view
   if (!store.propLedger) store.propLedger = {};         // prop account -> [evaluation/reset/payout]
   if (!store.journalTrades) store.journalTrades = {};   // account -> [per-trade records]
@@ -239,11 +240,13 @@
     /* which inline center panel is up, if any: "tools" (hamburger) or
        "settings" (gear). One slot, so the two can never both be open. */
     panel: null,
-    tpTab: "chart",          // which of the hamburger's four sections
-    tpTf: "5m",              // practice chart timeframe
-    tpMa: false,             // practice chart moving average
-    tpLevel: null,           // the level the player tapped onto the chart, in %
-    tpCourse: false,         // the course menu, folded away under the sections
+    tpTab: "chart",          // which of the hamburger's sections
+    tpSym: null,             // charted symbol; falls back to the watchlist's first
+    tpTf: "5m",              // chart timeframe
+    tpFrom: null,            // left edge of the window, in bars; null = the right edge
+    tpSpan: 60,              // how many bars are on screen — this is the zoom
+    tpQuery: "",             // the watchlist search box
+    tpDate: null,            // the calendar's day, YYYY-MM-DD; null means today
     view: "home",            // 'home' | 'screen' | 'videos' | 'checkin' | 'beforetrade'
                              // | 'journal' | 'pickaeway' | 'buildmatch' | 'match' | 'result' | 'replay'
                              // | 'aehome' — the Æway hub the bar-2 home icon opens
@@ -6418,39 +6421,92 @@
      is the app's existing convention rather than a new one. */
 
   const TP_TABS = [
-    { id: "chart", label: "Practice" },
-    { id: "watch", label: "Market" },
-    { id: "plan", label: "Plan" },
+    { id: "chart", label: "Chart" },
+    { id: "watch", label: "Watchlist" },
     { id: "cal", label: "Calendar" },
   ];
 
+  /* Eight intraday timeframes. `vol` scales the move per bar so a 1-minute
+     chart is visibly quieter than a 4-hour one — the same series generator
+     with a different step, which is what makes switching feel like a real
+     timeframe change rather than a reshuffle. */
   const TP_TFS = [
-    { id: "5m", label: "5M", n: 40 },
-    { id: "1h", label: "1H", n: 60 },
-    { id: "1d", label: "1D", n: 80 },
+    { id: "1m",  label: "1m",  vol: 0.35 },
+    { id: "2m",  label: "2m",  vol: 0.45 },
+    { id: "3m",  label: "3m",  vol: 0.55 },
+    { id: "5m",  label: "5m",  vol: 0.7 },
+    { id: "15m", label: "15m", vol: 1.0 },
+    { id: "30m", label: "30m", vol: 1.3 },
+    { id: "1h",  label: "1h",  vol: 1.7 },
+    { id: "4h",  label: "4h",  vol: 2.4 },
   ];
 
-  const TP_WATCH = [
-    { sym: "ES",   name: "E-mini S&P 500",  base: 5480 },
-    { sym: "NQ",   name: "E-mini Nasdaq",   base: 19240 },
-    { sym: "YM",   name: "E-mini Dow",      base: 40120 },
-    { sym: "CL",   name: "Crude Oil",       base: 78.4 },
-    { sym: "GC",   name: "Gold",            base: 2412 },
-    { sym: "6E",   name: "Euro FX",         base: 1.084 },
-    { sym: "BTC",  name: "Bitcoin",         base: 64150 },
+  /* The instrument universe the search looks through. No feed behind it, so
+     this list IS the market as far as the app is concerned. ==> BACKEND */
+  const TP_UNIVERSE = [
+    { sym: "ES",   name: "E-mini S&P 500",   base: 5480 },
+    { sym: "NQ",   name: "E-mini Nasdaq",    base: 19240 },
+    { sym: "YM",   name: "E-mini Dow",       base: 40120 },
+    { sym: "RTY",  name: "E-mini Russell",   base: 2140 },
+    { sym: "CL",   name: "Crude Oil",        base: 78.4 },
+    { sym: "NG",   name: "Natural Gas",      base: 2.61 },
+    { sym: "GC",   name: "Gold",             base: 2412 },
+    { sym: "SI",   name: "Silver",           base: 28.6 },
+    { sym: "HG",   name: "Copper",           base: 4.28 },
+    { sym: "ZB",   name: "30Y T-Bond",       base: 118.2 },
+    { sym: "ZN",   name: "10Y T-Note",       base: 110.4 },
+    { sym: "6E",   name: "Euro FX",          base: 1.084 },
+    { sym: "6J",   name: "Japanese Yen",     base: 0.00642 },
+    { sym: "6B",   name: "British Pound",    base: 1.271 },
+    { sym: "6A",   name: "Australian Dollar", base: 0.664 },
+    { sym: "6C",   name: "Canadian Dollar",  base: 0.731 },
+    { sym: "EURUSD", name: "Euro / Dollar",  base: 1.0843 },
+    { sym: "GBPUSD", name: "Pound / Dollar", base: 1.2712 },
+    { sym: "USDJPY", name: "Dollar / Yen",   base: 155.8 },
+    { sym: "AUDUSD", name: "Aussie / Dollar", base: 0.6641 },
+    { sym: "USDCAD", name: "Dollar / Loonie", base: 1.3684 },
+    { sym: "XAUUSD", name: "Gold Spot",      base: 2412 },
+    { sym: "BTC",  name: "Bitcoin",          base: 64150 },
+    { sym: "ETH",  name: "Ethereum",         base: 3412 },
+    { sym: "SOL",  name: "Solana",           base: 148.2 },
+    { sym: "AAPL", name: "Apple",            base: 214.3 },
+    { sym: "MSFT", name: "Microsoft",        base: 428.6 },
+    { sym: "NVDA", name: "NVIDIA",           base: 124.8 },
+    { sym: "TSLA", name: "Tesla",            base: 248.5 },
+    { sym: "AMZN", name: "Amazon",           base: 186.4 },
+    { sym: "META", name: "Meta",             base: 502.1 },
+    { sym: "GOOGL", name: "Alphabet",        base: 178.9 },
+    { sym: "SPY",  name: "S&P 500 ETF",      base: 546.2 },
+    { sym: "QQQ",  name: "Nasdaq 100 ETF",   base: 472.8 },
+    { sym: "IWM",  name: "Russell 2000 ETF", base: 213.4 },
   ];
+  const TP_UNI = {};
+  TP_UNIVERSE.forEach((r) => { TP_UNI[r.sym] = r; });
 
-  const TP_EVENTS = [
-    { d: 0, t: "08:30", cur: "USD", imp: 3, name: "Non-Farm Payrolls" },
-    { d: 0, t: "10:00", cur: "USD", imp: 2, name: "ISM Services PMI" },
-    { d: 1, t: "04:00", cur: "EUR", imp: 2, name: "ECB Economic Bulletin" },
-    { d: 1, t: "14:00", cur: "USD", imp: 3, name: "FOMC Rate Decision" },
-    { d: 2, t: "08:30", cur: "USD", imp: 3, name: "CPI m/m" },
-    { d: 2, t: "23:50", cur: "JPY", imp: 2, name: "BoJ Summary of Opinions" },
-    { d: 3, t: "07:00", cur: "GBP", imp: 2, name: "BoE Rate Decision" },
-    { d: 3, t: "08:30", cur: "USD", imp: 2, name: "Unemployment Claims" },
-    { d: 4, t: "08:30", cur: "USD", imp: 3, name: "Retail Sales m/m" },
+  /* Names an economic calendar draws from. Which of them land on a given day
+     comes from the date itself, so any date the user navigates to has a
+     stable, plausible set rather than an empty page. ==> BACKEND */
+  const TP_EVENT_POOL = [
+    { cur: "USD", imp: 3, name: "Non-Farm Payrolls" },
+    { cur: "USD", imp: 3, name: "CPI m/m" },
+    { cur: "USD", imp: 3, name: "FOMC Rate Decision" },
+    { cur: "USD", imp: 3, name: "Retail Sales m/m" },
+    { cur: "USD", imp: 2, name: "ISM Services PMI" },
+    { cur: "USD", imp: 2, name: "Unemployment Claims" },
+    { cur: "USD", imp: 2, name: "Crude Oil Inventories" },
+    { cur: "USD", imp: 1, name: "Consumer Sentiment" },
+    { cur: "EUR", imp: 3, name: "ECB Rate Decision" },
+    { cur: "EUR", imp: 2, name: "ECB Economic Bulletin" },
+    { cur: "EUR", imp: 2, name: "German Ifo Business Climate" },
+    { cur: "EUR", imp: 1, name: "Trade Balance" },
+    { cur: "GBP", imp: 3, name: "BoE Rate Decision" },
+    { cur: "GBP", imp: 2, name: "GDP m/m" },
+    { cur: "JPY", imp: 2, name: "BoJ Summary of Opinions" },
+    { cur: "JPY", imp: 1, name: "Tokyo Core CPI" },
+    { cur: "AUD", imp: 2, name: "RBA Rate Statement" },
+    { cur: "CAD", imp: 2, name: "Employment Change" },
   ];
+  const TP_EVENT_TIMES = ["02:00", "04:00", "07:00", "08:30", "10:00", "12:30", "14:00", "23:50"];
 
   /* One number per instrument per day, from the symbol and the date. Stable
      while the app is open and across a reload, which a Math.random() would
@@ -6462,75 +6518,177 @@
     const r = ((h >>> 0) % 10000) / 10000;
     const pct = (r - 0.5) * 2 * 1.8;                 // ±1.8%
     const last = row.base * (1 + pct / 100);
-    const dp = row.base < 10 ? 4 : row.base < 200 ? 2 : row.base < 5000 ? 2 : 0;
-    return { last: last.toFixed(dp), pct };
+    return { last: tpFmtPx(last, row.base), pct };
+  }
+  const tpFmtPx = (v, base) =>
+    v.toFixed(base < 0.1 ? 5 : base < 10 ? 4 : base < 200 ? 2 : base < 5000 ? 2 : 0);
+
+  const tpWatchlist = () => (store.watchlist && store.watchlist.length ? store.watchlist : ["ES"]);
+  const tpSymbol = () => {
+    const list = tpWatchlist();
+    return list.indexOf(state.tpSym) >= 0 ? state.tpSym : list[0];
+  };
+
+  /* ---- the chart's data ----
+     A long series per symbol and timeframe, generated once and kept, so
+     panning and zooming move a window over the same bars instead of drawing
+     new ones — a chart whose history changed as you scrolled back would not
+     be a chart. */
+  const TP_BARS = 420;
+  const tpCache = {};
+  function tpSeries(sym, tfId) {
+    const key = sym + "|" + tfId;
+    if (tpCache[key]) return tpCache[key];
+    const tf = TP_TFS.find((t) => t.id === tfId) || TP_TFS[3];
+    const row = TP_UNI[sym] || TP_UNIVERSE[0];
+    const rng = paMakeRng(sym + tfId);
+    const step = row.base * 0.0016 * tf.vol;
+    let price = row.base;
+    const out = [];
+    let phase = rng() < 0.75 ? "impulse" : "range";
+    let dir = rng() < 0.5 ? 1 : -1;
+    while (out.length < TP_BARS) {
+      const len = phase === "impulse" ? 3 + Math.floor(rng() * 8) : 4 + Math.floor(rng() * 10);
+      for (let k = 0; k < len && out.length < TP_BARS; k++) {
+        const open = price;
+        const drift = phase === "impulse"
+          ? dir * step * (0.6 + rng() * 0.8)
+          : (rng() - 0.5) * 2 * step * 0.5;
+        const noise = (rng() - 0.5) * 2 * step * 0.6;
+        let close = open + drift + noise;
+        if (Math.abs(close - open) < step * 0.06) close = open + (close >= open ? 1 : -1) * step * 0.1;
+        const high = Math.max(open, close) + rng() * step * 0.7;
+        const low = Math.min(open, close) - rng() * step * 0.7;
+        out.push({ open, close, high, low, dir: close > open ? "up" : "down" });
+        price = close;
+      }
+      if (phase === "impulse") dir = rng() < 0.35 ? -dir : dir;
+      phase = phase === "impulse" ? "range" : "impulse";
+    }
+    tpCache[key] = out;
+    return out;
   }
 
-  function tpChartHTML() {
-    const tf = TP_TFS.find((t) => t.id === state.tpTf) || TP_TFS[0];
-    /* the same generator Placeæway's rounds use, seeded off the timeframe so
-       switching tabs and coming back shows the same chart it showed before */
-    const series = paGenerateSeries(tf.n, paMakeRng("practice-" + tf.id));
-    const closes = series.map((c) => c.close);
-    const ma = closes.map((_, i) => {
-      const from = Math.max(0, i - 9);
-      const w = closes.slice(from, i + 1);
-      return w.reduce((a, b) => a + b, 0) / w.length;
-    });
-    const gMax = Math.max.apply(null, series.map((c) => c.high));
-    const gMin = Math.min.apply(null, series.map((c) => c.low));
-    const range = Math.max(1, gMax - gMin);
+  const TP_SPAN_MIN = 18, TP_SPAN_MAX = 220;
+  function tpClampView() {
+    state.tpSpan = Math.max(TP_SPAN_MIN, Math.min(TP_SPAN_MAX, Math.round(state.tpSpan)));
+    /* null means the newest bars, which is where a chart opens — anchoring to
+       bar 0 would open it on the oldest history it has and leave a pan toward
+       the past already at its limit. */
+    if (state.tpFrom == null) state.tpFrom = TP_BARS;
+    state.tpFrom = Math.max(0, Math.min(TP_BARS - state.tpSpan, Math.round(state.tpFrom)));
+  }
+
+  /* Just the bars. Rewritten on its own during a gesture so a pan does not
+     rebuild the tabs, the strip and the header sixty times a second. */
+  function tpBarsHTML() {
+    const sym = tpSymbol();
+    const all = tpSeries(sym, state.tpTf);
+    tpClampView();
+    const view = all.slice(state.tpFrom, state.tpFrom + state.tpSpan);
+    const gMax = Math.max.apply(null, view.map((c) => c.high));
+    const gMin = Math.min.apply(null, view.map((c) => c.low));
+    const range = Math.max(1e-9, gMax - gMin);
     const PAD = 8, USABLE = 100 - PAD * 2;
     const pct = (v) => PAD + USABLE - ((v - gMin) / range) * USABLE;
-    const cols = series.map((c) => {
-      const wt = pct(c.high), wh = Math.max(0.6, pct(c.low) - wt);
+    /* percent again, for the same reason it is percent everywhere else here:
+       the box changes size with the panel and the bars have to follow it */
+    return view.map((c) => {
+      const wt = pct(c.high), wh = Math.max(0.5, pct(c.low) - wt);
       const bt = pct(Math.max(c.open, c.close));
-      const bh = Math.max(1.2, pct(Math.min(c.open, c.close)) - bt);
+      const bh = Math.max(0.9, pct(Math.min(c.open, c.close)) - bt);
       return `<div class="tp-col ${c.dir}">
         <span class="pa-wick" style="top:${wt.toFixed(2)}%;height:${wh.toFixed(2)}%"></span>
         <span class="pa-body" style="top:${bt.toFixed(2)}%;height:${bh.toFixed(2)}%"></span></div>`;
     }).join("");
-    // the average as one polyline across the same percentage space
-    const pts = ma.map((v, i) =>
-      `${((i + 0.5) / series.length * 100).toFixed(2)},${pct(v).toFixed(2)}`).join(" ");
-    const lvl = state.tpLevel;
-    const last = series[series.length - 1].close;
-    const chg = (last - series[0].open) / series[0].open * 100;
+  }
+
+  function tpPaintBars() {
+    const track = document.getElementById("tpTrack");
+    if (track) track.innerHTML = tpBarsHTML();
+    const hd = document.getElementById("tpChg");
+    if (hd) {
+      const all = tpSeries(tpSymbol(), state.tpTf);
+      const view = all.slice(state.tpFrom, state.tpFrom + state.tpSpan);
+      const chg = (view[view.length - 1].close - view[0].open) / view[0].open * 100;
+      hd.textContent = (chg >= 0 ? "+" : "") + chg.toFixed(2) + "%";
+      hd.className = chg >= 0 ? "up" : "down";
+    }
+  }
+
+  function tpStripHTML() {
+    const cur = tpSymbol();
+    return `<div class="tp-strip">
+      ${tpWatchlist().map((sym) => {
+        const row = TP_UNI[sym] || { sym, base: 100 };
+        const q = tpQuote(row, todayKey());
+        return `<button class="tp-chip${sym === cur ? " on" : ""}" data-tp-sym="${esc(sym)}">
+          <span class="tp-chip-sym">${esc(sym)}</span>
+          <span class="tp-chip-chg ${q.pct >= 0 ? "up" : "down"}">${q.pct >= 0 ? "+" : ""}${q.pct.toFixed(2)}%</span>
+        </button>`;
+      }).join("")}
+    </div>`;
+  }
+
+  function tpChartHTML() {
+    const sym = tpSymbol();
+    const row = TP_UNI[sym] || { sym, name: sym, base: 100 };
+    const all = tpSeries(sym, state.tpTf);
+    tpClampView();
+    const view = all.slice(state.tpFrom, state.tpFrom + state.tpSpan);
+    const chg = (view[view.length - 1].close - view[0].open) / view[0].open * 100;
     return `
       <div class="tp-chart-head">
         <div class="tp-quote">
-          <b>PRACTICE</b>
-          <span class="${chg >= 0 ? "up" : "down"}">${chg >= 0 ? "+" : ""}${chg.toFixed(2)}%</span>
+          <b>${esc(sym)}</b>
+          <span id="tpChg" class="${chg >= 0 ? "up" : "down"}">${chg >= 0 ? "+" : ""}${chg.toFixed(2)}%</span>
         </div>
-        <div class="tp-tf">
-          ${TP_TFS.map((t) => `<button class="tp-tf-btn${t.id === tf.id ? " on" : ""}"
-            data-tp-tf="${t.id}">${t.label}</button>`).join("")}
-        </div>
+        <div class="tp-sym-name">${esc(row.name)}</div>
       </div>
-      <div class="tp-chart" id="tpChart" data-tp-place>
-        <div class="tp-track">${cols}</div>
-        ${state.tpMa ? `<svg class="tp-ma" viewBox="0 0 100 100" preserveAspectRatio="none">
-          <polyline points="${pts}" /></svg>` : ""}
-        ${lvl != null ? `<div class="tp-level" style="top:${lvl.toFixed(2)}%"><span>${
-          (gMin + (1 - (lvl - PAD) / USABLE) * range).toFixed(2)}</span></div>` : ""}
+      <div class="tp-tf">
+        ${TP_TFS.map((t) => `<button class="tp-tf-btn${t.id === state.tpTf ? " on" : ""}"
+          data-tp-tf="${t.id}">${t.label}</button>`).join("")}
       </div>
-      <div class="tp-tools">
-        <button class="pa-ghost${state.tpMa ? " on" : ""}" data-tp-ma>10 MA</button>
-        <button class="pa-ghost${lvl != null ? " on" : ""}" data-tp-clear>${
-          lvl != null ? "Clear level" : "Tap the chart to set a level"}</button>
-      </div>`;
+      <div class="tp-chart" id="tpChart">
+        <div class="tp-track" id="tpTrack">${tpBarsHTML()}</div>
+      </div>
+      ${tpStripHTML()}`;
   }
 
   function tpWatchHTML() {
     const key = todayKey();
+    const q = (state.tpQuery || "").trim().toUpperCase();
+    const list = tpWatchlist();
+    const hits = q
+      ? TP_UNIVERSE.filter((r) => r.sym.indexOf(q) >= 0 || r.name.toUpperCase().indexOf(q) >= 0).slice(0, 8)
+      : [];
     return `
+      <div class="tp-search">
+        <input class="tp-search-in" id="tpSearch" type="text" inputmode="latin"
+               autocomplete="off" autocapitalize="characters" spellcheck="false"
+               placeholder="Search a symbol — ES, gold, AAPL" value="${esc(state.tpQuery || "")}"
+               aria-label="Search for a symbol">
+        ${q ? `<button class="tp-search-x" data-tp-q="" aria-label="Clear search">✕</button>` : ""}
+      </div>
+      ${q ? `<div class="tp-hits">
+        ${hits.length ? hits.map((r) => {
+          const on = list.indexOf(r.sym) >= 0;
+          return `<button class="tp-hit" data-tp-add="${esc(r.sym)}"${on ? " disabled" : ""}>
+            <span class="tp-sym">${esc(r.sym)}<small>${esc(r.name)}</small></span>
+            <span class="tp-hit-add">${on ? "On list" : "Add"}</span>
+          </button>`;
+        }).join("") : `<div class="tp-note">Nothing matches “${esc(q)}”.</div>`}
+      </div>` : ""}
       <div class="tp-rows">
-        ${TP_WATCH.map((row) => {
-          const q = tpQuote(row, key);
+        ${list.map((sym) => {
+          const row = TP_UNI[sym] || { sym, name: sym, base: 100 };
+          const quote = tpQuote(row, key);
           return `<div class="tp-row">
-            <span class="tp-sym">${esc(row.sym)}<small>${esc(row.name)}</small></span>
-            <span class="tp-last">${q.last}</span>
-            <span class="tp-chg ${q.pct >= 0 ? "up" : "down"}">${q.pct >= 0 ? "+" : ""}${q.pct.toFixed(2)}%</span>
+            <button class="tp-sym tp-sym-go" data-tp-sym="${esc(sym)}">
+              ${esc(row.sym)}<small>${esc(row.name)}</small></button>
+            <span class="tp-last">${quote.last}</span>
+            <span class="tp-chg ${quote.pct >= 0 ? "up" : "down"}">${quote.pct >= 0 ? "+" : ""}${quote.pct.toFixed(2)}%</span>
+            <button class="tp-del" data-tp-del="${esc(sym)}" aria-label="Remove ${esc(sym)}">✕</button>
           </div>`;
         }).join("")}
       </div>
@@ -6538,65 +6696,60 @@
         connected yet.</div>`;
   }
 
-  function tpPlanHTML() {
-    const plan = (store.plan && store.plan.id) || "free";
-    const TIERS = [
-      { id: "free", name: "Beta", price: "Free", lines: ["The full course", "Trade Journal", "Gameæway", "Practice chart"] },
-      { id: "pro", name: "Pro", price: "$19/mo", lines: ["Everything in Beta", "Live market data", "Unlimited journal imports", "Priority Ask Æway"] },
-      { id: "desk", name: "Desk", price: "$49/mo", lines: ["Everything in Pro", "Prop firm tracking", "Connections and leaderboards", "Early access to new games"] },
-    ];
-    return `
-      <div class="tp-plans">
-        ${TIERS.map((t) => `
-          <div class="tp-plan${t.id === plan ? " on" : ""}">
-            <div class="tp-plan-top">
-              <span class="tp-plan-name">${esc(t.name)}</span>
-              <span class="tp-plan-price">${esc(t.price)}</span>
-            </div>
-            <ul class="tp-plan-list">${t.lines.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>
-            ${t.id === plan
-              ? `<div class="tp-plan-cur">Your plan</div>`
-              : `<button class="pa-ghost" data-tp-plan="${t.id}">Upgrade</button>`}
-          </div>`).join("")}
-      </div>
-      <div class="tp-note">Billing is not connected yet — upgrading tells us you
-        are interested and changes nothing else.</div>`;
+  /* ---- economic calendar ----
+     Which events land on a date comes from the date, so every day the user
+     steps to has a stable set instead of only this week having one. */
+  function tpEventsFor(d) {
+    const key = dayKeyOf(d);
+    let h = 2166136261;
+    for (const ch of key) h = Math.imul(h ^ ch.charCodeAt(0), 16777619);
+    const rnd = () => { h = Math.imul(h ^ (h >>> 15), 2246822507); h ^= h >>> 13; return ((h >>> 0) % 10000) / 10000; };
+    const dow = d.getDay();
+    if (dow === 0 || dow === 6) return [];        // the tape is shut
+    const n = 2 + Math.floor(rnd() * 4);
+    const picked = [], used = {};
+    for (let i = 0; i < n; i++) {
+      let k = Math.floor(rnd() * TP_EVENT_POOL.length);
+      for (let g = 0; used[k] && g < TP_EVENT_POOL.length; g++) k = (k + 1) % TP_EVENT_POOL.length;
+      used[k] = true;
+      picked.push(Object.assign({ t: TP_EVENT_TIMES[Math.floor(rnd() * TP_EVENT_TIMES.length)] },
+        TP_EVENT_POOL[k]));
+    }
+    return picked.sort((a, b) => a.t.localeCompare(b.t));
   }
 
   function tpCalHTML() {
-    const now = new Date();
-    const monday = new Date(now);
-    monday.setDate(now.getDate() - ((now.getDay() + 6) % 7));
+    const d = state.tpDate ? new Date(state.tpDate + "T12:00:00") : new Date();
+    const key = dayKeyOf(d);
+    const evs = tpEventsFor(d);
     const impLabel = (n) => n >= 3 ? "High" : n === 2 ? "Med" : "Low";
-    const byDay = {};
-    TP_EVENTS.forEach((e) => (byDay[e.d] || (byDay[e.d] = [])).push(e));
     return `
-      <div class="tp-cal">
-        ${Object.keys(byDay).map((d) => {
-          const day = new Date(monday);
-          day.setDate(monday.getDate() + Number(d));
-          const isToday = dayKeyOf(day) === todayKey();
-          return `<div class="tp-cal-day${isToday ? " today" : ""}">
-            <div class="tp-cal-head">${day.toLocaleDateString(undefined,
-              { weekday: "short", month: "short", day: "numeric" })}${isToday ? " · today" : ""}</div>
-            ${byDay[d].map((e) => `
-              <div class="tp-ev">
-                <span class="tp-ev-t">${esc(e.t)}</span>
-                <span class="tp-ev-c">${esc(e.cur)}</span>
-                <span class="tp-ev-n">${esc(e.name)}</span>
-                <span class="tp-ev-i i${e.imp}">${impLabel(e.imp)}</span>
-              </div>`).join("")}
-          </div>`;
-        }).join("")}
+      <div class="tp-datebar">
+        <button class="tp-step" data-tp-day="-1" aria-label="Previous day">‹</button>
+        <input class="tp-date" id="tpDate" type="date" value="${key}" aria-label="Pick a date">
+        <button class="tp-step" data-tp-day="1" aria-label="Next day">›</button>
       </div>
-      <div class="tp-note">Sample events on this week's real dates — no calendar
-        feed is connected yet.</div>`;
+      <div class="tp-datehead">
+        ${d.toLocaleDateString(undefined, { weekday: "long", month: "long", day: "numeric" })}
+        ${key === todayKey() ? " · today" : ""}
+        ${key !== todayKey() ? `<button class="tp-today" data-tp-day="0">Today</button>` : ""}
+      </div>
+      <div class="tp-cal">
+        ${evs.length ? evs.map((e) => `
+          <div class="tp-ev">
+            <span class="tp-ev-t">${esc(e.t)}</span>
+            <span class="tp-ev-c">${esc(e.cur)}</span>
+            <span class="tp-ev-n">${esc(e.name)}</span>
+            <span class="tp-ev-i i${e.imp}">${impLabel(e.imp)}</span>
+          </div>`).join("")
+          : `<div class="tp-note">Nothing scheduled — markets are closed.</div>`}
+      </div>
+      <div class="tp-note">Sample events — no calendar feed is connected yet.</div>`;
   }
 
   function toolsPanelHTML() {
-    const tab = state.tpTab || "chart";
+    const tab = TP_TABS.some((t) => t.id === state.tpTab) ? state.tpTab : "chart";
     const body = tab === "watch" ? tpWatchHTML()
-      : tab === "plan" ? tpPlanHTML()
       : tab === "cal" ? tpCalHTML()
       : tpChartHTML();
     return `
@@ -6604,12 +6757,7 @@
         ${TP_TABS.map((t) => `<button class="tp-tab${t.id === tab ? " on" : ""}"
           data-tp-tab="${t.id}">${esc(t.label)}</button>`).join("")}
       </div>
-      <div class="tp-body">${body}</div>
-      <div class="tp-course">
-        <button class="pa-ghost${state.tpCourse ? " on" : ""}" data-tp-course>
-          ${state.tpCourse ? "Hide course menu" : "Course menu"}</button>
-        ${state.tpCourse ? menuHTML() : ""}
-      </div>`;
+      <div class="tp-body">${body}</div>`;
   }
 
   /* ---------------- the two inline center panels ----------------
@@ -6638,19 +6786,10 @@
     render();
   }
 
-  /* menu drawer — full section/subsection navigation (same as All Sections) */
-  function menuHTML() {
-    return DATA.modules.map((mod) => `
-      <div class="menu-module">
-        <div class="menu-module-title">Module ${mod.num} — ${esc(mod.tagline)}</div>
-        ${mod.sections.map((sec) => {
-          const p = secProgress(sec);
-          const cur = state.view === "screen" && screens[state.current].sec.id === sec.id;
-          return `<button class="menu-item ${cur ? "current" : ""}" data-menu-sec="${sec.id}" data-mod-idx="${DATA.modules.indexOf(mod)}">
-            ${esc(sec.title)}<span class="mi-pct">${p.pct}%</span></button>`;
-        }).join("")}
-      </div>`).join("");
-  }
+  /* The course menu that used to sit under the hamburger is gone. It appeared
+     below every section of the panel rather than belonging to any of them,
+     and the same navigation is the home screen's own All Sections tab, which
+     is where it belongs. */
 
   /* settings */
   function openSettings() {
@@ -6728,8 +6867,39 @@
         <div class="set-label">Account</div>
         <input class="set-input" id="setName" placeholder="Your name" value="${esc(s.name || "")}" maxlength="40">
       </div>
+      <div class="set-group">
+        <div class="set-label">Plan</div>
+        ${tpPlanHTML()}
+      </div>
       <button class="btn-secondary" data-reset-progress>Reset course progress</button>
       <button class="btn-secondary" data-logout>Log Out</button>`;
+  }
+
+  /* Plan lives with the rest of the account under the gear now, not as a tab
+     among the market tools — it is something about you, not about the tape. */
+  function tpPlanHTML() {
+    const plan = (store.plan && store.plan.id) || "free";
+    const TIERS = [
+      { id: "free", name: "Beta", price: "Free", lines: ["The full course", "Trade Journal", "Gameæway", "Practice chart"] },
+      { id: "pro", name: "Pro", price: "$19/mo", lines: ["Everything in Beta", "Live market data", "Unlimited journal imports", "Priority Ask Æway"] },
+      { id: "desk", name: "Desk", price: "$49/mo", lines: ["Everything in Pro", "Prop firm tracking", "Connections and leaderboards", "Early access to new games"] },
+    ];
+    return `
+      <div class="tp-plans">
+        ${TIERS.map((t) => `
+          <div class="tp-plan${t.id === plan ? " on" : ""}">
+            <div class="tp-plan-top">
+              <span class="tp-plan-name">${esc(t.name)}</span>
+              <span class="tp-plan-price">${esc(t.price)}</span>
+            </div>
+            <ul class="tp-plan-list">${t.lines.map((l) => `<li>${esc(l)}</li>`).join("")}</ul>
+            ${t.id === plan
+              ? `<div class="tp-plan-cur">Your plan</div>`
+              : `<button class="pa-ghost" data-tp-plan="${t.id}">Upgrade</button>`}
+          </div>`).join("")}
+      </div>
+      <div class="tp-note">Billing is not connected yet — upgrading tells us you
+        are interested and changes nothing else.</div>`;
   }
 
   function applyTextSize() {
@@ -7296,17 +7466,109 @@
 
   /* ---------------- static buttons ---------------- */
 
-  /* Tap anywhere on the practice chart to drop a level there. Delegated on
-     the scroller because the chart is rebuilt on every render, and read as a
-     percentage of the box so the line stays put when the box resizes — the
-     same reason the candles are drawn in percent. */
-  cardScroll.addEventListener("click", (e) => {
-    const box = e.target.closest("[data-tp-place]");
-    if (!box || e.target.closest(".tp-level")) return;
-    const r = box.getBoundingClientRect();
-    if (!r.height) return;
-    state.tpLevel = Math.max(0, Math.min(100, (e.clientY - r.top) / r.height * 100));
-    render();
+  /* ---- chart gestures ----
+     One finger pans, two pinch. Both work the same way: they move a window
+     (tpFrom, tpSpan) over a series that never changes, and then repaint only
+     the bars — a full render would rebuild the tabs and the strip on every
+     frame and lose the input.
+
+     Delegated from the scroller because the chart element is replaced on
+     every render, and pointer events rather than touch so a mouse drag on
+     desktop works without a second code path. The chart carries
+     touch-action: none so the browser does not take the gesture for its own
+     scrolling and zooming first. */
+  const tpPtr = new Map();
+  let tpGesture = null, tpRaf = null;
+  const tpDist = () => {
+    const [a, b] = [...tpPtr.values()];
+    return Math.hypot(a.x - b.x, a.y - b.y);
+  };
+  function tpQueuePaint() {
+    if (tpRaf != null) return;
+    tpRaf = requestAnimationFrame(() => { tpRaf = null; tpPaintBars(); });
+  }
+  cardScroll.addEventListener("pointerdown", (e) => {
+    const box = e.target.closest("#tpChart");
+    if (!box) return;
+    tpPtr.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    tpGesture = tpPtr.size >= 2
+      ? { kind: "pinch", dist: tpDist(), span: state.tpSpan, from: state.tpFrom }
+      : { kind: "pan", x: e.clientX, from: state.tpFrom, w: box.getBoundingClientRect().width };
+    /* Capture keeps the moves coming if the finger slides off the chart. It is
+       an improvement, not a requirement, and it throws outright when there is
+       no live pointer behind the event — so it goes after the gesture is set
+       up and inside a guard, or a failure here would cancel the gesture it was
+       meant to help. */
+    try { box.setPointerCapture(e.pointerId); } catch (x) { /* no live pointer */ }
+  });
+  cardScroll.addEventListener("pointermove", (e) => {
+    if (!tpPtr.has(e.pointerId) || !tpGesture) return;
+    tpPtr.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    e.preventDefault();
+    if (tpGesture.kind === "pan" && tpPtr.size >= 2) {
+      // a second finger landed mid-drag: become a pinch from where we are
+      tpGesture = { kind: "pinch", dist: tpDist(), span: state.tpSpan, from: state.tpFrom };
+      return;
+    }
+    if (tpGesture.kind === "pinch") {
+      if (tpPtr.size < 2) return;
+      const d = tpDist();
+      if (d < 8 || tpGesture.dist < 8) return;
+      /* fingers apart = fewer bars on screen = zoomed in, and the window is
+         re-centred so the pinch pulls toward the middle of what you see */
+      const mid = tpGesture.from + tpGesture.span / 2;
+      state.tpSpan = tpGesture.span * (tpGesture.dist / d);
+      tpClampView();
+      state.tpFrom = mid - state.tpSpan / 2;
+    } else {
+      const perBar = tpGesture.w / Math.max(1, state.tpSpan);
+      state.tpFrom = tpGesture.from - (e.clientX - tpGesture.x) / perBar;
+    }
+    tpClampView();
+    tpQueuePaint();
+  }, { passive: false });
+  function tpEndPointer(e) {
+    if (!tpPtr.has(e.pointerId)) return;
+    tpPtr.delete(e.pointerId);
+    if (tpPtr.size === 0) tpGesture = null;
+    else if (tpPtr.size === 1) {
+      const [only] = [...tpPtr.values()];
+      const box = document.getElementById("tpChart");
+      tpGesture = { kind: "pan", x: only.x, from: state.tpFrom,
+        w: box ? box.getBoundingClientRect().width : 300 };
+    }
+  }
+  cardScroll.addEventListener("pointerup", tpEndPointer);
+  cardScroll.addEventListener("pointercancel", tpEndPointer);
+  /* a mouse wheel is the same zoom, for anyone on a desktop */
+  cardScroll.addEventListener("wheel", (e) => {
+    if (!e.target.closest("#tpChart")) return;
+    e.preventDefault();
+    const mid = state.tpFrom + state.tpSpan / 2;
+    state.tpSpan *= e.deltaY > 0 ? 1.12 : 0.89;
+    tpClampView();
+    state.tpFrom = mid - state.tpSpan / 2;
+    tpClampView();
+    tpQueuePaint();
+  }, { passive: false });
+
+  /* The search box is a live input, so what was typed lives in the DOM until
+     something asks for it — same reason Placeæway reads its seed back. */
+  function tpReadQuery() {
+    const el = document.getElementById("tpSearch");
+    if (el) state.tpQuery = el.value;
+  }
+  cardScroll.addEventListener("input", (e) => {
+    if (e.target.id === "tpSearch") {
+      state.tpQuery = e.target.value;
+      const at = e.target.selectionStart;
+      render();
+      const again = document.getElementById("tpSearch");
+      if (again) { again.focus(); try { again.setSelectionRange(at, at); } catch (x) { /* not selectable */ } }
+    } else if (e.target.id === "tpDate") {
+      state.tpDate = e.target.value || null;
+      render();
+    }
   });
 
   $("btnMenu").addEventListener("click", () => togglePanel("tools"));
@@ -7350,7 +7612,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-ma],[data-tp-clear],[data-tp-plan],[data-tp-course],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -7679,11 +7941,43 @@
       }
     }
     else if (t.hasAttribute("data-panel-close")) { commitSettingsName(); state.panel = null; render(); }
-    else if (t.hasAttribute("data-tp-tab")) { state.tpTab = t.getAttribute("data-tp-tab"); render(); }
-    else if (t.hasAttribute("data-tp-tf")) { state.tpTf = t.getAttribute("data-tp-tf"); state.tpLevel = null; render(); }
-    else if (t.hasAttribute("data-tp-ma")) { state.tpMa = !state.tpMa; render(); }
-    else if (t.hasAttribute("data-tp-clear")) { state.tpLevel = null; render(); }
-    else if (t.hasAttribute("data-tp-course")) { state.tpCourse = !state.tpCourse; render(); }
+    else if (t.hasAttribute("data-tp-tab")) { tpReadQuery(); state.tpTab = t.getAttribute("data-tp-tab"); render(); }
+    else if (t.hasAttribute("data-tp-tf")) {
+      state.tpTf = t.getAttribute("data-tp-tf");
+      // a new timeframe is a new series, so start at its right edge
+      state.tpSpan = 60; state.tpFrom = TP_BARS; tpClampView(); render();
+    }
+    else if (t.hasAttribute("data-tp-sym")) {
+      state.tpSym = t.getAttribute("data-tp-sym");
+      state.tpTab = "chart";
+      state.tpSpan = 60; state.tpFrom = TP_BARS; tpClampView(); render();
+    }
+    else if (t.hasAttribute("data-tp-add")) {
+      const sym = t.getAttribute("data-tp-add");
+      store.watchlist = tpWatchlist().slice();
+      if (store.watchlist.indexOf(sym) < 0) store.watchlist.push(sym);
+      save(); state.tpQuery = ""; render();
+    }
+    else if (t.hasAttribute("data-tp-del")) {
+      const sym = t.getAttribute("data-tp-del");
+      tpReadQuery();
+      const left = tpWatchlist().filter((x) => x !== sym);
+      // never empty: the chart has to have something to draw
+      store.watchlist = left.length ? left : ["ES"];
+      if (state.tpSym === sym) state.tpSym = null;
+      save(); render();
+    }
+    else if (t.hasAttribute("data-tp-q")) { state.tpQuery = t.getAttribute("data-tp-q"); render(); }
+    else if (t.hasAttribute("data-tp-day")) {
+      const step = Number(t.getAttribute("data-tp-day"));
+      if (step === 0) state.tpDate = null;
+      else {
+        const d = state.tpDate ? new Date(state.tpDate + "T12:00:00") : new Date();
+        d.setDate(d.getDate() + step);
+        state.tpDate = dayKeyOf(d);
+      }
+      render();
+    }
     else if (t.hasAttribute("data-tp-plan")) {
       store.plan = { id: t.getAttribute("data-tp-plan"), wantedAt: new Date().toISOString() };
       /* ==> BACKEND: this only records the interest on the device. Real
