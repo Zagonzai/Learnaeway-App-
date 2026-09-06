@@ -2077,6 +2077,17 @@ select.mt-input {
 /* the single-option confirm rows read as ticked once tapped */
 .bt-opts-1 .bt-opt.on::before { content: "\2713"; margin-right: 7px; font-weight: 800; }
 
+/* Stage 2's nine strategies. Two columns rather than Stage 1's three: the
+   longest of them is "Continuation Pattern", which will not sit on one line at
+   a third of a phone's width, and a pill that wraps mid-word reads worse than
+   a slightly taller grid. The odd one out spans both columns so the row does
+   not end with a gap. */
+.bt-opts-2 .bt-opt:nth-child(odd):last-child { grid-column: 1 / -1; }
+.bt-row .bt-opts-2 .bt-opt { padding: 7px 6px; }
+/* Stage 2's Back sits under the Continue, so it needs the same width and a
+   little air rather than the full-bleed margin btn-secondary carries. */
+.bt-list ~ .btn-secondary { width: 78%; margin: 10px auto 2px; }
+
 /* the summary that replaces the rows on submit */
 .bt-summary {
   width: 100%;

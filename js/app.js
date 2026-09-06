@@ -345,6 +345,23 @@
     session: "Session", pdh: "Previous day high", pdl: "Previous day low",
     htf: "Market structure (HTF)", ltf: "Lower timeframe",
   };
+  /* Stage 2 opens on one question: which strategy is being traded. Single
+     select — the answer is which one, so a second tap moves the choice rather
+     than adding to it. Each will grow its own follow-up questions in a later
+     pass; BT2_STRATS is where those hang off. */
+  const BT2_STRATS = [
+    { id: "orb",         label: "ORB" },
+    { id: "amd",         label: "AMD" },
+    { id: "trend",       label: "Trend" },
+    { id: "trendbreak",  label: "Trend Break" },
+    { id: "imbalance",   label: "Candle Imbalance Fill" },
+    { id: "reversal",    label: "Reversal Pattern" },
+    { id: "continuation", label: "Continuation Pattern" },
+    { id: "fib",         label: "Fib Discount" },
+    { id: "emacross",    label: "EMA Cross" },
+  ];
+  const bt2Label = (id) => (BT2_STRATS.find((x) => x.id === id) || {}).label || "—";
+
   function bt1OptLabel(item, val) {
     const hit = item.opts.find((o) => o[0] === val);
     return hit ? hit[1] : "—";
@@ -1071,16 +1088,50 @@
     </div>`;
   }
 
-  /* Stage 2 is a separate build; until it lands this takes over the same
-     content area rather than opening anything over the top of it. */
-  function bt1Stage2HTML() {
+  /* Stage 2, step 1: which strategy. Same shape as a Stage 1 row — the
+     question in the label pill, the answers as tap-to-select pills under it —
+     so the two stages read as one checklist rather than two screens that
+     happen to follow each other. */
+  function bt2SelectHTML() {
+    const picked = store.beforeTrade.strategy;
+    return `
+      <h1 class="ci-heading">Before Trade · Stage 2</h1>
+      <div class="bt-sub">Strategy</div>
+      <div class="bt-list">
+        <div class="bt-row${picked ? " done" : ""}">
+          <div class="bt-q">Which strategy are you trading?</div>
+          <div class="bt-opts bt-opts-2">
+            ${BT2_STRATS.map((x) => `
+              <button class="bt-opt${picked === x.id ? " on" : ""}"
+                      data-bt2="${x.id}" aria-pressed="${picked === x.id}">${esc(x.label)}</button>`).join("")}
+          </div>
+        </div>
+      </div>
+      <button class="ci-submit${picked ? "" : " off"}"
+        ${picked ? "" : "disabled"} data-bt2-continue>Continue</button>
+      <button class="btn-secondary" data-bt-back>Back to Stage 1</button>`;
+  }
+
+  /* ==> PLACEHOLDER — STRATEGY FOLLOW-UPS GO HERE.
+     Each of the nine strategies gets its own set of questions in a later pass.
+     When they land, this is the branch that gets replaced: switch on
+     store.beforeTrade.strategy and render that strategy's rows the way
+     bt1RowsHTML renders Stage 1's, with their own submit. Nothing below this
+     comment is meant to survive that build except the exits. */
+  function bt2SoonHTML() {
+    const picked = store.beforeTrade.strategy;
     return `<div class="ci-result ci-result-inline">
-      <div class="ci-result-title soon">Stage 2</div>
-      <div class="ci-result-body">Strategy selection and its follow-up questions are
-        being built separately. Your Stage 1 chart read is saved for today.</div>
-      <button class="btn-primary" data-bt-back>Back to Stage 1</button>
+      <div class="ci-result-title soon">${esc(bt2Label(picked))}</div>
+      <div class="ci-result-body">Strategy selected. Its follow-up questions are
+        being built separately — your Stage 1 chart read and this pick are saved
+        for today.</div>
+      <button class="btn-primary" data-bt2-change>Pick a different strategy</button>
       <button class="btn-secondary" data-bt-exit>Back to Check-In</button>
     </div>`;
+  }
+
+  function bt1Stage2HTML() {
+    return state.btStrategyDone ? bt2SoonHTML() : bt2SelectHTML();
   }
 
   function renderBeforeTrade() {
@@ -1090,7 +1141,11 @@
       : state.btResult ? bt1ResultHTML()
       : bt1RowsHTML();
     cardScroll.innerHTML = body + checkinActionsHTML();
-    cardScroll.classList.toggle("ci-resulting", !!(state.btResult || state.btStage2));
+    /* ci-resulting centres a result in the card. Stage 2's selector is a
+       question screen, not a result, so it only applies once the strategy has
+       been picked and the placeholder is showing. */
+    cardScroll.classList.toggle("ci-resulting",
+      !!(state.btResult && !state.btStage2) || !!(state.btStage2 && state.btStrategyDone));
     cardScroll.scrollTop = ciKeepScroll ? ciScrollTop : 0;
     ciKeepScroll = false;
     cardFooter.style.display = "none";
@@ -1103,6 +1158,7 @@
     // arriving always lands on the questions, never a stale summary
     state.btResult = false;
     state.btStage2 = false;
+    state.btStrategyDone = false;
     closeOverlay();
     render();
   }
@@ -7612,7 +7668,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -7761,8 +7817,26 @@
       state.btResult = true;
       renderBeforeTrade();
     }
-    else if (t.hasAttribute("data-bt-stage2")) { state.btStage2 = true; renderBeforeTrade(); }
-    else if (t.hasAttribute("data-bt-back")) { state.btStage2 = false; renderBeforeTrade(); }
+    else if (t.hasAttribute("data-bt-stage2")) {
+      state.btStage2 = true; state.btStrategyDone = false; renderBeforeTrade();
+    }
+    else if (t.hasAttribute("data-bt-back")) {
+      state.btStage2 = false; state.btStrategyDone = false; renderBeforeTrade();
+    }
+    else if (t.hasAttribute("data-bt2")) {
+      const id = t.getAttribute("data-bt2");
+      // single select: tapping the chosen one clears it, tapping another moves it
+      if (store.beforeTrade.strategy === id) delete store.beforeTrade.strategy;
+      else store.beforeTrade.strategy = id;
+      save();
+      renderChecklistInPlace(renderBeforeTrade);
+    }
+    else if (t.hasAttribute("data-bt2-continue")) {
+      if (!store.beforeTrade.strategy) return;
+      state.btStrategyDone = true;
+      renderBeforeTrade();
+    }
+    else if (t.hasAttribute("data-bt2-change")) { state.btStrategyDone = false; renderBeforeTrade(); }
     else if (t.hasAttribute("data-bt-exit")) openCheckin();
     else if (t.hasAttribute("data-pr-edit")) {
       state.profileMode = "edit";
