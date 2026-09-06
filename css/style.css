@@ -5671,3 +5671,119 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
 }
 /* the calendar is one day now, so the day wrapper is gone with it */
 .tp-cal .tp-ev:first-child { border-top: 0; }
+
+/* ===================== PICKÆWAY LOBBY + STAKE =====================
+   The lobby and the stake screen in the app's own glass language: the same
+   .bm-rect pill the other selectors use, gradient-bordered summary panels, and
+   the established green/red for a correct and a wrong call. */
+.bm-help {
+  font-size: calc(11px * var(--fs));
+  line-height: 1.5;
+  color: #8FA9C4;
+  margin: -8px 2px 16px;
+}
+.bm-ins-name { color: var(--cyan); font-weight: 700; }
+.bm-row-3 { grid-template-columns: repeat(3, 1fr); }
+
+/* difficulty gets cards rather than pills — it carries a line of explanation */
+.bm-diffs { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+.bm-diff-card {
+  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
+  padding: 12px 15px;
+  border-radius: 14px;
+  border: 1.5px solid rgba(120,150,180,.3);
+  background: linear-gradient(160deg, rgba(11,18,38,.85), rgba(7,10,24,.9));
+  text-align: left;
+}
+.bm-diff-card.on {
+  border-color: var(--cyan);
+  box-shadow: 0 0 18px -6px rgba(61,223,255,.75), inset 0 0 14px -8px rgba(61,223,255,.9);
+}
+.bm-diff-card:active { filter: brightness(1.25); transform: scale(.99); }
+.bm-diff-t { font-size: calc(14px * var(--fs)); font-weight: 800; color: #7D93AC; }
+.bm-diff-card.on .bm-diff-t { color: var(--cyan); }
+.bm-diff-s { font-size: calc(11px * var(--fs)); color: #8FA9C4; }
+
+/* the two summary panels: match type, and the stake split */
+.bm-sum, .bm-split, .bm-bank {
+  margin: 4px 0 16px;
+  padding: 13px 15px;
+  border-radius: 15px;
+  border: 1px solid var(--pw-line, rgba(61,223,255,.24));
+  background: linear-gradient(160deg, rgba(11,18,38,.9), rgba(7,10,24,.92));
+}
+.bm-sum-head { display: flex; align-items: center; gap: 9px; margin-bottom: 11px; }
+.bm-sum-badge {
+  padding: 3px 11px;
+  border-radius: 999px;
+  border: 1px solid currentColor;
+  font-size: calc(10px * var(--fs)); font-weight: 800;
+  letter-spacing: .1em; text-transform: uppercase;
+}
+.bm-sum-badge.easy { color: var(--pw-bull, #1FCBA0); }
+.bm-sum-badge.medium { color: var(--cyan); }
+.bm-sum-badge.hard { color: var(--pw-bear, #E5484D); }
+.bm-sum-title {
+  font-size: calc(10.5px * var(--fs)); font-weight: 800;
+  letter-spacing: .16em; text-transform: uppercase; color: #8FA9C4;
+}
+.bm-sum-grid { display: grid; grid-template-columns: repeat(2, 1fr); gap: 7px; }
+.bm-sum-cell {
+  padding: 8px 4px;
+  border-radius: 11px;
+  border: 1px solid rgba(120,150,180,.24);
+  background: rgba(4,7,18,.6);
+  text-align: center;
+}
+.bm-sum-cell b {
+  display: block;
+  font-size: calc(15px * var(--fs)); font-weight: 800;
+  font-variant-numeric: tabular-nums; color: var(--text);
+}
+.bm-sum-cell b.up { color: var(--pw-bull, #1FCBA0); }
+.bm-sum-cell b.down { color: var(--pw-bear, #E5484D); }
+.bm-sum-cell span { display: block; font-size: calc(9.5px * var(--fs)); color: #8FA9C4; margin-top: 2px; }
+.bm-sum-say {
+  margin-top: 11px;
+  font-size: calc(11.5px * var(--fs)); line-height: 1.55; color: #C9DDF2;
+}
+
+/* stake screen */
+.bm-bank-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.bm-bank-cap {
+  font-size: calc(10.5px * var(--fs)); font-weight: 800;
+  letter-spacing: .16em; text-transform: uppercase; color: #8FA9C4;
+}
+.bm-bank-val { font-size: calc(21px * var(--fs)); font-weight: 800; color: var(--cyan); font-variant-numeric: tabular-nums; }
+.bm-recap {
+  display: flex; flex-direction: column; gap: 3px;
+  margin-top: 9px; padding-top: 9px;
+  border-top: 1px solid rgba(61,223,255,.16);
+  font-size: calc(11px * var(--fs)); color: #9FC0E0;
+}
+.bm-split-head {
+  font-size: calc(10.5px * var(--fs)); font-weight: 800;
+  letter-spacing: .16em; text-transform: uppercase; color: #8FA9C4;
+  margin-bottom: 9px;
+}
+.bm-split-math {
+  display: flex; align-items: baseline; justify-content: center; gap: 9px;
+  flex-wrap: wrap;
+  margin-bottom: 11px;
+  font-size: calc(11.5px * var(--fs)); color: #8FA9C4;
+}
+.bm-split-math b {
+  font-size: calc(19px * var(--fs)); font-weight: 800;
+  color: var(--cyan); font-variant-numeric: tabular-nums;
+}
+.bm-start ~ .btn-secondary { width: 78%; margin: 10px auto 4px; }
+
+/* what this print is worth, in place of the risk chips the match used to carry */
+.mk-stake {
+  display: flex; justify-content: center; gap: 18px;
+  margin-top: 10px;
+  font-size: calc(11.5px * var(--fs)); color: #8FA9C4;
+}
+.mk-stake b { font-weight: 800; font-variant-numeric: tabular-nums; }
+.mk-stake b.up { color: var(--pw-bull, #1FCBA0); }
+.mk-stake b.down { color: var(--pw-bear, #E5484D); }

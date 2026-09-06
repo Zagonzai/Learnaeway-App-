@@ -1292,123 +1292,223 @@
      the match engine below. Every figure on the screen is a setting or derived
      from one. */
 
-  const BM_INSTRUMENTS = ["ES", "NQ", "YM", "RTY"];
-  const BM_TIMEFRAMES = [1, 2, 3, 5];
-  const BM_CANDLES = [3, 5, 7, 9, 15];
+  /* ---------------- Pickæway lobby and stake ----------------
+     Two screens before a match: what you are watching, then what it costs.
+     This replaces the old timeframe/reaction-window lobby and the per-round
+     risk chips that used to live inside the match — the stake is now set once
+     for the whole match and split across its prints, so nothing about it can
+     change once the tape is running. */
+
+  const BM_INSTRUMENTS = [
+    { id: "ES",  name: "E-mini S&P" },
+    { id: "NQ",  name: "Nasdaq 100" },
+    { id: "YM",  name: "Dow Jones" },
+    { id: "RTY", name: "Russell 2000" },
+  ];
+  const BM_COOLDOWNS = [2, 3, 5, 10, 15];          // minutes on the tape
+  const BM_CANDLES = [5, 10, 15, 20, 25, 30, 35, 40];
+  /* The lock window is a print's share of the match clock divided by this, so
+     a bigger factor is less time to call. Easy leaves most of the print's life
+     to read it; hard takes all but a sliver. */
+  const BM_DIFFS = [
+    { id: "easy",   label: "Easy",   sub: "More time to read the close", factor: 1.2 },
+    { id: "medium", label: "Medium", sub: "Keep the tape moving",        factor: 1.6 },
+    { id: "hard",   label: "Hard",   sub: "Snap calls, no linger",       factor: 2.4 },
+  ];
+  const BM_RISKS = [1, 2, 4, 5, 10, 20];           // dollars, for the whole match
+  /* n:2n — the tier number is the multiple of the base unit put at risk, and
+     twice that is what the print pays. */
+  const BM_TIERS = [1, 2, 3, 4];
   const BM_BANKROLL = 100;
 
-  /* Each timeframe runs its candles in real time at its own compressed pace,
-     and gets its own pair of reaction windows — a 5-minute candle gives you
-     longer to read it than a 1-minute one. Match duration is candleDuration
-     multiplied by the candle count, so the lobby figure is exactly the time
-     the match takes. */
-  const BM_TF_SPEC = {
-    1: { id: "1m", candleDuration: 20, hard: 10, easy: 15 },
-    2: { id: "2m", candleDuration: 35, hard: 15, easy: 30 },
-    3: { id: "3m", candleDuration: 50, hard: 30, easy: 45 },
-    5: { id: "5m", candleDuration: 65, hard: 35, easy: 60 },
-  };
-  function bmSpec(s) { return BM_TF_SPEC[s.timeframe] || BM_TF_SPEC[1]; }
-  function bmWindow(s) { return bmSpec(s)[s.difficulty]; }
-  function bmDuration(s) { return bmSpec(s).candleDuration * s.candles; }
+  const bmInstrument = (id) => BM_INSTRUMENTS.find((x) => x.id === id) || BM_INSTRUMENTS[0];
+  const bmDiff = (id) => BM_DIFFS.find((x) => x.id === id) || BM_DIFFS[1];
 
   function bmSettings() {
     const b = store.buildMatch || {};
+    const has = (list, v) => list.some((x) => (x.id !== undefined ? x.id : x) === v);
     return {
-      instrument: BM_INSTRUMENTS.indexOf(b.instrument) >= 0 ? b.instrument : "ES",
-      timeframe: BM_TIMEFRAMES.indexOf(b.timeframe) >= 0 ? b.timeframe : 1,
-      candles: BM_CANDLES.indexOf(b.candles) >= 0 ? b.candles : 3,
-      difficulty: b.difficulty === "easy" ? "easy" : "hard",
+      instrument: has(BM_INSTRUMENTS, b.instrument) ? b.instrument : "ES",
+      cooldown: BM_COOLDOWNS.indexOf(b.cooldown) >= 0 ? b.cooldown : 5,
+      candles: BM_CANDLES.indexOf(b.candles) >= 0 ? b.candles : 10,
+      difficulty: has(BM_DIFFS, b.difficulty) ? b.difficulty : "medium",
+      risk: BM_RISKS.indexOf(b.risk) >= 0 ? b.risk : 5,
+      tier: BM_TIERS.indexOf(b.tier) >= 0 ? b.tier : 2,
     };
   }
 
   function bmSet(key, value) {
     store.buildMatch = Object.assign(bmSettings(), { [key]: value });
     save();
-    renderBuildMatch();
+    if (state.view === "stake") renderStake(); else renderBuildMatch();
+  }
+
+  /* Every derived number in one place, so the lobby, the stake screen and the
+     match itself cannot disagree about what the match is. */
+  function bmDerived(s) {
+    const clockSecs = s.cooldown * 60;
+    const perPrint = clockSecs / s.candles;
+    // never less than a second to call, however tight the settings get
+    const lock = Math.max(1, perPrint / bmDiff(s.difficulty).factor);
+    const baseUnit = s.risk / s.candles;
+    return {
+      clockSecs, perPrint,
+      lock: Math.round(lock * 10) / 10,
+      onTape: Math.round(lock * s.candles),
+      baseUnit,
+      riskPerCandle: baseUnit * s.tier,
+      winPerCandle: baseUnit * s.tier * 2,
+      allRight: baseUnit * s.tier * 2 * s.candles,
+      allWrong: baseUnit * s.tier * s.candles,
+    };
   }
 
   function durationLabel(secs) {
-    return `${Math.floor(secs / 60)}m ${secs % 60}s`;
+    const m = Math.floor(secs / 60), r = Math.round(secs % 60);
+    return `${m}m ${r}s`;
   }
+  const clockLabel = (secs) => {
+    const m = Math.floor(secs / 60), r = Math.round(secs % 60);
+    return `${m}:${String(r).padStart(2, "0")}`;
+  };
+  const bmMoney = (n) => "$" + n.toFixed(2);
 
-  function bmOverview(s) {
-    return [
-      { v: s.instrument, l: "Instrument" },
-      { v: `${s.timeframe}m`, l: "Time Frame" },
-      { v: String(s.candles), l: "Candles" },
-      { v: `${bmWindow(s)}s`, l: "Reaction Window" },
-      { v: s.difficulty.toUpperCase(), l: "Difficulty" },
-      { v: `${bmSpec(s).candleDuration}s`, l: "Per Candle" },
-    ];
+  function bmPillRow(list, current, attr, label, cols) {
+    return `<div class="bm-row bm-row-${cols}">
+      ${list.map((x) => {
+        const v = x.id !== undefined ? x.id : x;
+        return `<button class="bm-rect ${current === v ? "on" : ""}" data-${attr}="${esc(String(v))}"
+          aria-pressed="${current === v}">${esc(label(x))}</button>`;
+      }).join("")}
+    </div>`;
   }
 
   function renderBuildMatch() {
     const s = bmSettings();
+    const d = bmDerived(s);
+    const ins = bmInstrument(s.instrument);
     barTitle.textContent = "Pickæway";
     const pickName = document.querySelector("#pickBar .pick-name");
     if (pickName) pickName.textContent = "Build Match";
     cardScroll.innerHTML = `
-      <div class="bm-stats">
-        <div class="bm-stat bm-stat-dur">
-          <div class="bm-cap">Match Duration</div>
-          <div class="bm-val">${durationLabel(bmDuration(s))}</div>
-        </div>
-        <div class="bm-stat bm-stat-bank">
-          <div class="bm-cap">Bank Roll</div>
-          <div class="bm-val">${plainMoney(BM_BANKROLL)}
-            <span class="bm-bankicon" aria-hidden="true">
-              <svg viewBox="0 0 24 18"><rect x="1.2" y="1.2" width="21.6" height="15.6" rx="4"
-                fill="none" stroke="currentColor" stroke-width="1.6"/>
-                <circle cx="12" cy="9" r="3.4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg>
-            </span>
-          </div>
-        </div>
-      </div>
-      <div class="bm-reward"><span class="bm-reward-tag">Reward</span></div>
-
       <div class="bm-label">Instrument</div>
-      <div class="bm-row bm-row-4">
-        ${BM_INSTRUMENTS.map((x) => `
-          <button class="bm-circle ${s.instrument === x ? "on" : ""}" data-bmins="${x}">${x}</button>`).join("")}
+      ${bmPillRow(BM_INSTRUMENTS, s.instrument, "bmins", (x) => x.id, 4)}
+      <div class="bm-help bm-ins-name">${esc(ins.id)} — ${esc(ins.name)}</div>
+
+      <div class="bm-label">Cooldown</div>
+      ${bmPillRow(BM_COOLDOWNS, s.cooldown, "bmcool", (x) => `${x} min`, 5)}
+      <div class="bm-help">How long you sit with the tape. Each print stays live
+        until its share of this time dies.</div>
+
+      <div class="bm-label">Candles to call</div>
+      ${bmPillRow(BM_CANDLES, s.candles, "bmcd", (x) => String(x), 4)}
+      <div class="bm-help">Call anytime before this print dies. More prints = a
+        faster lock.</div>
+
+      <div class="bm-label">Difficulty</div>
+      <div class="bm-diffs">
+        ${BM_DIFFS.map((x) => `
+          <button class="bm-diff-card${s.difficulty === x.id ? " on" : ""}" data-bmdiff="${x.id}"
+                  aria-pressed="${s.difficulty === x.id}">
+            <span class="bm-diff-t">${esc(x.label)}</span>
+            <span class="bm-diff-s">${esc(x.sub)}</span>
+          </button>`).join("")}
+      </div>
+      <div class="bm-help">How the tape feels. The lock is still the print clock
+        — submit before it hits 0.</div>
+
+      <div class="bm-sum">
+        <div class="bm-sum-head">
+          <span class="bm-sum-badge ${s.difficulty}">${esc(bmDiff(s.difficulty).label)}</span>
+          <span class="bm-sum-title">Match type</span>
+        </div>
+        <div class="bm-sum-grid">
+          <div class="bm-sum-cell"><b>${clockLabel(d.clockSecs)}</b><span>Match clock</span></div>
+          <div class="bm-sum-cell"><b>${s.candles}</b><span>Prints</span></div>
+          <div class="bm-sum-cell"><b>${d.lock.toFixed(1)}s</b><span>Lock per print</span></div>
+          <div class="bm-sum-cell"><b>${durationLabel(d.onTape)}</b><span>Time on tape</span></div>
+        </div>
+        <div class="bm-sum-say">Match clock starts at ${clockLabel(d.clockSecs)}. Each
+          print has ${d.lock.toFixed(1)}s to lock green or red — submit before it
+          dies. Last second flashes. Close stays hidden until 0, then the next
+          print is live.</div>
       </div>
 
-      <div class="bm-label">Timeframe</div>
-      <div class="bm-row bm-row-4">
-        ${BM_TIMEFRAMES.map((x) => `
-          <button class="bm-rect ${s.timeframe === x ? "on" : ""}" data-bmtf="${x}">${x} MIN</button>`).join("")}
-      </div>
-
-      <div class="bm-label">Candles</div>
-      <div class="bm-row bm-row-5">
-        ${BM_CANDLES.map((x) => `
-          <button class="bm-rect ${s.candles === x ? "on" : ""}" data-bmcd="${x}">${x}</button>`).join("")}
-      </div>
-
-      <div class="bm-diff">
-        <button class="bm-rect bm-diff-btn hard ${s.difficulty === "hard" ? "on" : ""}" data-bmdiff="hard">
-          <span class="bm-diff-name">Hard</span><span class="bm-diff-secs">${bmSpec(s).hard}s</span>
-        </button>
-        <span class="bm-diff-mid">To React</span>
-        <button class="bm-rect bm-diff-btn easy ${s.difficulty === "easy" ? "on" : ""}" data-bmdiff="easy">
-          <span class="bm-diff-secs">${bmSpec(s).easy}s</span><span class="bm-diff-name">Easy</span>
-        </button>
-      </div>
-
-      <div class="bm-rule" aria-hidden="true"></div>
-      <div class="bm-label">Match Overview</div>
-      <div class="bm-overview">
-        ${bmOverview(s).map((o) => `
-          <div class="bm-badge">
-            <span class="bm-badge-box"><span class="bm-badge-val">${esc(o.v)}</span></span>
-            <span class="bm-badge-lbl">${esc(o.l)}</span>
-          </div>`).join("")}
-      </div>
-
-      <button class="bm-start" data-bmstart>Start Match</button>
-      <div class="bm-note">Matched only against players with the exact same settings</div>`;
-    cardScroll.scrollTop = 0;
+      <button class="bm-start" data-bmstake>Set stake</button>`;
+    cardScroll.scrollTop = bmKeepScroll ? bmScrollTop : 0;
+    bmKeepScroll = false;
     cardFooter.style.display = "none";
+  }
+
+  /* Changing a setting rebuilds the whole screen, and the reader should stay
+     where they were rather than being thrown back to the top — the same
+     mechanism the checklists and the journal use. */
+  let bmKeepScroll = false, bmScrollTop = 0;
+  function bmRenderInPlace(fn) {
+    bmScrollTop = cardScroll.scrollTop;
+    bmKeepScroll = true;
+    fn();
+  }
+
+  function renderStake() {
+    const s = bmSettings();
+    const d = bmDerived(s);
+    const ins = bmInstrument(s.instrument);
+    barTitle.textContent = "Pickæway";
+    const pickName = document.querySelector("#pickBar .pick-name");
+    if (pickName) pickName.textContent = "Size the Tape";
+    cardScroll.innerHTML = `
+      <div class="bm-bank">
+        <div class="bm-bank-top">
+          <span class="bm-bank-cap">Bankroll</span>
+          <span class="bm-bank-val">${plainMoney(BM_BANKROLL)}</span>
+        </div>
+        <div class="bm-recap">
+          <span>${esc(ins.id)} · ${esc(ins.name)}</span>
+          <span>${s.cooldown} min · ${s.candles} prints</span>
+          <span>${esc(bmDiff(s.difficulty).label)} · ${d.lock.toFixed(1)}s lock</span>
+        </div>
+      </div>
+
+      <div class="bm-label">Risk this match</div>
+      ${bmPillRow(BM_RISKS, s.risk, "bmrisk", (x) => "$" + x, 3)}
+      <div class="bm-help">The total for the whole match, not per candle.</div>
+
+      <div class="bm-label">Reward</div>
+      ${bmPillRow(BM_TIERS, s.tier, "bmtier", (x) => `${x}:${x * 2}`, 4)}
+
+      <div class="bm-split">
+        <div class="bm-split-head">Split across ${s.candles} prints</div>
+        <div class="bm-split-math">
+          <span>${bmMoney(s.risk)} ÷ ${s.candles}</span>
+          <b>${bmMoney(d.baseUnit)}</b>
+          <span>base unit</span>
+        </div>
+        <div class="bm-sum-grid">
+          <div class="bm-sum-cell"><b class="down">${bmMoney(d.riskPerCandle)}</b><span>Per print risk</span></div>
+          <div class="bm-sum-cell"><b class="up">${bmMoney(d.winPerCandle)}</b><span>Per print win</span></div>
+          <div class="bm-sum-cell"><b class="up">+${bmMoney(d.allRight)}</b><span>All correct</span></div>
+          <div class="bm-sum-cell"><b class="down">−${bmMoney(d.allWrong)}</b><span>All wrong</span></div>
+        </div>
+        <div class="bm-sum-say">Call it right and that print pays
+          ${bmMoney(d.winPerCandle)}. Call it wrong and you lose
+          ${bmMoney(d.riskPerCandle)}. Miss the window and that print stays flat.</div>
+      </div>
+
+      <button class="bm-start" data-bmstart>Start match</button>
+      <button class="btn-secondary" data-bmback>Back to Build Match</button>`;
+    cardScroll.scrollTop = bmKeepScroll ? bmScrollTop : 0;
+    bmKeepScroll = false;
+    cardFooter.style.display = "none";
+  }
+
+  function openStake() {
+    stopAudio();
+    state.view = "stake";
+    state.slideDir = 0;
+    state.panel = null;
+    closeOverlay();
+    render();
   }
 
   function openBuildMatch() {
@@ -1596,14 +1696,19 @@
 
   function startMatch() {
     const s = bmSettings();
-    const spec = bmSpec(s);
+    const d = bmDerived(s);
     mkAbort();
+    /* The tape is still aggregated from 30-second bars; a print's length now
+       comes from the match clock rather than from a fixed timeframe, so the
+       nearest aggregation to that length is what the chart is built from. */
+    const spec = mkSpecForPrint(d.perPrint);
     const need = (MK_HISTORY + s.candles + 2) * (MK_BARS_30S[spec.id] || 2);
     mk.on = true;
     mk.s = s;
+    mk.d = d;
     mk.spec = spec;
-    mk.win = bmWindow(s);
-    mk.dur = spec.candleDuration;
+    mk.win = d.lock;                 // seconds to lock this print
+    mk.dur = d.perPrint;             // how long the print lives
     mk.tf = mkAggregate(genSession30s(s.instrument, need), spec.id);
     mk.rounds = s.candles;
     mk.round = 0;
@@ -1613,14 +1718,32 @@
     mk.ptsA = 0;
     mk.log = [];
     mk.expand = false;
-    mk.risk = 10;
-    mk.rrIdx = 1;
+    /* Fixed for the match. The stake screen already split it across the
+       prints, so there is nothing left to choose once the tape is running —
+       which is why the in-match risk and R:R chips are gone. */
+    mk.risk = d.riskPerCandle;
+    mk.win$ = d.winPerCandle;
     stopAudio();
     state.view = "match";
     state.slideDir = 0;
     closeOverlay();
     mkBeginRound();
     render();
+  }
+
+  /* The chart aggregates 30s bars into prints. Pick the aggregation closest to
+     how long a print actually lives, so a 3-second print is not drawn from
+     5-minute bars and a 3-minute one is not drawn from 1-minute bars. */
+  function mkSpecForPrint(secs) {
+    const opts = [
+      { id: "1m", at: 60 }, { id: "2m", at: 120 },
+      { id: "3m", at: 180 }, { id: "5m", at: 300 },
+    ];
+    let best = opts[0];
+    opts.forEach((o) => {
+      if (Math.abs(o.at - secs) < Math.abs(best.at - secs)) best = o;
+    });
+    return best;
   }
 
   function mkBeginRound() {
@@ -1695,8 +1818,10 @@
     const pPts = calcRoundPoints(pCorrect, pSecs, mk.win, missed, pFirst);
     const aPts = calcRoundPoints(aCorrect, mk.ai.reactionSecs, mk.win, false, aFirst);
 
-    // a missed round costs nothing — it is the same as not taking the trade
-    if (!missed) mk.bankP += pCorrect ? mk.risk * MK_RRS[mk.rrIdx].m : -mk.risk;
+    /* A missed print is flat: no win, no loss, no change to the bankroll —
+       the same as not taking the trade. A called one settles at the per-print
+       amounts the stake screen fixed for the whole match. */
+    if (!missed) mk.bankP += pCorrect ? mk.win$ : -mk.risk;
     mk.bankA += aCorrect ? mk.ai.risk * MK_RRS[mk.ai.rrIdx].m : -mk.ai.risk;
     mk.ptsP += pPts;
     mk.ptsA += aPts;
@@ -1705,7 +1830,7 @@
       round: mk.round + 1,
       actualDir,
       playerDir: missed ? "missed" : mk.pick,
-      playerRisk: mk.risk, playerRRIdx: mk.rrIdx,
+      playerRisk: mk.risk, playerWin: mk.win$,
       playerCorrect: pCorrect, playerReactionSecs: pSecs,
       playerReactedFirst: pFirst, playerPoints: pPts,
       aiDir: mk.ai.direction,
@@ -1894,7 +2019,7 @@
       const label = r.playerDir === "missed" ? "Missed"
         : (r.playerCorrect ? "Correct" : "Wrong");
       const pnl = r.playerDir === "missed" ? 0
-        : (r.playerCorrect ? r.playerRisk * MK_RRS[r.playerRRIdx].m : -r.playerRisk);
+        : (r.playerCorrect ? r.playerWin : -r.playerRisk);
       return `
         <div class="mk-resolved ${cls}">
           <div class="mk-resolved-head">${label}</div>
@@ -1909,7 +2034,7 @@
         <div class="mk-waiting">
           <div class="mk-waiting-head">Candle closing</div>
           <div class="mk-waiting-sub">${mk.pick
-            ? `Locked ${mk.pick === "green" ? "Green ▲" : "Red ▼"} at ${mk.lockedAt}s · ${plainMoney(mk.risk)} at ${MK_RRS[mk.rrIdx].label}`
+            ? `Locked ${mk.pick === "green" ? "Green ▲" : "Red ▼"} at ${mk.lockedAt}s · ${bmMoney(mk.risk)} to win ${bmMoney(mk.win$)}`
             : "No call made — this round scores nothing and costs nothing"}</div>
         </div>`;
     }
@@ -1917,19 +2042,22 @@
       return `
         <div class="mk-waiting locked">
           <div class="mk-waiting-head">Locked in ${mk.pick === "green" ? "Green ▲" : "Red ▼"}</div>
-          <div class="mk-waiting-sub">${mk.lockedAt}s · ${plainMoney(mk.risk)} at ${MK_RRS[mk.rrIdx].label}
-            · ${plainMoney(mk.risk * MK_RRS[mk.rrIdx].m)} to win</div>
+          <div class="mk-waiting-sub">${mk.lockedAt}s · risking ${bmMoney(mk.risk)}
+            · ${bmMoney(mk.win$)} to win</div>
         </div>`;
     }
+    /* No risk or R:R chips any more. Both were set once on the stake screen
+       and split across the prints, so there is nothing here to choose — only
+       a reminder of what this print is worth. */
     return `
       <div class="mk-calls">
         <button class="mk-call green" data-mkpick="green"><span>▲</span> Green</button>
         <button class="mk-call red" data-mkpick="red"><span>▼</span> Red</button>
       </div>
-      <div class="bm-label">Risk</div>
-      <div class="mk-row mk-row-6">${mkChipRow(MK_RISKS, MK_RISKS.indexOf(mk.risk), "mkrisk", (v) => "$" + v)}</div>
-      <div class="bm-label">Risk : Reward</div>
-      <div class="mk-row mk-row-4">${mkChipRow(MK_RRS, mk.rrIdx, "mkrr", (v) => v.label)}</div>`;
+      <div class="mk-stake">
+        <span>Risking <b class="down">${bmMoney(mk.risk)}</b></span>
+        <span>To win <b class="up">${bmMoney(mk.win$)}</b></span>
+      </div>`;
   }
 
   function mkScoreHTML() {
@@ -2005,7 +2133,7 @@
           </div>
           ${rows.map((r) => {
             const miss = r.playerDir === "missed";
-            const pCh = miss ? 0 : (r.playerCorrect ? r.playerRisk * MK_RRS[r.playerRRIdx].m : -r.playerRisk);
+            const pCh = miss ? 0 : (r.playerCorrect ? r.playerWin : -r.playerRisk);
             const aCh = r.aiCorrect ? r.aiRisk * MK_RRS[r.aiRRIdx].m : -r.aiRisk;
             const pCls = miss ? "n" : (r.playerCorrect ? "g" : "r");
             const aCls = r.aiCorrect ? "g" : "r";
@@ -2184,7 +2312,7 @@
     }
     const r = rv.snap.log[rv.sel];
     const miss = r.playerDir === "missed";
-    const pnl = miss ? 0 : (r.playerCorrect ? r.playerRisk * MK_RRS[r.playerRRIdx].m : -r.playerRisk);
+    const pnl = miss ? 0 : (r.playerCorrect ? r.playerWin : -r.playerRisk);
     const cls = miss ? "n" : (r.playerCorrect ? "g" : "r");
     return `
       <div class="rv-detail ${cls}">
@@ -2196,7 +2324,7 @@
           <div><span>Your call</span><b>${miss ? "—" : (r.playerDir === "green" ? "Green ▲" : "Red ▼")}</b></div>
           <div><span>Candle</span><b>${r.actualDir === "green" ? "Green ▲" : "Red ▼"}</b></div>
           <div><span>Risk</span><b>${miss ? "—" : plainMoney(r.playerRisk)}</b></div>
-          <div><span>R:R</span><b>${miss ? "—" : MK_RRS[r.playerRRIdx].label}</b></div>
+          <div><span>Stake</span><b>${miss ? "—" : bmMoney(r.playerRisk) + " → " + bmMoney(r.playerWin)}</b></div>
           <div><span>P&amp;L</span><b class="${cls}">${miss ? "$0" : money(pnl)}</b></div>
           <div><span>Reaction</span><b>${miss ? "—" : r.playerReactionSecs + "s"}</b></div>
           <div><span>Points</span><b>+${r.playerPoints.toFixed(2)}</b></div>
@@ -6180,7 +6308,7 @@
 
   /* every Gameæway view — the selector and both games — shares the same bar
      and the same dock slot */
-  const PK_VIEWS = ["games", "pickaeway", "buildmatch", "match", "result", "replay", "pointaeway", "placeaway"];
+  const PK_VIEWS = ["games", "pickaeway", "buildmatch", "stake", "match", "result", "replay", "pointaeway", "placeaway"];
   function inPickaeway() { return PK_VIEWS.indexOf(state.view) >= 0; }
 
   /* ring behind whichever dock icon matches the section you're in */
@@ -6237,6 +6365,7 @@
     else if (state.view === "pickaeway") renderPickaeway();
     else if (state.view === "pointaeway") renderPointaeway();
     else if (state.view === "buildmatch") renderBuildMatch();
+    else if (state.view === "stake") renderStake();
     else if (state.view === "match") renderMatch();
     else if (state.view === "result") renderResult();
     else if (state.view === "replay") renderReplay();
@@ -7668,7 +7797,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmtf],[data-bmcd],[data-bmdiff],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -7952,14 +8081,17 @@
           <button class="btn-primary" data-close>Got it</button>`);
       }
     }
-    else if (t.dataset.bmins) bmSet("instrument", t.dataset.bmins);
-    else if (t.dataset.bmtf) bmSet("timeframe", +t.dataset.bmtf);
-    else if (t.dataset.bmcd) bmSet("candles", +t.dataset.bmcd);
-    else if (t.dataset.bmdiff) bmSet("difficulty", t.dataset.bmdiff);
+    else if (t.dataset.bmins) bmRenderInPlace(() => bmSet("instrument", t.dataset.bmins));
+    else if (t.dataset.bmcd) bmRenderInPlace(() => bmSet("candles", +t.dataset.bmcd));
+    else if (t.dataset.bmdiff) bmRenderInPlace(() => bmSet("difficulty", t.dataset.bmdiff));
     else if (t.hasAttribute("data-bmstart")) startMatch();
+    else if (t.hasAttribute("data-bmstake")) openStake();
+    else if (t.hasAttribute("data-bmback")) openBuildMatch();
+    else if (t.dataset.bmcool) bmRenderInPlace(() => bmSet("cooldown", +t.dataset.bmcool));
+    else if (t.dataset.bmrisk) bmRenderInPlace(() => bmSet("risk", +t.dataset.bmrisk));
+    else if (t.dataset.bmtier) bmRenderInPlace(() => bmSet("tier", +t.dataset.bmtier));
     else if (t.dataset.mkpick) mkLock(t.dataset.mkpick);
-    else if (t.dataset.mkrisk) { mk.risk = MK_RISKS[+t.dataset.mkrisk]; renderMatch(); }
-    else if (t.dataset.mkrr) { mk.rrIdx = +t.dataset.mkrr; renderMatch(); }
+
     else if (t.hasAttribute("data-mkexpand")) {
       if (state.view === "match") { mk.expand = !mk.expand; renderMatch(); }
       else {
