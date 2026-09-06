@@ -5676,41 +5676,74 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
    The lobby and the stake screen in the app's own glass language: the same
    .bm-rect pill the other selectors use, gradient-bordered summary panels, and
    the established green/red for a correct and a wrong call. */
-.bm-help {
-  font-size: calc(11px * var(--fs));
-  line-height: 1.5;
-  color: #8FA9C4;
-  margin: -8px 2px 16px;
+/* Both screens have to land in one view, so the lobby and the stake screen
+   run tighter than the rest of the app: smaller labels, less air between
+   sections, and no explanatory paragraphs. */
+.bm-lobby { padding-bottom: 2px; }
+/* the label carries the instrument's full name on its own right-hand end, so
+   the name costs a line of its own nothing */
+.bm-lobby .bm-label {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+  margin: 0 4px 4px 2px;
 }
-.bm-ins-name { color: var(--cyan); font-weight: 700; }
+.bm-lobby .bm-row { gap: 6px; margin-bottom: 8px; }
+.bm-lobby .bm-rect { min-height: 36px; font-size: calc(12px * var(--fs)); }
+.bm-ins-name {
+  color: var(--cyan); font-weight: 700;
+  font-size: calc(10.5px * var(--fs));
+  letter-spacing: .02em; text-transform: none;
+}
 .bm-row-3 { grid-template-columns: repeat(3, 1fr); }
+.bm-row-6 { grid-template-columns: repeat(6, 1fr); }
+.bm-row-8 { grid-template-columns: repeat(8, 1fr); }
+/* eight candle counts and six risk amounts each want one line, so they run
+   narrower than the four- and five-across rows above them */
+.bm-lobby .bm-row-6, .bm-lobby .bm-row-8 { gap: 4px; }
+.bm-lobby .bm-row-8 .bm-rect { font-size: calc(11px * var(--fs)); padding: 0 1px; }
 
 /* difficulty gets cards rather than pills — it carries a line of explanation */
-.bm-diffs { display: flex; flex-direction: column; gap: 8px; margin-bottom: 16px; }
+/* One column of small boxes rather than three cards across: narrow enough
+   that none of them reaches the edge, which is what keeps the screen from
+   reading as three big slabs. */
+.bm-diffs {
+  display: flex; flex-direction: column; align-items: center;
+  gap: 4px; margin-bottom: 8px;
+}
 .bm-diff-card {
-  display: flex; flex-direction: column; align-items: flex-start; gap: 2px;
-  padding: 12px 15px;
-  border-radius: 14px;
+  width: 74%;
+  display: flex; flex-direction: column; align-items: center; gap: 0;
+  padding: 4px 12px;
+  border-radius: 12px;
   border: 1.5px solid rgba(120,150,180,.3);
   background: linear-gradient(160deg, rgba(11,18,38,.85), rgba(7,10,24,.9));
-  text-align: left;
+  text-align: center;
 }
 .bm-diff-card.on {
   border-color: var(--cyan);
   box-shadow: 0 0 18px -6px rgba(61,223,255,.75), inset 0 0 14px -8px rgba(61,223,255,.9);
 }
 .bm-diff-card:active { filter: brightness(1.25); transform: scale(.99); }
-.bm-diff-t { font-size: calc(14px * var(--fs)); font-weight: 800; color: #7D93AC; }
+.bm-diff-t { font-size: calc(12.5px * var(--fs)); font-weight: 800; color: #7D93AC; }
 .bm-diff-card.on .bm-diff-t { color: var(--cyan); }
-.bm-diff-s { font-size: calc(11px * var(--fs)); color: #8FA9C4; }
+.bm-diff-s { font-size: calc(9.5px * var(--fs)); line-height: 1.25; color: #8FA9C4; }
 
 /* the two summary panels: match type, and the stake split */
 .bm-sum, .bm-split, .bm-bank {
-  margin: 4px 0 16px;
-  padding: 13px 15px;
-  border-radius: 15px;
+  margin: 0 0 8px;
+  padding: 8px 14px;
+  border-radius: 14px;
   border: 1px solid var(--pw-line, rgba(61,223,255,.24));
   background: linear-gradient(160deg, rgba(11,18,38,.9), rgba(7,10,24,.92));
+}
+.bm-sum-line {
+  display: flex; align-items: baseline; justify-content: space-between; gap: 10px;
+  padding: 3px 0;
+  font-size: calc(11.5px * var(--fs)); color: #8FA9C4;
+}
+.bm-sum-line + .bm-sum-line { border-top: 1px solid rgba(61,223,255,.12); }
+.bm-sum-line b {
+  font-size: calc(14px * var(--fs)); font-weight: 800;
+  color: var(--text); font-variant-numeric: tabular-nums;
 }
 .bm-sum-head { display: flex; align-items: center; gap: 9px; margin-bottom: 11px; }
 .bm-sum-badge {
@@ -5749,34 +5782,126 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
 }
 
 /* stake screen */
-.bm-bank-top { display: flex; align-items: baseline; justify-content: space-between; gap: 10px; }
+.bm-bank { text-align: center; }
 .bm-bank-cap {
   font-size: calc(10.5px * var(--fs)); font-weight: 800;
   letter-spacing: .16em; text-transform: uppercase; color: #8FA9C4;
 }
-.bm-bank-val { font-size: calc(21px * var(--fs)); font-weight: 800; color: var(--cyan); font-variant-numeric: tabular-nums; }
+.bm-bank-val {
+  display: block; margin-top: 2px;
+  font-size: calc(24px * var(--fs)); font-weight: 800;
+  color: var(--cyan); font-variant-numeric: tabular-nums;
+}
 .bm-recap {
   display: flex; flex-direction: column; gap: 3px;
   margin-top: 9px; padding-top: 9px;
   border-top: 1px solid rgba(61,223,255,.16);
   font-size: calc(11px * var(--fs)); color: #9FC0E0;
 }
-.bm-split-head {
-  font-size: calc(10.5px * var(--fs)); font-weight: 800;
-  letter-spacing: .16em; text-transform: uppercase; color: #8FA9C4;
-  margin-bottom: 9px;
-}
 .bm-split-math {
   display: flex; align-items: baseline; justify-content: center; gap: 9px;
   flex-wrap: wrap;
-  margin-bottom: 11px;
-  font-size: calc(11.5px * var(--fs)); color: #8FA9C4;
+  margin-bottom: 8px;
+  font-size: calc(11px * var(--fs)); color: #8FA9C4;
 }
 .bm-split-math b {
   font-size: calc(19px * var(--fs)); font-weight: 800;
   color: var(--cyan); font-variant-numeric: tabular-nums;
 }
-.bm-start ~ .btn-secondary { width: 78%; margin: 10px auto 4px; }
+/* the CTA is the last thing on either screen, so its bottom margin is dead
+   height that pushes the button off the view */
+.bm-lobby .bm-start { margin: 2px 0 0; height: 58px; }
+.bm-start ~ .btn-secondary { width: 78%; margin: 6px auto 0; padding: 8px; }
+.bm-lobby .bm-sum-cell { padding: 6px 3px; }
+.bm-lobby .bm-sum-cell b { font-size: calc(14px * var(--fs)); }
+
+/* Short screens: the two setup screens still have to land in one view, so
+   below these heights the sections lose their air, the difficulty boxes lose
+   their subtitles, and the type steps down — the same tiering Placeæway's
+   setup uses. Nothing is removed; it only gets tighter. */
+@media (max-height: 900px) {
+  .bm-lobby { padding-bottom: 0; }
+  .bm-lobby .bm-label { margin-bottom: 3px; }
+  .bm-lobby .bm-row { margin-bottom: 6px; }
+  .bm-diffs { gap: 3px; margin-bottom: 6px; }
+  .bm-diff-card { padding: 3px 12px; }
+  .bm-diff-s { line-height: 1.2; }
+  .bm-sum, .bm-split, .bm-bank { margin-bottom: 6px; padding: 6px 14px; }
+  .bm-sum-line { padding: 2px 0; }
+  .bm-split-math { margin-bottom: 6px; }
+  .bm-lobby .bm-start { height: 54px; }
+  .bm-start ~ .btn-secondary { margin-top: 5px; padding: 6px; }
+}
+@media (max-height: 740px) {
+  .bm-lobby { padding-bottom: 0; }
+  .bm-lobby .bm-label {
+    font-size: calc(9.5px * var(--fs)); margin-bottom: 2px;
+    letter-spacing: .13em; line-height: 1.1;
+  }
+  .bm-lobby .bm-row { gap: 5px; margin-bottom: 4px; }
+  .bm-lobby .bm-rect { min-height: 27px; padding: 2px 3px; font-size: calc(11.5px * var(--fs)); }
+  .bm-lobby .bm-row-8 .bm-rect { font-size: calc(10.5px * var(--fs)); }
+  .bm-ins-name { font-size: calc(9.5px * var(--fs)); }
+  .bm-diffs { gap: 2px; margin-bottom: 4px; }
+  .bm-diff-card { min-height: 19px; padding: 0 10px; border-radius: 10px; justify-content: center; }
+  .bm-diff-s { display: none; }
+  .bm-diff-t { font-size: calc(11.5px * var(--fs)); line-height: 1.15; }
+  .bm-sum, .bm-split, .bm-bank { margin-bottom: 4px; padding: 2px 12px; }
+  .bm-sum-line { padding: 0; font-size: calc(10px * var(--fs)); line-height: 1.15; }
+  .bm-sum-line b { font-size: calc(12.5px * var(--fs)); }
+  .bm-bank-val { font-size: calc(19px * var(--fs)); }
+  .bm-split-math { margin-bottom: 5px; }
+  .bm-split-math b { font-size: calc(16px * var(--fs)); }
+  /* the four stake figures go to one row rather than two — a short screen
+     cannot spare the second */
+  .bm-lobby .bm-sum-grid { grid-template-columns: repeat(4, 1fr); gap: 4px; }
+  .bm-lobby .bm-sum-cell { padding: 3px 1px; }
+  .bm-lobby .bm-sum-cell b { font-size: calc(11.5px * var(--fs)); }
+  .bm-lobby .bm-sum-cell span { font-size: calc(8px * var(--fs)); margin-top: 1px; }
+  /* the CTA is a 9-slice with 26px caps top and bottom, so 54px is as short as
+     it goes before the frame starts squashing; its bottom margin is the last
+     thing on the screen and buys nothing */
+  .bm-lobby .bm-start { margin: 0; height: 46px; font-size: calc(14px * var(--fs)); }
+  .bm-start ~ .btn-secondary { margin: 4px auto 0; padding: 5px; }
+}
+/* Below this the card is under 320px tall and five labelled sections plus a
+   CTA no longer fit however tight the type gets, so the difficulty boxes give
+   up the single column and run three across — still small boxes, still short
+   of the edges, and the screen lands in one view. The cut-off is 660 rather
+   than 620 because a 640-tall phone's card is smaller than a 568-tall one's
+   was: the chrome above it does not shrink at the same rate. */
+@media (max-height: 660px) {
+  .bm-lobby { padding-bottom: 0; }
+  .bm-lobby .bm-label { margin-bottom: 1px; letter-spacing: .1em; line-height: 1.1; }
+  .bm-lobby .bm-row { gap: 4px; margin-bottom: 3px; }
+  .bm-lobby .bm-rect { min-height: 24px; padding: 1px 3px; font-size: calc(10.5px * var(--fs)); }
+  .bm-lobby .bm-row-8 .bm-rect { font-size: calc(9.5px * var(--fs)); }
+  .bm-diffs {
+    flex-direction: row; justify-content: center;
+    gap: 4px; margin-bottom: 3px;
+  }
+  .bm-diff-card { width: 28%; padding: 1px 4px; }
+  .bm-diff-t { font-size: calc(10.5px * var(--fs)); }
+  .bm-sum, .bm-split, .bm-bank { margin-bottom: 3px; padding: 2px 10px; }
+  .bm-sum-line { padding: 0; font-size: calc(9.5px * var(--fs)); line-height: 1.2; }
+  .bm-sum-line b { font-size: calc(10.5px * var(--fs)); }
+  .bm-bank-cap { font-size: calc(9px * var(--fs)); line-height: 1.1; }
+  .bm-bank-val { font-size: calc(14px * var(--fs)); margin-top: 0; line-height: 1.15; }
+  .bm-split-math { margin-bottom: 0; font-size: calc(10px * var(--fs)); }
+  .bm-split-math b { font-size: calc(14px * var(--fs)); }
+  .bm-lobby .bm-sum-grid { gap: 3px; }
+  .bm-lobby .bm-sum-cell { padding: 2px 1px; }
+  .bm-lobby .bm-sum-cell b { font-size: calc(10.5px * var(--fs)); }
+  .bm-lobby .bm-sum-cell span { font-size: calc(7.5px * var(--fs)); }
+  /* the CTA's 9-slice caps come down with it: 26px caps can't fit inside a
+     44px button, so the slice is re-scaled rather than clipped */
+  .bm-lobby .bm-start {
+    height: 40px; font-size: calc(12.5px * var(--fs));
+    border-width: 18px 24px;
+    border-image: url("../assets/buttons-pill/button-start-match@2x.png") 53 60 fill / 18px 24px stretch;
+  }
+  .bm-start ~ .btn-secondary { margin-top: 2px; padding: 2px; }
+}
 
 /* what this print is worth, in place of the risk chips the match used to carry */
 .mk-stake {
@@ -5787,3 +5912,25 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
 .mk-stake b { font-weight: 800; font-variant-numeric: tabular-nums; }
 .mk-stake b.up { color: var(--pw-bull, #1FCBA0); }
 .mk-stake b.down { color: var(--pw-bear, #E5484D); }
+
+/* the match's own top line: what you have, and how long the match has left */
+.mk-topline {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin: 4px 0 5px;
+}
+.mk-balance, .mk-matchclock { display: flex; flex-direction: column; gap: 1px; }
+.mk-matchclock { text-align: right; }
+.mk-balance-cap {
+  font-size: calc(9.5px * var(--fs)); font-weight: 800;
+  letter-spacing: .16em; text-transform: uppercase; color: #8FA9C4;
+}
+.mk-balance-val, .mk-matchclock-val {
+  font-size: calc(19px * var(--fs)); font-weight: 800;
+  font-variant-numeric: tabular-nums; color: var(--text);
+  transition: color .2s ease;
+}
+.mk-balance-val.up { color: var(--pw-bull, #1FCBA0); }
+.mk-balance-val.down { color: var(--pw-bear, #E5484D); }
+.mk-matchclock-val { color: var(--cyan); }
+.mk-clock-bar.match { margin-bottom: 8px; }
+.mk-clock-bar.match span { background: linear-gradient(90deg, var(--cyan), var(--magenta)); }

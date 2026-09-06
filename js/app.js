@@ -1297,7 +1297,7 @@
      This replaces the old timeframe/reaction-window lobby and the per-round
      risk chips that used to live inside the match — the stake is now set once
      for the whole match and split across its prints, so nothing about it can
-     change once the tape is running. */
+     change once the match is running. */
 
   const BM_INSTRUMENTS = [
     { id: "ES",  name: "E-mini S&P" },
@@ -1305,14 +1305,14 @@
     { id: "YM",  name: "Dow Jones" },
     { id: "RTY", name: "Russell 2000" },
   ];
-  const BM_COOLDOWNS = [2, 3, 5, 10, 15];          // minutes on the tape
+  const BM_COOLDOWNS = [2, 3, 5, 10, 15];          // the whole match clock, in minutes
   const BM_CANDLES = [5, 10, 15, 20, 25, 30, 35, 40];
   /* The lock window is a print's share of the match clock divided by this, so
      a bigger factor is less time to call. Easy leaves most of the print's life
      to read it; hard takes all but a sliver. */
   const BM_DIFFS = [
     { id: "easy",   label: "Easy",   sub: "More time to read the close", factor: 1.2 },
-    { id: "medium", label: "Medium", sub: "Keep the tape moving",        factor: 1.6 },
+    { id: "medium", label: "Medium", sub: "Keep it moving",              factor: 1.6 },
     { id: "hard",   label: "Hard",   sub: "Snap calls, no linger",       factor: 2.4 },
   ];
   const BM_RISKS = [1, 2, 4, 5, 10, 20];           // dollars, for the whole match
@@ -1354,7 +1354,7 @@
     return {
       clockSecs, perPrint,
       lock: Math.round(lock * 10) / 10,
-      onTape: Math.round(lock * s.candles),
+
       baseUnit,
       riskPerCandle: baseUnit * s.tier,
       winPerCandle: baseUnit * s.tier * 2,
@@ -1363,13 +1363,15 @@
     };
   }
 
+  /* Round the whole thing to seconds BEFORE splitting: rounding the minutes and
+     the remainder independently turns 119.9999s into "1m 60s" / "1:60". */
   function durationLabel(secs) {
-    const m = Math.floor(secs / 60), r = Math.round(secs % 60);
-    return `${m}m ${r}s`;
+    const t = Math.round(secs);
+    return `${Math.floor(t / 60)}m ${t % 60}s`;
   }
   const clockLabel = (secs) => {
-    const m = Math.floor(secs / 60), r = Math.round(secs % 60);
-    return `${m}:${String(r).padStart(2, "0")}`;
+    const t = Math.round(secs);
+    return `${Math.floor(t / 60)}:${String(t % 60).padStart(2, "0")}`;
   };
   const bmMoney = (n) => "$" + n.toFixed(2);
 
@@ -1390,51 +1392,39 @@
     barTitle.textContent = "Pickæway";
     const pickName = document.querySelector("#pickBar .pick-name");
     if (pickName) pickName.textContent = "Build Match";
+    /* Everything on this screen has to fit one view without scrolling, so the
+       helper paragraphs under each section are gone and the overview is a
+       plain stack of three lines rather than a stat grid. */
     cardScroll.innerHTML = `
-      <div class="bm-label">Instrument</div>
-      ${bmPillRow(BM_INSTRUMENTS, s.instrument, "bmins", (x) => x.id, 4)}
-      <div class="bm-help bm-ins-name">${esc(ins.id)} — ${esc(ins.name)}</div>
+      <div class="bm-lobby">
+        <div class="bm-label">Instrument<span class="bm-ins-name">${esc(ins.id)} — ${esc(ins.name)}</span></div>
+        ${bmPillRow(BM_INSTRUMENTS, s.instrument, "bmins", (x) => x.id, 4)}
 
-      <div class="bm-label">Cooldown</div>
-      ${bmPillRow(BM_COOLDOWNS, s.cooldown, "bmcool", (x) => `${x} min`, 5)}
-      <div class="bm-help">How long you sit with the tape. Each print stays live
-        until its share of this time dies.</div>
+        <div class="bm-label">Cooldown</div>
+        ${bmPillRow(BM_COOLDOWNS, s.cooldown, "bmcool", (x) => `${x} min`, 5)}
 
-      <div class="bm-label">Candles to call</div>
-      ${bmPillRow(BM_CANDLES, s.candles, "bmcd", (x) => String(x), 4)}
-      <div class="bm-help">Call anytime before this print dies. More prints = a
-        faster lock.</div>
+        <div class="bm-label">Candles to call</div>
+        ${bmPillRow(BM_CANDLES, s.candles, "bmcd", (x) => String(x), 8)}
 
-      <div class="bm-label">Difficulty</div>
-      <div class="bm-diffs">
-        ${BM_DIFFS.map((x) => `
-          <button class="bm-diff-card${s.difficulty === x.id ? " on" : ""}" data-bmdiff="${x.id}"
-                  aria-pressed="${s.difficulty === x.id}">
-            <span class="bm-diff-t">${esc(x.label)}</span>
-            <span class="bm-diff-s">${esc(x.sub)}</span>
-          </button>`).join("")}
-      </div>
-      <div class="bm-help">How the tape feels. The lock is still the print clock
-        — submit before it hits 0.</div>
-
-      <div class="bm-sum">
-        <div class="bm-sum-head">
-          <span class="bm-sum-badge ${s.difficulty}">${esc(bmDiff(s.difficulty).label)}</span>
-          <span class="bm-sum-title">Match type</span>
+        <div class="bm-label">Difficulty</div>
+        <div class="bm-diffs">
+          ${BM_DIFFS.map((x) => `
+            <button class="bm-diff-card${s.difficulty === x.id ? " on" : ""}" data-bmdiff="${x.id}"
+                    aria-pressed="${s.difficulty === x.id}">
+              <span class="bm-diff-t">${esc(x.label)}</span>
+              <span class="bm-diff-s">${esc(x.sub)}</span>
+            </button>`).join("")}
         </div>
-        <div class="bm-sum-grid">
-          <div class="bm-sum-cell"><b>${clockLabel(d.clockSecs)}</b><span>Match clock</span></div>
-          <div class="bm-sum-cell"><b>${s.candles}</b><span>Prints</span></div>
-          <div class="bm-sum-cell"><b>${d.lock.toFixed(1)}s</b><span>Lock per print</span></div>
-          <div class="bm-sum-cell"><b>${durationLabel(d.onTape)}</b><span>Time on tape</span></div>
-        </div>
-        <div class="bm-sum-say">Match clock starts at ${clockLabel(d.clockSecs)}. Each
-          print has ${d.lock.toFixed(1)}s to lock green or red — submit before it
-          dies. Last second flashes. Close stays hidden until 0, then the next
-          print is live.</div>
-      </div>
 
-      <button class="bm-start" data-bmstake>Set stake</button>`;
+        <div class="bm-label">Match Overview</div>
+        <div class="bm-sum">
+          <div class="bm-sum-line"><span>Match clock</span><b>${clockLabel(d.clockSecs)}</b></div>
+          <div class="bm-sum-line"><span>Candles</span><b>${s.candles}</b></div>
+          <div class="bm-sum-line"><span>Time per candle</span><b>${d.lock.toFixed(1)}s</b></div>
+        </div>
+
+        <button class="bm-start" data-bmstake>Set Risk</button>
+      </div>`;
     cardScroll.scrollTop = bmKeepScroll ? bmScrollTop : 0;
     bmKeepScroll = false;
     cardFooter.style.display = "none";
@@ -1453,50 +1443,42 @@
   function renderStake() {
     const s = bmSettings();
     const d = bmDerived(s);
-    const ins = bmInstrument(s.instrument);
     barTitle.textContent = "Pickæway";
     const pickName = document.querySelector("#pickBar .pick-name");
-    if (pickName) pickName.textContent = "Size the Tape";
+    if (pickName) pickName.textContent = "Set Risk";
+    /* One view, no scrolling, so the lobby recap and the plain-language line
+       under the split are both gone — the numbers say it. */
     cardScroll.innerHTML = `
-      <div class="bm-bank">
-        <div class="bm-bank-top">
-          <span class="bm-bank-cap">Bankroll</span>
-          <span class="bm-bank-val">${plainMoney(BM_BANKROLL)}</span>
+      <div class="bm-lobby">
+        <div class="bm-bank">
+          <div class="bm-bank-cap">Balance</div>
+          <div class="bm-bank-val">${plainMoney(BM_BANKROLL)}</div>
         </div>
-        <div class="bm-recap">
-          <span>${esc(ins.id)} · ${esc(ins.name)}</span>
-          <span>${s.cooldown} min · ${s.candles} prints</span>
-          <span>${esc(bmDiff(s.difficulty).label)} · ${d.lock.toFixed(1)}s lock</span>
+
+        <div class="bm-label">Risk this match</div>
+        ${bmPillRow(BM_RISKS, s.risk, "bmrisk", (x) => "$" + x, 6)}
+
+        <div class="bm-label">Reward</div>
+        ${bmPillRow(BM_TIERS, s.tier, "bmtier", (x) => `${x}:${x * 2}`, 4)}
+
+        <div class="bm-label">Split across ${s.candles} candles</div>
+        <div class="bm-split">
+          <div class="bm-split-math">
+            <span>${bmMoney(s.risk)} ÷ ${s.candles}</span>
+            <b>${bmMoney(d.baseUnit)}</b>
+            <span>base unit</span>
+          </div>
+          <div class="bm-sum-grid">
+            <div class="bm-sum-cell"><b class="down">${bmMoney(d.riskPerCandle)}</b><span>Per candle risk</span></div>
+            <div class="bm-sum-cell"><b class="up">${bmMoney(d.winPerCandle)}</b><span>Per candle win</span></div>
+            <div class="bm-sum-cell"><b class="up">+${bmMoney(d.allRight)}</b><span>All correct</span></div>
+            <div class="bm-sum-cell"><b class="down">−${bmMoney(d.allWrong)}</b><span>All wrong</span></div>
+          </div>
         </div>
-      </div>
 
-      <div class="bm-label">Risk this match</div>
-      ${bmPillRow(BM_RISKS, s.risk, "bmrisk", (x) => "$" + x, 3)}
-      <div class="bm-help">The total for the whole match, not per candle.</div>
-
-      <div class="bm-label">Reward</div>
-      ${bmPillRow(BM_TIERS, s.tier, "bmtier", (x) => `${x}:${x * 2}`, 4)}
-
-      <div class="bm-split">
-        <div class="bm-split-head">Split across ${s.candles} prints</div>
-        <div class="bm-split-math">
-          <span>${bmMoney(s.risk)} ÷ ${s.candles}</span>
-          <b>${bmMoney(d.baseUnit)}</b>
-          <span>base unit</span>
-        </div>
-        <div class="bm-sum-grid">
-          <div class="bm-sum-cell"><b class="down">${bmMoney(d.riskPerCandle)}</b><span>Per print risk</span></div>
-          <div class="bm-sum-cell"><b class="up">${bmMoney(d.winPerCandle)}</b><span>Per print win</span></div>
-          <div class="bm-sum-cell"><b class="up">+${bmMoney(d.allRight)}</b><span>All correct</span></div>
-          <div class="bm-sum-cell"><b class="down">−${bmMoney(d.allWrong)}</b><span>All wrong</span></div>
-        </div>
-        <div class="bm-sum-say">Call it right and that print pays
-          ${bmMoney(d.winPerCandle)}. Call it wrong and you lose
-          ${bmMoney(d.riskPerCandle)}. Miss the window and that print stays flat.</div>
-      </div>
-
-      <button class="bm-start" data-bmstart>Start match</button>
-      <button class="btn-secondary" data-bmback>Back to Build Match</button>`;
+        <button class="bm-start" data-bmstart>Start match</button>
+        <button class="btn-secondary" data-bmback>Back</button>
+      </div>`;
     cardScroll.scrollTop = bmKeepScroll ? bmScrollTop : 0;
     bmKeepScroll = false;
     cardFooter.style.display = "none";
@@ -1698,7 +1680,7 @@
     const s = bmSettings();
     const d = bmDerived(s);
     mkAbort();
-    /* The tape is still aggregated from 30-second bars; a print's length now
+    /* The chart is still aggregated from 30-second bars; a candle's length now
        comes from the match clock rather than from a fixed timeframe, so the
        nearest aggregation to that length is what the chart is built from. */
     const spec = mkSpecForPrint(d.perPrint);
@@ -1719,7 +1701,7 @@
     mk.log = [];
     mk.expand = false;
     /* Fixed for the match. The stake screen already split it across the
-       prints, so there is nothing left to choose once the tape is running —
+       candles, so there is nothing left to choose once the match is running —
        which is why the in-match risk and R:R chips are gone. */
     mk.risk = d.riskPerCandle;
     mk.win$ = d.winPerCandle;
@@ -1856,8 +1838,12 @@
     const snap = {
       inst: mk.s.instrument,
       tfId: mk.spec.id,
-      tfMin: mk.s.timeframe,
-      candleDuration: mk.spec.candleDuration,
+      /* The lobby has no timeframe any more — a print's length comes from the
+         match clock. tfMin is still the minutes the chart aggregates at, which
+         is what the replay needs to line a round up with a candle, and it now
+         comes from the aggregation the print length chose. */
+      tfMin: mk.spec.at / 60,
+      candleDuration: mk.dur,
       win: mk.win,
       difficulty: mk.s.difficulty,
       totalRounds: mk.rounds,
@@ -1990,7 +1976,23 @@
     }
   }
 
+  /* What is left of the whole match, not of this candle. Every candle owns an
+     equal share of the match clock, so the rounds already closed have spent
+     theirs in full and the live one has spent what it has elapsed. The pause
+     between rounds is deliberately not counted: the clock the lobby promised
+     is the candles' time, and counting the gaps would make it run past the
+     figure the player picked. */
+  function mkMatchLeft() {
+    const spent = mk.round * mk.dur + Math.min(mk.elapsed, mk.dur);
+    return Math.max(0, mk.d.clockSecs - spent);
+  }
+
   function mkPaintClock() {
+    const m = $("mkMatchClock");
+    if (m) m.textContent = clockLabel(mkMatchLeft());
+    const mf = $("mkMatchFill");
+    if (mf) mf.style.width = `${Math.max(0, Math.min(1, mkMatchLeft() / mk.d.clockSecs)) * 100}%`;
+
     const el = $("mkClock");
     if (!el) return;
     const left = mk.phase === "reacting"
@@ -2084,18 +2086,36 @@
     barTitle.textContent = "Pickæway";
     const phaseLabel = mk.phase === "reacting" ? "React now"
       : mk.phase === "closing" ? "Candle forming" : "Round result";
+    /* The candle countdown belongs to the candle that is still forming. Once
+       it has resolved there is nothing left to call on it, so the row goes
+       and only the match clock keeps running. */
+    const live = mk.phase !== "resolved";
     cardScroll.innerHTML = `
       <div class="mk-head">
         <div class="mk-round">Round ${mk.round + 1} / ${mk.rounds}</div>
-        <div class="mk-meta">${esc(mk.s.instrument)} · ${mk.s.timeframe}m · ${mk.s.difficulty.toUpperCase()}</div>
+        <div class="mk-meta">${esc(mk.s.instrument)} · ${mk.s.candles} candles · ${mk.s.difficulty.toUpperCase()}</div>
       </div>
+      <div class="mk-topline">
+        <div class="mk-balance">
+          <span class="mk-balance-cap">Balance</span>
+          <span class="mk-balance-val ${mk.bankP > BM_BANKROLL ? "up" : mk.bankP < BM_BANKROLL ? "down" : ""}"
+                id="mkBalance">${mkBank(mk.bankP)}</span>
+        </div>
+        <div class="mk-matchclock">
+          <span class="mk-balance-cap">Match</span>
+          <span class="mk-matchclock-val" id="mkMatchClock">${clockLabel(mk.d.clockSecs)}</span>
+        </div>
+      </div>
+      <div class="mk-clock-bar match"><span id="mkMatchFill"></span></div>
       ${mkScoreHTML()}
       <div class="mk-chart-wrap"><canvas id="mkChart" class="mk-chart" height="200"></canvas></div>
-      <div class="mk-clock-row">
-        <span class="mk-phase ${mk.phase}">${phaseLabel}</span>
-        <span class="mk-clock" id="mkClock">0.0s</span>
-      </div>
-      <div class="mk-clock-bar"><span id="mkClockFill"></span></div>
+      ${live ? `
+        <div class="mk-clock-row">
+          <span class="mk-phase ${mk.phase}">${phaseLabel}</span>
+          <span class="mk-clock" id="mkClock">0.0s</span>
+        </div>
+        <div class="mk-clock-bar"><span id="mkClockFill"></span></div>`
+        : `<div class="mk-clock-row"><span class="mk-phase resolved">${phaseLabel}</span></div>`}
       ${mkControlsHTML()}
       ${roundTableHTML(mk.log, mk.expand)}`;
     mkPaintClock();
@@ -2202,9 +2222,10 @@
       <div class="bm-rule" aria-hidden="true"></div>
       <div class="bm-label">Match Overview</div>
       <div class="bm-overview">
-        ${[{ v: m.inst, l: "Instrument" }, { v: `${m.tfMin}m`, l: "Time Frame" },
-           { v: String(m.totalRounds), l: "Candles" }, { v: `${m.win}s`, l: "Reaction Window" },
-           { v: m.difficulty.toUpperCase(), l: "Difficulty" }, { v: `${m.candleDuration}s`, l: "Per Candle" }]
+        ${[{ v: m.inst, l: "Instrument" }, { v: String(m.totalRounds), l: "Candles" },
+           { v: `${m.win}s`, l: "Time Per Candle" },
+           { v: m.difficulty.toUpperCase(), l: "Difficulty" },
+           { v: `${Math.round(m.candleDuration)}s`, l: "Candle Life" }]
           .map((o) => `
           <div class="bm-badge">
             <span class="bm-badge-box"><span class="bm-badge-val">${esc(o.v)}</span></span>
