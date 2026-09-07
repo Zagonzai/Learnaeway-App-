@@ -2637,12 +2637,16 @@
      battle slot lands here rather than in either game. */
 
   const GAMES = [
+    /* Each game's own mark. Pickæway and Pointæway used to borrow the replay
+       and knowledge-test glyphs; icon-match-replay is still what the Match
+       Replay button on the Pickæway home screen draws, so it stayed where it
+       was rather than being repainted. */
     { id: "pickaeway", name: "Pickæway", tag: "You vs. You",
       blurb: "Read the candles as they print and call the next move before the print dies.",
-      icon: "assets/nav-icons/icon-match-replay@2x.png" },
+      icon: "assets/nav-icons/icon-game-pickaeway@2x.png" },
     { id: "pointaeway", name: "Pointæway", tag: "1v1 Card Game",
       blurb: "Bull against Bear. Play a candle, reveal together, and push the print 25 points your way.",
-      icon: "assets/nav-icons/icon-knowledge-test-lightning@2x.png" },
+      icon: "assets/nav-icons/icon-game-pointaeway@2x.png" },
     { id: "placeaway", name: "Placæway", tag: "Solo Speed Run",
       blurb: "The whole pattern prints at once. Place every candle in order against the clock.",
       icon: "assets/nav-icons/icon-dock-match-replay@2x.png" },
