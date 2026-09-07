@@ -2637,8 +2637,8 @@
      battle slot lands here rather than in either game. */
 
   const GAMES = [
-    { id: "pickaeway", name: "Pickæway", tag: "1v1 Reactive Battle",
-      blurb: "Read the candles as they print and call the next move before your opponent does.",
+    { id: "pickaeway", name: "Pickæway", tag: "You vs. You",
+      blurb: "Read the candles as they print and call the next move before the print dies.",
       icon: "assets/nav-icons/icon-match-replay@2x.png" },
     { id: "pointaeway", name: "Pointæway", tag: "1v1 Card Game",
       blurb: "Bull against Bear. Play a candle, reveal together, and push the print 25 points your way.",
