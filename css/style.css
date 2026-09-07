@@ -32,7 +32,25 @@
      pill, and the 9-slice's 11px middle band stretched four times over reads
      as a different shape. The pill keeps its size; only the space under it
      changes. */
-  --gap-bottom: max(4px, calc(var(--sab) - 14px));
+  /* Home-screen iPhone: leave almost none of the safe-area as empty black
+     under the dock. The pill sits near the physical bottom; the home
+     indicator overlays the thin remaining sliver. Card flex grows into the
+     reclaimed space. */
+  --gap-bottom: max(0px, calc(var(--sab) - 28px));
+}
+
+/* Standalone / home-screen: pin even tighter — the reported black “dock gap”. */
+@media (display-mode: standalone) {
+  :root {
+    --gap-bottom: max(0px, calc(var(--sab) - 32px));
+  }
+}
+@supports (-webkit-touch-callout: none) {
+  @media (display-mode: standalone) {
+    :root {
+      --gap-bottom: 0px;
+    }
+  }
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -46,8 +64,14 @@
 *::-webkit-scrollbar { width: 0; height: 0; display: none; }
 
 html, body {
+  /* Pin the page to the webview edges. A short 100vh/dvh column was leaving
+     a black band under the dock on iPhone home-screen installs; fixed inset
+     makes the paint box match the visible webview. */
+  position: fixed;
+  inset: 0;
+  width: 100%;
   height: 100%;
-  overflow: hidden;             /* the app manages its own scrolling */
+  overflow: hidden;
   background: var(--bg);
   overscroll-behavior: none;
 }
@@ -77,19 +101,12 @@ button {
 img { user-select: none; -webkit-user-drag: none; }
 
 .app {
-  position: relative;
+  position: absolute;
+  inset: 0;
   width: 100%;
   max-width: 480px;
-  /* iOS standalone/home-screen mode: 100vh overshoots the visual viewport and
-     leaves a dead scroll area — use dynamic viewport height with fallbacks. */
-  height: 100%;
-  height: 100vh;
-  height: 100dvh;
-  height: var(--vhpx, 100dvh);  /* JS-measured window.innerHeight, most reliable on iOS */
-  /* No top padding here on purpose: the column runs edge to edge so the wave
-     hero can bleed up behind the status bar and dynamic island. Every layer
-     that owns the top of the screen clears the notch itself — the header zone
-     grows by --sat, and the auth / video / overlay layers pad themselves. */
+  margin: 0 auto;
+  height: auto;                 /* fill the fixed html/body inset */
   background: var(--bg);
   display: flex;
   flex-direction: column;
@@ -315,7 +332,10 @@ img { user-select: none; -webkit-user-drag: none; }
   flex: 1 1 auto;
   min-height: 0;
   margin: 8px 3.5% 0;
+  /* dock is position:absolute — reserve its height so content isn't covered */
+  padding-bottom: calc(clamp(48px, 6.2vh, 58px) + 10px);
   border-radius: var(--radius-card);
+  transition: padding-bottom .28s cubic-bezier(.2,.8,.2,1);
 }
 /* card backgrounds as 9-slices: glowing corners stay crisp, centers stretch */
 .card-outer::before,
@@ -474,15 +494,32 @@ img { user-select: none; -webkit-user-drag: none; }
    --gap-bottom underneath, which is the inset less the 14px the home indicator
    does not need. */
 .bottom-nav {
-  position: relative;
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  bottom: 0;
+  z-index: 40;
   isolation: isolate;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-around;
-  margin: 0 4% var(--gap-bottom);
+  margin: 0;
   height: clamp(48px, 6.2vh, 58px);
   border-radius: 999px;
+  transform-origin: center bottom;
+  transition: transform .28s cubic-bezier(.2,.8,.2,1), opacity .28s ease, height .28s ease;
+  will-change: transform;
+}
+/* Scroll-minimized dock: shrinks toward the bottom edge and frees card space.
+   Toggled by js/dock-chrome.js via .dock-min on .app */
+.app.dock-min .bottom-nav {
+  transform: translateY(42%) scale(0.78);
+  opacity: 0.92;
+  pointer-events: auto; /* still tappable when peeking */
+}
+.app.dock-min .card-outer {
+  padding-bottom: calc(clamp(28px, 3.5vh, 36px) + 6px);
 }
 .bottom-nav::before {
   content: "";
@@ -1317,6 +1354,50 @@ img { user-select: none; -webkit-user-drag: none; }
 }
 /* same disabled treatment as the Trade Day Check-In submit button */
 .sv-next.off { opacity: .4; color: #9FC0E0; cursor: default; }
+
+/* ---- survey welcome: Login-only dock pill (skip questionnaire) ---- */
+.survey-dock {
+  position: absolute;
+  left: 4%;
+  right: 4%;
+  bottom: max(10px, var(--sab));
+  z-index: 45;
+  height: clamp(48px, 6.2vh, 58px);
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 999px;
+  isolation: isolate;
+}
+.survey-dock.hidden { display: none; }
+.survey-dock::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border: 24px solid transparent;
+  border-left-width: 27px;
+  border-right-width: 27px;
+  border-image: url("../assets/bars/background-bar-pill@2x.png") 54 60 fill / 24px 27px stretch;
+}
+.survey-dock-btn {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 8px 22px;
+  font-size: calc(13px * var(--fs));
+  font-weight: 800;
+  letter-spacing: .14em;
+  text-transform: uppercase;
+  color: #EAF6FF;
+}
+.survey-dock-btn img { width: 24px; height: 24px; object-fit: contain; }
+.survey-dock-btn:active { filter: brightness(1.35); transform: scale(.97); }
+/* leave room above the dock on the welcome card */
+#surveyStep.sv-has-dock {
+  margin-bottom: calc(clamp(48px, 6.2vh, 58px) + max(14px, var(--sab)));
+}
+
 
 /* Start Day result */
 .ci-result { text-align: center; padding: 4px 0 2px; }

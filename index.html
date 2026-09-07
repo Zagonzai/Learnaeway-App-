@@ -253,6 +253,14 @@
         </div>
       </div>
 
+      <!-- Login-only dock on the questionnaire welcome screen — skip questions. -->
+      <div id="surveyDock" class="survey-dock hidden" aria-label="Skip to log in">
+        <button type="button" class="survey-dock-btn" id="surveyLoginBtn" data-sv-login>
+          <img src="assets/nav-icons/icon-user@2x.png" alt="">
+          <span>Log In</span>
+        </button>
+      </div>
+
       <!-- Step 1.75 (desktop only): intro video, then a Sign Up / Log In CTA.
            The login form below is no longer the default state on desktop — it
            is reached from here, or from the dock's Log In shortcut. -->
@@ -329,5 +337,6 @@
   <script src="js/firebase.js"></script>
   <script src="data/course-data.js"></script>
   <script src="js/app.js"></script>
+  <script src="js/dock-chrome.js"></script>
 </body>
 </html>

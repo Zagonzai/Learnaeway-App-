@@ -2689,16 +2689,12 @@
      battle slot lands here rather than in either game. */
 
   const GAMES = [
-    /* Each game's own mark. Pickæway and Pointæway used to borrow the replay
-       and knowledge-test glyphs; icon-match-replay is still what the Match
-       Replay button on the Pickæway home screen draws, so it stayed where it
-       was rather than being repainted. */
     { id: "pickaeway", name: "Pickæway", tag: "You vs. You",
       blurb: "Read the candles as they print and call the next move before the print dies.",
-      icon: "assets/nav-icons/icon-game-pickaeway@2x.png" },
+      icon: "assets/nav-icons/icon-match-replay@2x.png" },
     { id: "pointaeway", name: "Pointæway", tag: "1v1 Card Game",
       blurb: "Bull against Bear. Play a candle, reveal together, and push the print 25 points your way.",
-      icon: "assets/nav-icons/icon-game-pointaeway@2x.png" },
+      icon: "assets/nav-icons/icon-knowledge-test-lightning@2x.png" },
     { id: "placeaway", name: "Placæway", tag: "Solo Speed Run",
       blurb: "The whole pattern prints at once. Place every candle in order against the clock.",
       icon: "assets/nav-icons/icon-dock-match-replay@2x.png" },
@@ -8462,6 +8458,15 @@
   }
 
   /* steps: access gate -> questionnaire -> (desktop: intro video -> CTA) -> login */
+  function syncSurveyDock() {
+    const onSurvey = !!store.gatePassed && !store.surveyDone;
+    const show = onSurvey && surveyStep === 0;
+    const dock = $("surveyDock");
+    const step = $("surveyStep");
+    if (dock) dock.classList.toggle("hidden", !show);
+    if (step) step.classList.toggle("sv-has-dock", show);
+  }
+
   function showAuthStep() {
     const onGate = !store.gatePassed;
     const onSurvey = !onGate && !store.surveyDone;
@@ -8477,6 +8482,7 @@
     $("introVideo").classList.toggle("hidden", !(onIntro && introStage === "video"));
     $("introCta").classList.toggle("hidden", !(onIntro && introStage === "cta"));
     if (onIntro && introStage === "video") wireIntroVideo();
+    syncSurveyDock();
   }
   function logGateAttempt(attempt) {
     if (!store.gateAttempts) store.gateAttempts = [];
@@ -8612,6 +8618,7 @@
         <div class="sv-intro">A few questions — this helps us build the right app for you.
           It takes about a minute.</div>
         <button type="button" class="g-pill auth-submit" data-sv-start>Get Started</button>`;
+      syncSurveyDock();
       return;
     }
     const i = surveyStep - 1;
@@ -8644,6 +8651,7 @@
       if (otherEntry) surveyForm.querySelector(`[name="${q.id}__other"]`).value = otherEntry.slice(7);
     }
     updateSurveyNextState(q);
+    syncSurveyDock();
   }
 
   function surveyQuestionHTML(q) {
@@ -8699,7 +8707,25 @@
     surveyAnswers[q.id] = q.type === "multi" ? picked : (picked[0] || "");
   }
 
+  function skipSurveyToLogin() {
+    store.surveyDone = true;
+    store.surveySkipped = true;
+    save();
+    setAuthMode("login");
+    if (introDesktop()) setIntroStage("form");
+    showAuthStep();
+  }
+
+  const surveyLoginBtn = $("surveyLoginBtn");
+  if (surveyLoginBtn) {
+    surveyLoginBtn.addEventListener("click", (e) => {
+      e.preventDefault();
+      skipSurveyToLogin();
+    });
+  }
+
   surveyForm.addEventListener("click", (e) => {
+    if (e.target.closest("[data-sv-login]")) { skipSurveyToLogin(); return; }
     if (e.target.closest("[data-sv-start]")) { surveyStep = 1; renderSurveyStep(); return; }
 
     if (e.target.closest("[data-sv-back]")) {
