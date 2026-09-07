@@ -237,8 +237,13 @@
     async saveUserDoc(obj) {
       const token = await freshToken();
       if (!token) return false;
+      const keys = Object.keys(obj || {});
+      if (!keys.length) return false;
+      /* updateMask = field merge: fields we omit (e.g. huge profilePhoto) stay
+         intact instead of being wiped by a full-document PATCH. */
+      const mask = keys.map((k) => `updateMask.fieldPaths=${encodeURIComponent(k)}`).join("&");
       try {
-        const res = await fetch(`${FS_BASE}/users/${session.uid}`, {
+        const res = await fetch(`${FS_BASE}/users/${session.uid}?${mask}`, {
           method: "PATCH",
           headers: { Authorization: `Bearer ${token}`, "Content-Type": "application/json" },
           body: JSON.stringify({ fields: toFields(obj) }),
