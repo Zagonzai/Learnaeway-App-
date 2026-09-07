@@ -1,0 +1,41 @@
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+
+    function signedIn() {
+      return request.auth != null;
+    }
+
+    function isOwner(uid) {
+      return signedIn() && request.auth.uid == uid;
+    }
+
+    // Phase 1: each user owns their profile + synced course state.
+    match /users/{uid} {
+      allow read, write: if isOwner(uid);
+    }
+
+    // Public catalog (client already reads without auth).
+    match /videos/{videoId} {
+      allow read: if true;
+      allow write: if false; // manage in Firebase console / Admin SDK
+    }
+
+    // Marketing leads keyed by email slug — create/merge from client, no public list.
+    match /leads/{leadId} {
+      allow create, update: if true;
+      allow read, delete: if false;
+    }
+
+    // Access-gate telemetry — append-only from client.
+    match /access-attempts/{id} {
+      allow create: if true;
+      allow read, update, delete: if false;
+    }
+
+    // Deny everything else by default (friends/matches land in Phase 2–3).
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
