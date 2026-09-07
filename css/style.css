@@ -32,10 +32,25 @@
      pill, and the 9-slice's 11px middle band stretched four times over reads
      as a different shape. The pill keeps its size; only the space under it
      changes. */
-  /* Safe-area under the dock is filled with --bg (see .app::after). The dock
-     sits ON TOP of that fill at bottom: var(--sab), so the full pill shows. */
-  --gap-bottom: var(--sab);
-  --dock-h: clamp(48px, 6.2vh, 58px);
+  /* Home-screen iPhone: leave almost none of the safe-area as empty black
+     under the dock. The pill sits near the physical bottom; the home
+     indicator overlays the thin remaining sliver. Card flex grows into the
+     reclaimed space. */
+  --gap-bottom: max(0px, calc(var(--sab) - 28px));
+}
+
+/* Standalone / home-screen: pin even tighter — the reported black “dock gap”. */
+@media (display-mode: standalone) {
+  :root {
+    --gap-bottom: max(0px, calc(var(--sab) - 32px));
+  }
+}
+@supports (-webkit-touch-callout: none) {
+  @media (display-mode: standalone) {
+    :root {
+      --gap-bottom: 0px;
+    }
+  }
 }
 
 * { margin: 0; padding: 0; box-sizing: border-box; }
@@ -96,19 +111,6 @@ img { user-select: none; -webkit-user-drag: none; }
   display: flex;
   flex-direction: column;
   overflow: hidden;
-}
-/* Fill the iPhone home-indicator band with the app background so it is not
-   a dead black strip; the dock sits above this layer (z-index). */
-.app::after {
-  content: "";
-  position: absolute;
-  left: 0;
-  right: 0;
-  bottom: 0;
-  height: max(0px, var(--sab));
-  background: var(--bg);
-  z-index: 35;
-  pointer-events: none;
 }
 
 /* Tablet-sized viewports (iPad portrait/landscape, browser or home-screen):
@@ -330,9 +332,10 @@ img { user-select: none; -webkit-user-drag: none; }
   flex: 1 1 auto;
   min-height: 0;
   margin: 8px 3.5% 0;
-  /* Reserve dock height + safe-area so content clears the pill. */
-  padding-bottom: calc(var(--dock-h) + max(0px, var(--sab)) + 10px);
+  /* dock is position:absolute — reserve its height so content isn't covered */
+  padding-bottom: calc(clamp(48px, 6.2vh, 58px) + 10px);
   border-radius: var(--radius-card);
+  transition: padding-bottom .28s cubic-bezier(.2,.8,.2,1);
 }
 /* card backgrounds as 9-slices: glowing corners stay crisp, centers stretch */
 .card-outer::before,
@@ -494,17 +497,29 @@ img { user-select: none; -webkit-user-drag: none; }
   position: absolute;
   left: 4%;
   right: 4%;
-  /* Sit on top of the safe-area fill (.app::after), not inside/behind it. */
-  bottom: max(0px, var(--sab));
-  z-index: 50;
+  bottom: 0;
+  z-index: 40;
   isolation: isolate;
   flex: 0 0 auto;
   display: flex;
   align-items: center;
   justify-content: space-around;
   margin: 0;
-  height: var(--dock-h);
+  height: clamp(48px, 6.2vh, 58px);
   border-radius: 999px;
+  transform-origin: center bottom;
+  transition: transform .28s cubic-bezier(.2,.8,.2,1), opacity .28s ease, height .28s ease;
+  will-change: transform;
+}
+/* Scroll-minimized dock: shrinks toward the bottom edge and frees card space.
+   Toggled by js/dock-chrome.js via .dock-min on .app */
+.app.dock-min .bottom-nav {
+  transform: translateY(42%) scale(0.78);
+  opacity: 0.92;
+  pointer-events: auto; /* still tappable when peeking */
+}
+.app.dock-min .card-outer {
+  padding-bottom: calc(clamp(28px, 3.5vh, 36px) + 6px);
 }
 .bottom-nav::before {
   content: "";
