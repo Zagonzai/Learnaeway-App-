@@ -1,7 +1,7 @@
 /* ==========================================================================
    Learnæway PWA — app shell
    Views: home (deck outline + tabs) and learning screens (swipe navigation).
-   Persistence: localStorage (progress, likes, bookmarks, notes, settings).
+   Persistence: localStorage + Firestore sync when signed in (see Phase 1).
    Audio is a v2 hook — placeholders only, no playback wired in v1.
    ========================================================================== */
 (function () {
@@ -174,7 +174,13 @@
     pushCloudSoon();   // mirrors progress/notes to Firestore when signed in
   }
 
-  /* ---------------- Firestore sync (per authenticated user) ---------------- */
+  /* ---------------- Firestore sync (per authenticated user) ----------------
+     Phase 1: mirror profile + course/journal state to users/{uid}.
+     Merge rules on pull: map-like keys are unioned (local wins on key collision
+     for the same id — recent local edits stay authoritative); scalar/profile
+     fields fill from cloud when local is empty; arrays prefer the longer or
+     local-if-present copy. Profile photo (data URL) is NOT synced — too large
+     for a Firestore document; use Storage in a follow-up. */
 
   let cloudTimer = null;
   function cloudPayload() {
@@ -187,16 +193,24 @@
       lastScreen: store.lastScreen || "",
       visited: store.visited || {},
       liked: store.liked || {},
+      saved: store.saved || {},
       notes: store.notes || {},
       checklist: store.checklist || {},
       videosWatched: store.videosWatched || {},
       checkinLog: store.checkinLog || {},
+      beforeTrade: store.beforeTrade || {},
       beforeTradeLog: store.beforeTradeLog || {},
       journalImport: store.journalImport || {},
       journalManual: store.journalManual || {},
       journalAccounts: store.journalAccounts || [],
-      propLedger: store.propLedger || {},
+      journalBatches: store.journalBatches || {},
       journalTrades: store.journalTrades || {},
+      journalOpen: store.journalOpen || {},
+      journalActive: store.journalActive || "__all",
+      propLedger: store.propLedger || {},
+      dayProgress: store.dayProgress || {},
+      watchlist: store.watchlist || [],
+      pickaeway: store.pickaeway || {},
       settings: store.settings || {},
       updatedAt: new Date().toISOString(),
     };
@@ -206,17 +220,55 @@
     clearTimeout(cloudTimer);
     cloudTimer = setTimeout(() => { FB.saveUserDoc(cloudPayload()); }, 2500);
   }
+  function mergeProfile(local, cloud) {
+    if (!cloud) return local || {};
+    if (!local) return Object.assign({}, cloud);
+    const out = Object.assign({}, cloud, local);
+    out.links = Object.assign({}, cloud.links || {}, local.links || {});
+    out.markets = (local.markets && local.markets.length) ? local.markets : (cloud.markets || []);
+    out.requestsSent = (local.requestsSent && local.requestsSent.length)
+      ? local.requestsSent : (cloud.requestsSent || []);
+    out.connections = (local.connections && local.connections.length)
+      ? local.connections : (cloud.connections || []);
+    for (const k of ["firstName", "lastName", "username", "location", "bio",
+                     "tradingSince", "investingSince", "name", "email", "phone"]) {
+      if (!out[k] && cloud[k]) out[k] = cloud[k];
+    }
+    return out;
+  }
   async function pullCloudAndMerge() {
     if (!window.FB || !FB.user()) return false;
     const cloud = await FB.loadUserDoc();
     if (!cloud) return false;
-    // union maps (local device stays authoritative for its own recent edits)
-    for (const k of ["visited", "liked", "checklist", "notes", "videosWatched", "checkinLog", "beforeTradeLog", "journalImport", "journalManual"]) {
+    const mapKeys = [
+      "visited", "liked", "saved", "checklist", "notes", "videosWatched",
+      "checkinLog", "beforeTradeLog", "journalImport", "journalManual",
+      "journalBatches", "journalTrades", "journalOpen", "propLedger", "dayProgress",
+    ];
+    for (const k of mapKeys) {
       store[k] = Object.assign({}, cloud[k] || {}, store[k] || {});
     }
     if (!store.lastScreen && cloud.lastScreen) store.lastScreen = cloud.lastScreen;
-    if (cloud.profile && !store.profile) store.profile = cloud.profile;
-    if (cloud.settings && cloud.settings.name && !store.settings.name) store.settings.name = cloud.settings.name;
+    if (cloud.beforeTrade && Object.keys(store.beforeTrade || {}).length === 0) {
+      store.beforeTrade = cloud.beforeTrade;
+    }
+    if (Array.isArray(cloud.journalAccounts) && !(store.journalAccounts || []).length) {
+      store.journalAccounts = cloud.journalAccounts.slice();
+    }
+    if (Array.isArray(cloud.watchlist) && cloud.watchlist.length) {
+      store.watchlist = store.watchlist && store.watchlist.length ? store.watchlist : cloud.watchlist.slice();
+    }
+    if (cloud.pickaeway) {
+      store.pickaeway = Object.assign({}, cloud.pickaeway, store.pickaeway || {});
+    }
+    if (cloud.journalActive && store.journalActive === "__all") {
+      store.journalActive = cloud.journalActive;
+    }
+    store.profile = mergeProfile(store.profile, cloud.profile);
+    if (cloud.settings) {
+      store.settings = Object.assign({}, cloud.settings, store.settings || {});
+      if (cloud.settings.name && !store.settings.name) store.settings.name = cloud.settings.name;
+    }
     save();
     return true;
   }
