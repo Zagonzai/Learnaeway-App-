@@ -336,8 +336,6 @@
 
   const $ = (id) => document.getElementById(id);
   const cardScroll = $("cardScroll");
-  const belowCard = $("belowCard");
-  const appEl = document.querySelector(".app");
   const cardFooter = $("cardFooter");
   const barTitle = $("barTitle");
   const progressFill = $("progressFill");
@@ -601,29 +599,6 @@
 
   /* ---------------- rendering: home / outline ---------------- */
 
-
-  /* Put long content under the neon frame instead of scrolling inside it.
-     insideHTML stays in #cardScroll (short header); belowHTML goes to #belowCard. */
-  function setUnderCard(insideHTML, belowHTML) {
-    if (!belowCard || !appEl) {
-      cardScroll.innerHTML = (insideHTML || "") + (belowHTML || "");
-      return;
-    }
-    cardScroll.innerHTML = insideHTML || "";
-    belowCard.innerHTML = belowHTML || "";
-    const on = !!(belowHTML && String(belowHTML).trim());
-    belowCard.hidden = !on;
-    appEl.classList.toggle("layout-under", on);
-  }
-  function clearUnderCard() {
-    if (!belowCard || !appEl) return;
-    if (!belowCard.hidden || belowCard.innerHTML) {
-      belowCard.innerHTML = "";
-      belowCard.hidden = true;
-    }
-    appEl.classList.remove("layout-under");
-  }
-
   function renderHome() {
     const mod = DATA.modules[state.homeModule];
     const ov = overallProgress();
@@ -705,7 +680,7 @@
       }
     }
 
-    const head = `
+    cardScroll.innerHTML = `
       <div class="home-head">
         <img class="home-logo" src="assets/logo/logo-symbol-v2@3x.png" alt="">
         <div class="home-module-title">Sections · Module ${mod.num} of ${DATA.modules.length}</div>
@@ -720,9 +695,8 @@
       <div class="home-tabs">
         ${DATA.modules.map((m, i) => `<button class="home-tab ${i === state.homeModule ? "active" : ""}" data-mod="${i}">Module ${m.num}</button>`).join("")}
       </div>
-      ${continueHTML()}` : ""}`;
-    /* Header stays in the neon frame; section/liked/notes lists sit underneath. */
-    setUnderCard(head, `<div class="under-list">${body}</div>`);
+      ${continueHTML()}` : ""}
+      ${body}`;
     cardFooter.style.display = "none";
     syncMarks();
   }
@@ -5810,7 +5784,7 @@
   /* re-render the journal without yanking the page back to the top: anything
      that expands or collapses in place has to leave the reader where they are */
   function renderJournalInPlace() {
-    journalScrollTop = (appEl && appEl.classList.contains("layout-under")) ? appEl.scrollTop : cardScroll.scrollTop;
+    journalScrollTop = cardScroll.scrollTop;
     journalKeepScroll = true;
     renderJournal();
   }
@@ -5855,12 +5829,11 @@
 
     const propCard = propSummaryHTML();
     if (!scope.length) {
-      setUnderCard(tabs + picker, propCard + `
+      cardScroll.innerHTML = tabs + picker + propCard + `
         <div class="liked-empty">No accounts yet.<br>
           Add one to start logging trades — it begins at the balance you enter, with an empty
-          calendar. Everything here is typed in by you; nothing connects to a real broker.</div>`);
-      if (appEl) appEl.scrollTop = journalKeepScroll ? journalScrollTop : 0;
-      else cardScroll.scrollTop = journalKeepScroll ? journalScrollTop : 0;
+          calendar. Everything here is typed in by you; nothing connects to a real broker.</div>`;
+      cardScroll.scrollTop = journalKeepScroll ? journalScrollTop : 0;
       journalKeepScroll = false;
       fillAcctForm();
       wirePropForm();
@@ -5932,10 +5905,7 @@
 
     const middle = state.journalDay ? dayViewHTML(scope, state.journalDay)
       : state.journalSection === "calendar" ? calendarHTML : sectionHTML(scope);
-    /* Neon frame: account pills / picker only. Calendar + actions + section
-       orbs live UNDER the frame so nothing scrolls inside the card. */
-    const under = `
-      ${propCard}${middle}
+    cardScroll.innerHTML = tabs + picker + propCard + middle + `
       <div class="j-add-wrap">
         <button class="j-add" data-jadd aria-label="Add a trade"></button>
         <span class="j-add-label">Add Trade</span>
@@ -5943,12 +5913,10 @@
       <input id="jCsvFile" class="j-file" type="file" accept=".csv,text/csv">
       <button class="j-cash" data-jcash>Deposit / Withdraw</button>
       ${statRowHTML()}`;
-    setUnderCard(tabs + picker, under);
     // Opening the journal starts at the top, but re-rendering it in place —
     // expanding the account panel, switching modes inside it — must not yank
     // the page back to the top under the user's finger.
-    if (appEl) appEl.scrollTop = journalKeepScroll ? journalScrollTop : 0;
-    else cardScroll.scrollTop = journalKeepScroll ? journalScrollTop : 0;
+    cardScroll.scrollTop = journalKeepScroll ? journalScrollTop : 0;
     journalKeepScroll = false;
     fillAcctForm();
     wirePropForm();
@@ -6155,7 +6123,7 @@
   }
 
   function setPicker(mode, id) {
-    journalScrollTop = (appEl && appEl.classList.contains("layout-under")) ? appEl.scrollTop : cardScroll.scrollTop;
+    journalScrollTop = cardScroll.scrollTop;
     journalKeepScroll = true;
     // a confirm step names one account's trade; changing accounts voids it
     state.journalDelete = null;
@@ -6446,7 +6414,6 @@
   }
 
   function render() {
-    clearUnderCard();
     // navigating anywhere other than the library closes the player
     if (state.videoId && state.view !== "videos") tearDownPlayer();
     // leaving mid-match forfeits it: stop the clock rather than leave a rAF
@@ -7947,7 +7914,7 @@
       const list = accountsIn(state.journalTab);
       store.journalActive = (isCombined() && list.length) ? list[0].id : "__all";
       save();
-      journalScrollTop = (appEl && appEl.classList.contains("layout-under")) ? appEl.scrollTop : cardScroll.scrollTop;
+      journalScrollTop = cardScroll.scrollTop;
       journalKeepScroll = true;
       renderJournal();
     }
