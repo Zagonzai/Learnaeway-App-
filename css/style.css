@@ -37,6 +37,7 @@
      indicator overlays the thin remaining sliver. Card flex grows into the
      reclaimed space. */
   --gap-bottom: max(0px, calc(var(--sab) - 28px));
+  --dock-h: clamp(48px, 6.2vh, 58px);
 }
 
 /* Standalone / home-screen: pin even tighter — the reported black “dock gap”. */
@@ -331,11 +332,12 @@ img { user-select: none; -webkit-user-drag: none; }
   isolation: isolate;
   flex: 1 1 auto;
   min-height: 0;
-  margin: 8px 3.5% 0;
-  /* dock is position:absolute — reserve its height so content isn't covered */
-  padding-bottom: calc(clamp(48px, 6.2vh, 58px) + 10px);
+  /* Bottom margin (not padding) clears the dock so the neon border ends
+     ABOVE the pill. The dock lives in the black strip under the card. */
+  margin: 8px 3.5% calc(var(--dock-h) + var(--gap-bottom) + 8px);
+  padding-bottom: 0;
   border-radius: var(--radius-card);
-  transition: padding-bottom .28s cubic-bezier(.2,.8,.2,1);
+  transition: margin-bottom .28s cubic-bezier(.2,.8,.2,1);
 }
 /* card backgrounds as 9-slices: glowing corners stay crisp, centers stretch */
 .card-outer::before,
@@ -488,16 +490,15 @@ img { user-select: none; -webkit-user-drag: none; }
 
 /* one continuous dock bar (background-bar-pill@2x.png via 9-slice) with
    plain icon buttons inside — no individual boxed buttons */
-/* The pill's own box is fixed and stays that way — height is the clamp, no
-   padding, and ::before below is untouched. Everything about where the dock
-   sits is margin: none on top so the card runs right down to it, and
-   --gap-bottom underneath, which is the inset less the 14px the home indicator
-   does not need. */
+/* The pill's own box is fixed — height is --dock-h, no padding, ::before
+   untouched. It sits in the bottom strip under the neon card; the card uses
+   bottom margin (not padding) so its glow ends above the pill. */
 .bottom-nav {
   position: absolute;
   left: 4%;
   right: 4%;
-  bottom: 0;
+  /* Sit in the strip under the neon card (the bottom band), app-wide. */
+  bottom: var(--gap-bottom);
   z-index: 40;
   isolation: isolate;
   flex: 0 0 auto;
@@ -505,7 +506,7 @@ img { user-select: none; -webkit-user-drag: none; }
   align-items: center;
   justify-content: space-around;
   margin: 0;
-  height: clamp(48px, 6.2vh, 58px);
+  height: var(--dock-h);
   border-radius: 999px;
   transform-origin: center bottom;
   transition: transform .28s cubic-bezier(.2,.8,.2,1), opacity .28s ease, height .28s ease;
@@ -519,7 +520,7 @@ img { user-select: none; -webkit-user-drag: none; }
   pointer-events: auto; /* still tappable when peeking */
 }
 .app.dock-min .card-outer {
-  padding-bottom: calc(clamp(28px, 3.5vh, 36px) + 6px);
+  margin-bottom: calc(clamp(28px, 3.5vh, 36px) + var(--gap-bottom) + 6px);
 }
 .bottom-nav::before {
   content: "";
