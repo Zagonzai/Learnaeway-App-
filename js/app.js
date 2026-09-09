@@ -39,7 +39,7 @@
   if (!store.beforeTrade) store.beforeTrade = {};       // Before Trade Stage 1 picks
   if (!store.beforeTradeLog) store.beforeTradeLog = {}; // YYYY-MM-DD -> submitted Stage 1
   if (!store.afterTrade) store.afterTrade = {};         // After Trade picks, before submit
-  if (!store.afterTradeLog) store.afterTradeLog = {};   // YYYY-MM-DD -> submitted After Trade
+  if (!store.afterTradeLog) store.afterTradeLog = {};   // YYYY-MM-DD -> [one entry per trade]
   if (!store.journalImport) store.journalImport = {};   // account -> YYYY-MM-DD -> day totals
   if (!store.journalManual) store.journalManual = {};   // account -> YYYY-MM-DD -> [manual trades]
   if (!store.journalAccounts) store.journalAccounts = [];  // user-added brokerage accounts
@@ -150,9 +150,17 @@
     const a = store.checkinLog[day] && store.checkinLog[day].answers;
     if (a && a["daily-bias"]) { a["market-awareness"] = a["daily-bias"]; delete a["daily-bias"]; renamed = true; }
   });
+  /* After Trade grew from one submission a day to one per trade taken, so a
+     day's value is a list. Anything the single-entry build wrote is a bare
+     { answers, submittedAt } and gets wrapped rather than dropped. */
+  let atListed = false;
+  Object.keys(store.afterTradeLog || {}).forEach((day) => {
+    const v = store.afterTradeLog[day];
+    if (v && !Array.isArray(v)) { store.afterTradeLog[day] = v.answers ? [v] : []; atListed = true; }
+  });
   // written straight out rather than through save(): the cloud-sync timer it
   // touches is declared further down and would still be in its dead zone here
-  if (renamed || stamped || sessionsRenamed || tagged) { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) { /* quota */ } }
+  if (renamed || stamped || sessionsRenamed || tagged || atListed) { try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) { /* quota */ } }
   function todayKey() {
     const d = new Date();
     return `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}`;
@@ -307,7 +315,7 @@
     tpQuery: "",             // the watchlist search box
     tpDate: null,            // the calendar's day, YYYY-MM-DD; null means today
     view: "home",            // 'home' | 'screen' | 'videos' | 'checkin' | 'beforetrade'
-                             // | 'aftertrade'
+                             // | 'aftertrade' | 'streak'
                              // | 'journal' | 'pickaeway' | 'buildmatch' | 'match' | 'result' | 'replay'
                              // | 'aehome' — the Æway hub the bar-2 home icon opens
     homeTab: "sections",     // 'sections' | 'liked' | 'saved'
@@ -325,6 +333,9 @@
     journalRange: "1M",
     journalPicker: null,     // null | 'list' | 'add' | 'edit' | 'delete' (inline)
     journalPickerId: null,   // account being edited/deleted inside the panel
+    atAdding: false,         // logging another After Trade entry over today's list
+    dsMonth: 0,              // Discipline Streak calendar, months from this one
+    dsDay: null,             // 'YYYY-MM-DD' — a past day's scorecard, null = today
     journalDay: null,        // 'YYYY-MM-DD' — day view open in place of the calendar
     journalDelete: null,     // { kind:'manual'|'batch', id, acctId, label, count, days }
     journalReplace: null,    // { batchId, acctId } — CSV picker open to replace a batch
@@ -376,13 +387,12 @@
   ];
 
   /* Placeholders until the icon artwork lands — see the layout prompt.
-     Discipline Streak is the only one with no screen behind it yet, so it is
-     the only one that renders as a plain marker rather than a button. */
+     All four have a screen behind them now, so all four are buttons. */
   const CHECKIN_ACTIONS = [
     { label: "Start Day", icon: "cat-start-day" },
     { label: "Before Trade", icon: "cat-before-trade", go: "bt-open" },
     { label: "After Trade", icon: "cat-after-trade", go: "at-open" },
-    { label: "Discipline Streak", icon: "cat-discipline-streak" },
+    { label: "Discipline Streak", icon: "cat-discipline-streak", go: "ds-open" },
   ];
 
   /* Before Trade — Stage 1: Chart Read. Same one-tap-per-row shape as the
@@ -1222,15 +1232,20 @@
   function renderBeforeTrade() {
     barTitle.textContent = "Before Trade";
     paintStreak();
+    /* A stage submitted today belongs to its summary for the rest of the day.
+       Today's log is what says so — arriving used to clear an in-memory flag
+       and hand back the blank questions, which lost the summary the moment
+       the reader stepped off the screen. */
+    const showResult = state.btResult || !!(store.beforeTradeLog[todayKey()] || {}).answers;
     const body = state.btStage2 ? bt1Stage2HTML()
-      : state.btResult ? bt1ResultHTML()
+      : showResult ? bt1ResultHTML()
       : bt1RowsHTML();
     cardScroll.innerHTML = body + checkinActionsHTML();
     /* ci-resulting centres a result in the card. Stage 2's selector is a
        question screen, not a result, so it only applies once the strategy has
        been picked and the placeholder is showing. */
     cardScroll.classList.toggle("ci-resulting",
-      !!(state.btResult && !state.btStage2) || !!(state.btStage2 && state.btStrategyDone));
+      !!(showResult && !state.btStage2) || !!(state.btStage2 && state.btStrategyDone));
     cardScroll.scrollTop = ciKeepScroll ? ciScrollTop : 0;
     ciKeepScroll = false;
     cardFooter.style.display = "none";
@@ -1240,7 +1255,8 @@
     stopAudio();
     state.view = "beforetrade";
     state.slideDir = 0;
-    // arriving always lands on the questions, never a stale summary
+    // the renderer reads today's log, so arriving lands on whichever of the
+    // two the day is actually in
     state.btResult = false;
     state.btStage2 = false;
     state.btStrategyDone = false;
@@ -1258,14 +1274,19 @@
   function atAnswered() {
     return AT_ITEMS.every((it) => store.afterTrade[it.id]);
   }
-  function atSubmitted(dayKey) {
-    return !!((store.afterTradeLog || {})[dayKey] || {}).answers;
+  /* the one reader for a day's trades. A store written before After Trade
+     went multi-entry still holds a bare record, so it is read as a list of
+     one rather than being trusted to already be an array. */
+  function atEntries(dayKey) {
+    const v = (store.afterTradeLog || {})[dayKey];
+    if (Array.isArray(v)) return v;
+    return v && v.answers ? [v] : [];
   }
 
-  function atRowsHTML() {
+  function atRowsHTML(more) {
     return `
       <h1 class="ci-heading">After Trade</h1>
-      <div class="bt-sub">Process Review</div>
+      <div class="bt-sub">${more ? "Another Trade" : "Process Review"}</div>
       <div class="bt-list">
         ${AT_ITEMS.map((it) => {
           const picked = store.afterTrade[it.id];
@@ -1283,20 +1304,38 @@
         const ready = atAnswered();
         return `<button class="ci-submit${ready ? "" : " off"}"
           ${ready ? "" : "disabled"} data-at-submit>Submit</button>`;
-      })()}`;
+      })()}
+      ${more ? `<button class="btn-secondary" data-at-cancel>Cancel</button>` : ""}`;
   }
 
-  function atResultHTML() {
-    const a = (store.afterTradeLog[todayKey()] || {}).answers || store.afterTrade;
-    return `<div class="ci-result ci-result-inline go">
-      <div class="ci-result-title">After Trade Complete</div>
-      <div class="ci-result-body">Logged for today. Here's what you marked.</div>
+  /* one submitted trade. The caption only appears once there is more than one,
+     so a single-trade day reads exactly as it did before. */
+  function atEntryHTML(entry, i, total) {
+    return `<div class="ds-entry">
+      ${total > 1 ? `<div class="ds-entry-cap">Trade ${i + 1}</div>` : ""}
       <div class="bt-summary">
         ${AT_ITEMS.map((it) => `
           <div class="bt-sum-row">
             <span class="bt-sum-k">${esc(AT_SHORT[it.id])}</span>
-            <span class="bt-sum-v">${esc(optLabel(it, a[it.id]))}</span>
+            <span class="bt-sum-v">${esc(optLabel(it, (entry.answers || {})[it.id]))}</span>
           </div>`).join("")}
+      </div>
+    </div>`;
+  }
+
+  /* every trade logged today, stacked, with the journal's own add button
+     under them — a day can hold as many of these as it took trades. */
+  function atResultHTML() {
+    const list = atEntries(todayKey());
+    return `<div class="ci-result ci-result-inline ci-result-stack go">
+      <div class="ci-result-title">After Trade Complete</div>
+      <div class="ci-result-body">${list.length > 1
+        ? `${list.length} trades logged today.`
+        : "Logged for today. Here's what you marked."}</div>
+      <div class="ds-entries">${list.map((e, i) => atEntryHTML(e, i, list.length)).join("")}</div>
+      <div class="j-add-wrap at-add">
+        <button class="j-add" data-at-add aria-label="Add another trade"></button>
+        <span class="j-add-label">Add another trade</span>
       </div>
       <button class="btn-secondary" data-at-exit>Back to Check-In</button>
     </div>`;
@@ -1305,9 +1344,11 @@
   function renderAfterTrade() {
     barTitle.textContent = "After Trade";
     paintStreak();
-    const done = atSubmitted(todayKey());
-    cardScroll.innerHTML = (done ? atResultHTML() : atRowsHTML()) + checkinActionsHTML();
-    cardScroll.classList.toggle("ci-resulting", done);
+    const list = atEntries(todayKey());
+    const form = state.atAdding || list.length === 0;
+    cardScroll.innerHTML = (form ? atRowsHTML(list.length > 0) : atResultHTML())
+      + checkinActionsHTML();
+    cardScroll.classList.toggle("ci-resulting", !form);
     cardScroll.scrollTop = ciKeepScroll ? ciScrollTop : 0;
     ciKeepScroll = false;
     cardFooter.style.display = "none";
@@ -1317,6 +1358,180 @@
     stopAudio();
     state.view = "aftertrade";
     state.slideDir = 0;
+    // arriving lands on the day's trades, never mid-way through adding one
+    state.atAdding = false;
+    closeOverlay();
+    render();
+  }
+
+  /* ---------------- Discipline Streak ----------------
+     Today's scorecard, and a calendar back through every day already logged.
+     Nothing here writes a checklist answer — it only reads the three logs,
+     each already keyed by date, so a past day reads exactly as it did on the
+     day. The only thing it does write is the review itself: opening the
+     scorecard on a day whose other three sections are done is what completes
+     "Review Streak Report Card", the fourth dot. Without that the dot has
+     nothing that could ever fill it. */
+
+  function dsMarkReviewed(key) {
+    const others = DAY_SECTIONS.filter((x) => x.id !== "reviewCard");
+    if (!others.every((x) => x.done(key))) return;
+    const rec = store.dayProgress[key] || (store.dayProgress[key] = {});
+    if (rec.reviewCard) return;
+    rec.reviewCard = true;
+    save();
+  }
+
+  const dsEmptyHTML = `<div class="ds-empty">Not completed yet</div>`;
+
+  function dsCardHTML(title, inner) {
+    return `<div class="ds-card">
+      <div class="ds-card-cap">${esc(title)}</div>
+      ${inner}
+    </div>`;
+  }
+
+  function dsStartDayHTML(key) {
+    const rec = (store.checkinLog || {})[key];
+    if (!rec || !rec.answers) return dsEmptyHTML;
+    const noCount = CHECKIN_ITEMS.filter((it) => rec.answers[it.id] === "no").length;
+    const go = noCount < 3;
+    return `<div class="ds-verdict ${go ? "go" : "stop"}">${go ? "Start Trade Day" : "Not a Trade Day"}</div>
+      <div class="ds-note">${noCount} of ${CHECKIN_ITEMS.length} marked No</div>`;
+  }
+
+  function dsBeforeTradeHTML(key) {
+    const rec = (store.beforeTradeLog || {})[key];
+    if (!rec || !rec.answers) return dsEmptyHTML;
+    return `<div class="bt-summary">
+      ${BT1_ITEMS.map((it) => `
+        <div class="bt-sum-row">
+          <span class="bt-sum-k">${esc(BT1_SHORT[it.id])}</span>
+          <span class="bt-sum-v">${esc(optLabel(it, rec.answers[it.id]))}</span>
+        </div>`).join("")}
+    </div>`;
+  }
+
+  function dsAfterTradeHTML(key) {
+    const list = atEntries(key);
+    if (!list.length) return dsEmptyHTML;
+    return `<div class="ds-entries">
+      ${list.map((e, i) => atEntryHTML(e, i, list.length)).join("")}
+    </div>`;
+  }
+
+  /* the day's headline: what was done, said the way a coach would say it */
+  function dsHeadHTML(key, isToday) {
+    const done = sectionsDone(key), total = DAY_SECTIONS.length;
+    const when = isToday ? "today" : "that day";
+    const title = done === total ? "Staying disciplined"
+      : done === 0 ? "Nothing logged yet"
+      : `${done} of ${total} complete`;
+    const body = done === total
+      ? `Every section logged ${when}. That is what a discipline day looks like.`
+      : done === 0
+        ? (isToday ? "Start with the Start Day checklist and work down." : "No sections were logged on this day.")
+        : (isToday ? "Good start — keep going and finish the day out." : `${total - done} of the four went unlogged.`);
+    return `<div class="ds-head ${done === total ? "full" : ""}">${esc(title)}</div>
+      <div class="ds-sub">${esc(body)}</div>`;
+  }
+
+  function dsScorecardHTML(key, isToday) {
+    return `
+      ${dsHeadHTML(key, isToday)}
+      ${dsCardHTML("Start Day", dsStartDayHTML(key))}
+      ${dsCardHTML("Before Trade", dsBeforeTradeHTML(key))}
+      ${dsCardHTML("After Trade", dsAfterTradeHTML(key))}`;
+  }
+
+  /* Same calendar the journal uses — month header, nav arrows, day grid — with
+     the day's section count where the journal puts P&L. All seven columns are
+     real days here; the journal spends its last one on a week total. */
+  function dsCalendarHTML() {
+    const base = new Date();
+    base.setDate(1);
+    base.setMonth(base.getMonth() + state.dsMonth);
+    const y = base.getFullYear(), m = base.getMonth();
+    const monthName = base.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+    const first = new Date(y, m, 1);
+    const start = new Date(y, m, 1 - first.getDay());
+    const today = todayKey();
+    const cells = [];
+    let fullDays = 0, loggedDays = 0;
+    for (let i = 0; i < 42; i++) {
+      const d = new Date(start.getFullYear(), start.getMonth(), start.getDate() + i);
+      const inMonth = d.getMonth() === m && d.getFullYear() === y;
+      const dk = dayKey(d.getFullYear(), d.getMonth(), d.getDate());
+      const n = inMonth ? sectionsDone(dk) : 0;
+      if (inMonth && n) { loggedDays++; if (n === DAY_SECTIONS.length) fullDays++; }
+      cells.push({ d, dk, inMonth, n, future: dk > today });
+    }
+    while (cells.length > 35 && cells.slice(-7).every((c) => !c.inMonth)) cells.length -= 7;
+
+    const grid = cells.map((c) => {
+      if (!c.inMonth) return `<div class="j-day out">${c.d.getDate()}</div>`;
+      if (c.future) return `<div class="j-day out">${c.d.getDate()}</div>`;
+      const cls = c.n === DAY_SECTIONS.length ? "ds-full" : c.n ? "ds-part" : "";
+      return `<button class="j-day ${cls}" data-ds-day="${c.dk}">
+        <span class="j-date">${c.d.getDate()}</span>
+        ${c.n ? `<span class="ds-day-n">${c.n}/${DAY_SECTIONS.length}</span>` : ""}
+      </button>`;
+    }).join("");
+
+    return `
+      <div class="j-cal ds-cal">
+        <div class="j-cal-head">
+          <div class="j-month">
+            <span>${esc(monthName)}</span>
+            <button class="j-nav" data-ds-month="-1" aria-label="Previous month">‹</button>
+            <button class="j-nav" data-ds-month="1" aria-label="Next month">›</button>
+          </div>
+          <div class="j-cal-stats">
+            <span><span class="j-stat-label">Full</span>
+              <span class="j-stat-val cyan">${fullDays}</span></span>
+            <span><span class="j-stat-label">Logged</span>
+              <span class="j-stat-val cyan">${loggedDays}</span></span>
+          </div>
+        </div>
+        <div class="j-dow">${["SUN", "MON", "TUE", "WED", "THU", "FRI", "SAT"].map((d) => `<span>${d}</span>`).join("")}</div>
+        <div class="j-grid">${grid}</div>
+      </div>`;
+  }
+
+  function dsDayLabel(key) {
+    const [y, m, d] = key.split("-").map(Number);
+    return new Date(y, m - 1, d).toLocaleDateString("en-US",
+      { weekday: "long", month: "long", day: "numeric" });
+  }
+
+  function renderStreak() {
+    barTitle.textContent = "Discipline Streak";
+    paintStreak();
+    const past = state.dsDay;
+    const key = past || todayKey();
+    const streak = disciplineStreak();
+    const body = past
+      ? `<button class="jd-back" data-ds-back aria-label="Back to the calendar">‹</button>
+         <h1 class="ci-heading">${esc(dsDayLabel(past))}</h1>
+         ${dsScorecardHTML(past, false)}`
+      : `<h1 class="ci-heading">Today's Scorecard</h1>
+         <div class="bt-sub">${streak} day${streak === 1 ? "" : "s"} in a row</div>
+         ${dsScorecardHTML(key, true)}
+         ${dsCalendarHTML()}`;
+    cardScroll.innerHTML = body + checkinActionsHTML();
+    cardScroll.classList.remove("ci-resulting");
+    cardScroll.scrollTop = ciKeepScroll ? ciScrollTop : 0;
+    ciKeepScroll = false;
+    cardFooter.style.display = "none";
+  }
+
+  function openStreak() {
+    stopAudio();
+    state.view = "streak";
+    state.slideDir = 0;
+    state.dsDay = null;
+    state.dsMonth = 0;
+    dsMarkReviewed(todayKey());
     closeOverlay();
     render();
   }
@@ -1338,7 +1553,7 @@
   const DAY_SECTIONS = [
     { id: "startDay", label: "Start Day", done: (k) => !!(store.checkinLog || {})[k] },
     { id: "beforeTrade", label: "Before Trade", done: (k) => !!(store.beforeTradeLog || {})[k] },
-    { id: "afterTrade", label: "After Trade", done: (k) => !!(store.afterTradeLog || {})[k] },
+    { id: "afterTrade", label: "After Trade", done: (k) => atEntries(k).length > 0 },
     { id: "reviewCard", label: "Review Streak Report Card", done: (k) => !!(store.dayProgress[k] || {}).reviewCard },
   ];
 
@@ -6488,7 +6703,7 @@
      same bar, same dock slot */
   function inChecklist() {
     return state.view === "checkin" || state.view === "beforetrade"
-      || state.view === "aftertrade";
+      || state.view === "aftertrade" || state.view === "streak";
   }
 
   /* every Gameæway view — the selector and both games — shares the same bar
@@ -6544,6 +6759,7 @@
     else if (state.view === "checkin") renderCheckin();
     else if (state.view === "beforetrade") renderBeforeTrade();
     else if (state.view === "aftertrade") renderAfterTrade();
+    else if (state.view === "streak") renderStreak();
     else if (state.view === "journal") renderJournal();
     else if (state.view === "aehome") renderAeHome();
     else if (state.view === "games") renderGames();
@@ -7983,7 +8199,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -8145,11 +8361,31 @@
       if (!atAnswered()) return;
       const answers = {};
       AT_ITEMS.forEach((it) => { answers[it.id] = store.afterTrade[it.id]; });
-      store.afterTradeLog[todayKey()] = { answers, submittedAt: new Date().toISOString() };
+      const k = todayKey();
+      // appended, never overwritten: a day holds one entry per trade taken
+      const list = atEntries(k).slice();
+      list.push({ answers, submittedAt: new Date().toISOString() });
+      store.afterTradeLog[k] = list;
+      store.afterTrade = {};        // the row scratch, clear for the next one
+      state.atAdding = false;
       save();
       renderAfterTrade();
     }
+    else if (t.hasAttribute("data-at-add")) {
+      store.afterTrade = {};
+      save();
+      state.atAdding = true;
+      renderAfterTrade();
+    }
+    else if (t.hasAttribute("data-at-cancel")) { state.atAdding = false; renderAfterTrade(); }
     else if (t.hasAttribute("data-at-exit")) openCheckin();
+    else if (t.hasAttribute("data-ds-open")) openStreak();
+    else if (t.dataset.dsMonth) {
+      state.dsMonth += Number(t.dataset.dsMonth);
+      renderChecklistInPlace(renderStreak);
+    }
+    else if (t.dataset.dsDay) { state.dsDay = t.dataset.dsDay; renderStreak(); }
+    else if (t.hasAttribute("data-ds-back")) { state.dsDay = null; renderStreak(); }
     else if (t.hasAttribute("data-bt-stage2")) {
       state.btStage2 = true; state.btStrategyDone = false; renderBeforeTrade();
     }
