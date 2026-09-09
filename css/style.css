@@ -6354,7 +6354,7 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
 /* the practice loop: the chart, then the two questions under it */
 .tp-prac-head {
   display: flex; align-items: center; justify-content: space-between;
-  gap: 8px; margin-bottom: 7px;
+  gap: 8px; margin-bottom: 4px;
 }
 .tp-prac-cap {
   font-size: calc(10.5px * var(--fs)); font-weight: 800;
@@ -6366,20 +6366,20 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
    bottom of a phone, so the practice chart is shorter than the one on the
    Chart tab and everything under it is on a tighter rhythm */
 #tpPracChart { height: 102px; }
-.tp-prac-q, .tp-prac-mark, .tp-prac-done { margin-top: 8px; }
+.tp-prac-q, .tp-prac-mark, .tp-prac-done { margin-top: 5px; }
 .tp-prac-q .bt-opts { gap: 5px; }
 .tp-prac-q .bt-opt { min-height: 28px; padding: 4px 3px; font-size: calc(10px * var(--fs)); }
 /* the two nine-slice labels and the submit pill, scaled down for this screen.
    The caps have to come down with the height — a fixed cap taller than the
    box is what squashes a nine-slice frame into a lozenge. */
 .tp-prac-q .bt-q {
-  margin: 6px 0 4px; min-height: 34px;
+  margin: 4px 0 4px; min-height: 34px;
   border-width: 15px 18px;
   border-image: url("../assets/buttons-icon/label-button@2x.png") 40 48 fill / 15px 18px stretch;
   font-size: calc(11.5px * var(--fs));
 }
 .tp-prac-q .ci-submit {
-  height: 44px; margin: 9px auto 2px;
+  height: 44px; margin: 6px auto 2px;
   border-width: 19px 22px;
   border-image: url("../assets/buttons-icon/label-button@2x.png") 40 48 fill / 19px 22px stretch;
   font-size: calc(12.5px * var(--fs));
