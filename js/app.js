@@ -324,6 +324,12 @@
     dcDraft: null,           // the one being dragged out
     dcSel: null,             // index into dcDraw
     dcQuery: "",             // the bottom panel's ticker search
+    /* the same three tools on the phone's chart, with their own state */
+    tpPractice: null,        // the two-axis practice session, when one is running
+    tpTool: "cursor",
+    tpDraw: [],
+    tpDraft: null,
+    tpSel: null,
     tpDate: null,            // the calendar's day, YYYY-MM-DD; null means today
     view: "home",            // 'home' | 'screen' | 'videos' | 'checkin' | 'beforetrade'
                              // | 'aftertrade' | 'streak'
@@ -7192,39 +7198,373 @@
      panning and zooming move a window over the same bars instead of drawing
      new ones — a chart whose history changed as you scrolled back would not
      be a chart. */
+  /* ==================== STORY ENGINE ====================
+     The practice chart is not a random walk any more. A story is a chain of
+     phase primitives, each one a small parameterised generator that reliably
+     reads as its own type while never printing the same twice. Ten of them,
+     which is the whole vocabulary the chart teaches.
+
+     The composed sequence — the primitives, their parameters and the seed —
+     is the story's code. It exists so a story can be reproduced and audited.
+     It is deliberately not rendered anywhere a user can reach: the chart
+     shows candles and nothing else. ==> seStoryCode / seLogStory. */
+
+  const SE_PRIMS = [
+    { id: "range",         label: "Range Set" },
+    { id: "breakout",      label: "Breakout" },
+    { id: "fakeout",       label: "Fakeout" },
+    { id: "retrace",       label: "Retracement" },
+    { id: "rejectsoft",    label: "Rejection (soft)" },
+    { id: "rejecthard",    label: "Rejection (hard)" },
+    { id: "retest",        label: "Retest" },
+    { id: "continuation",  label: "Continuation" },
+    { id: "reversal",      label: "Reversal" },
+    { id: "consolidation", label: "Consolidation" },
+  ];
+  const SE_LABEL = {};
+  SE_PRIMS.forEach((p) => { SE_LABEL[p.id] = p.label; });
+
+  /* What can plausibly follow what. A fakeout wants a reversal after it, a
+     breakout wants a retest or a continuation, a retracement wants to be
+     rejected. The weights are what stop every story reading the same. */
+  const SE_NEXT = {
+    range:         [["breakout", 5], ["fakeout", 3], ["consolidation", 2]],
+    breakout:      [["retest", 4], ["continuation", 4], ["fakeout", 2], ["retrace", 2]],
+    fakeout:       [["reversal", 5], ["retrace", 3], ["rejecthard", 2]],
+    retrace:       [["rejecthard", 4], ["rejectsoft", 3], ["continuation", 2], ["retest", 2]],
+    rejectsoft:    [["retrace", 3], ["continuation", 3], ["consolidation", 2]],
+    rejecthard:    [["continuation", 5], ["breakout", 3], ["retrace", 2]],
+    retest:        [["rejecthard", 4], ["continuation", 4], ["rejectsoft", 2], ["fakeout", 1]],
+    continuation:  [["retrace", 4], ["consolidation", 3], ["reversal", 2], ["breakout", 2]],
+    reversal:      [["continuation", 4], ["retrace", 3], ["retest", 2]],
+    consolidation: [["breakout", 4], ["fakeout", 3], ["continuation", 2], ["range", 1]],
+  };
+
+  function sePick(list, r) {
+    const total = list.reduce((a, x) => a + x[1], 0);
+    let t = r() * total;
+    for (const [id, w] of list) { t -= w; if (t <= 0) return id; }
+    return list[list.length - 1][0];
+  }
+  const seInt = (lo, hi, r) => Math.floor(lo + r() * (hi - lo + 1));
+
+  /* One candle, from wherever price is to wherever this primitive wants it.
+     `wick` is the primitive's own noisiness; clarity scales it down for a
+     reader who has not been taught much yet. */
+  function seCandle(ctx, close, wick, r) {
+    const open = ctx.price;
+    const w = ctx.step * wick;
+    const high = Math.max(open, close) + w * (0.25 + r() * 0.85);
+    const low = Math.min(open, close) - w * (0.25 + r() * 0.85);
+    ctx.price = close;
+    ctx.hi = Math.max(ctx.hi, high);
+    ctx.lo = Math.min(ctx.lo, low);
+    const c = { open, close, high, low, dir: close > open ? "up" : "down" };
+    ctx.out.push(c);
+    return c;
+  }
+
+  /* Every primitive takes the same context and returns the parameters it
+     chose, which is what the story code is made of. `c` is clarity: 1 is a
+     textbook signature, 0 is as messy as real price gets. */
+  const SE_BUILD = {
+    range(ctx, r, c) {
+      const n = seInt(4, 7, r);
+      const half = ctx.step * (1.1 + r() * 0.7);
+      const mid = ctx.price;
+      for (let i = 0; i < n; i++) {
+        const t = (r() - 0.5) * 2;
+        seCandle(ctx, mid + t * half, 0.5 + (1 - c) * 0.8, r);
+      }
+      ctx.rangeHi = mid + half; ctx.rangeLo = mid - half;
+      ctx.ref = ctx.price > mid ? ctx.rangeHi : ctx.rangeLo;
+      return { n, half: +(half / ctx.step).toFixed(2) };
+    },
+    breakout(ctx, r, c) {
+      const n = seInt(3, 5, r);
+      const dir = ctx.dir = ctx.rangeHi != null && r() < 0.5 ? -1 : (ctx.dir || 1);
+      const level = dir > 0 ? (ctx.rangeHi != null ? ctx.rangeHi : ctx.price) : (ctx.rangeLo != null ? ctx.rangeLo : ctx.price);
+      ctx.ref = level;
+      const mag = (1.4 + r() * 1.1) * (0.7 + c * 0.6);
+      for (let i = 0; i < n; i++) {
+        seCandle(ctx, ctx.price + dir * ctx.step * mag * (0.8 + r() * 0.5),
+          0.35 + (1 - c) * 0.7, r);
+      }
+      ctx.broke = level;
+      return { n, dir, mag: +mag.toFixed(2) };
+    },
+    fakeout(ctx, r, c) {
+      const n = seInt(3, 5, r);
+      const dir = ctx.dir || 1;
+      const level = ctx.ref != null ? ctx.ref : ctx.price;
+      /* out past the level, then straight back through it */
+      const push = seInt(1, 2, r);
+      for (let i = 0; i < push; i++) {
+        seCandle(ctx, ctx.price + dir * ctx.step * (0.9 + r() * 0.7), 0.6 + (1 - c) * 0.8, r);
+      }
+      for (let i = push; i < n; i++) {
+        const back = level - dir * ctx.step * (0.5 + r() * 0.9) * ((i - push + 1) / (n - push));
+        seCandle(ctx, back, 0.5 + (1 - c) * 0.7, r);
+      }
+      ctx.dir = -dir;
+      ctx.ref = level;
+      return { n, dir, push };
+    },
+    retrace(ctx, r, c) {
+      const n = seInt(3, 6, r);
+      /* toward a fraction of the leg just travelled — 50% unless the roll
+         says otherwise, which is what makes a fib discount recognisable */
+      const frac = [0.382, 0.5, 0.5, 0.618][seInt(0, 3, r)];
+      const from = ctx.legFrom != null ? ctx.legFrom : ctx.price;
+      const target = ctx.price + (from - ctx.price) * frac;
+      for (let i = 0; i < n; i++) {
+        const t = (i + 1) / n;
+        seCandle(ctx, ctx.price + (target - ctx.price) * t / (1 - (i / n) * 0.5),
+          0.45 + (1 - c) * 0.7, r);
+      }
+      ctx.ref = target;
+      return { n, frac };
+    },
+    rejectsoft(ctx, r, c) {
+      const n = seInt(2, 4, r);
+      const away = ctx.dir || -1;
+      for (let i = 0; i < n; i++) {
+        seCandle(ctx, ctx.price - away * ctx.step * (0.25 + r() * 0.4), 0.7 + (1 - c) * 0.6, r);
+      }
+      return { n };
+    },
+    rejecthard(ctx, r, c) {
+      const n = seInt(2, 4, r);
+      const away = -(ctx.dir || 1);
+      /* the tell is the wick: a long one into the level, then a body away */
+      seCandle(ctx, ctx.price + away * ctx.step * 0.2, 1.8 + (1 - c) * 0.9, r);
+      for (let i = 1; i < n; i++) {
+        seCandle(ctx, ctx.price + away * ctx.step * (1.2 + r() * 0.9) * (0.7 + c * 0.6),
+          0.3 + (1 - c) * 0.6, r);
+      }
+      ctx.dir = away;
+      ctx.legFrom = ctx.price;
+      return { n, dir: away };
+    },
+    retest(ctx, r, c) {
+      const n = seInt(3, 5, r);
+      const level = ctx.broke != null ? ctx.broke : ctx.ref != null ? ctx.ref : ctx.price;
+      for (let i = 0; i < n; i++) {
+        const t = (i + 1) / n;
+        seCandle(ctx, ctx.price + (level - ctx.price) * t * 0.9, 0.5 + (1 - c) * 0.7, r);
+      }
+      ctx.ref = level;
+      return { n, level: +(level).toFixed(2) };
+    },
+    continuation(ctx, r, c) {
+      const n = seInt(4, 7, r);
+      const dir = ctx.dir || 1;
+      ctx.legFrom = ctx.price;
+      const mag = (0.9 + r() * 0.8) * (0.75 + c * 0.5);
+      for (let i = 0; i < n; i++) {
+        /* a pause candle now and then, more of them the messier it gets */
+        const pause = r() > 0.55 + c * 0.3;
+        seCandle(ctx, ctx.price + dir * ctx.step * mag * (pause ? 0.15 : 0.8 + r() * 0.6),
+          0.4 + (1 - c) * 0.7, r);
+      }
+      return { n, dir, mag: +mag.toFixed(2) };
+    },
+    reversal(ctx, r, c) {
+      const n = seInt(4, 7, r);
+      const dir = ctx.dir || 1;
+      const stall = Math.max(1, Math.round(n * 0.4));
+      for (let i = 0; i < stall; i++) {
+        seCandle(ctx, ctx.price + dir * ctx.step * (0.1 + r() * 0.25), 1.2 + (1 - c) * 0.8, r);
+      }
+      ctx.dir = -dir;
+      ctx.legFrom = ctx.price;
+      for (let i = stall; i < n; i++) {
+        seCandle(ctx, ctx.price - dir * ctx.step * (0.8 + r() * 0.8) * (0.75 + c * 0.5),
+          0.4 + (1 - c) * 0.6, r);
+      }
+      return { n, from: dir, stall };
+    },
+    consolidation(ctx, r, c) {
+      const n = seInt(4, 7, r);
+      const half = ctx.step * (0.35 + r() * 0.3);
+      const mid = ctx.price;
+      for (let i = 0; i < n; i++) {
+        seCandle(ctx, mid + (r() - 0.5) * 2 * half, 0.6 + (1 - c) * 0.7, r);
+      }
+      ctx.rangeHi = mid + half; ctx.rangeLo = mid - half;
+      return { n, half: +(half / ctx.step).toFixed(2) };
+    },
+  };
+
+  /* How clean a story reads, from how much of the course has been visited.
+     A reader at the start gets textbook signatures; one who has been through
+     it gets something closer to what price actually looks like. */
+  function seClarity() {
+    const pct = overallProgress().pct;
+    return Math.max(0.15, Math.min(1, 1 - pct / 100 * 0.85));
+  }
+
+  /* Which named strategy a composed sequence reads as — the same nine the
+     Before Trade checklist names. Deliberately strict: the tag is only worth
+     anything if it means the story really is that shape, so the rules run on
+     ADJACENT steps rather than "appears somewhere later", and a story that
+     does not clearly match any of them is left untagged. */
+  function seStrategy(seq) {
+    const ids = seq.map((s) => s.id);
+    const run = (...want) => {
+      for (let i = 0; i + want.length <= ids.length; i++) {
+        if (want.every((w, k) => ids[i + k] === w)) return i;
+      }
+      return -1;
+    };
+    const count = (x) => ids.filter((y) => y === x).length;
+    const rejection = (i) => ids[i] === "rejecthard" || ids[i] === "rejectsoft";
+
+    /* the opening range taken out and reclaimed */
+    if (run("range", "breakout", "fakeout") >= 0
+     || run("range", "breakout", "retest") >= 0) return "orb";
+    /* accumulate, manipulate, distribute */
+    if (run("consolidation", "fakeout") >= 0 || run("range", "fakeout") >= 0) {
+      if (ids.indexOf("continuation") > ids.indexOf("fakeout")) return "amd";
+    }
+    /* a discount into a level that then holds */
+    const rt = seq.findIndex((x, i) => x.id === "retrace" && x.p.frac >= 0.5 && rejection(i + 1));
+    if (rt >= 0) return "fib";
+    /* the broken level retested and carried on from */
+    if (run("breakout", "retest", "continuation") >= 0) return "continuation";
+    /* the imbalance left by an impulse, filled, then carried on */
+    if (run("continuation", "retrace", "continuation") >= 0) return "imbalance";
+    /* the trend giving out and the other side taking over */
+    if (run("reversal", "continuation") >= 0) return "emacross";
+    if (run("fakeout", "reversal") >= 0) return "reversal";
+    if (run("continuation", "reversal") >= 0) return "trendbreak";
+    /* one direction, repeatedly, with nothing turning it */
+    if (count("continuation") >= 3 && !count("reversal")) return "trend";
+    return null;
+  }
+
+  /* the code: sequence, parameters and seed, enough to rebuild the story */
+  function seStoryCode(story) {
+    return story.seq.map((s) => {
+      const p = s.p || {};
+      const bits = Object.keys(p).map((k) => `${k}=${p[k]}`).join(",");
+      return bits ? `${s.id}[${bits}]` : s.id;
+    }).join(">") + `@${story.seed}~c${story.clarity.toFixed(2)}`;
+  }
+
+  const SE_LEN = 30;                    // candles per story
+  /* the pairing is a setting, not an assumption: a later build can run the
+     same composer at 30 candles of 5 minutes without touching the engine */
+  const SE_SPEC = { candles: SE_LEN, tfId: "1m" };
+
+  function seBuildStory(seed, clarity, len) {
+    const r = paMakeRng(seed);
+    const target = len || SE_SPEC.candles;
+    const ctx = { price: 0, step: 1, dir: r() < 0.5 ? 1 : -1, out: [],
+      hi: -Infinity, lo: Infinity, ref: null, rangeHi: null, rangeLo: null,
+      broke: null, legFrom: null };
+    const seq = [];
+    /* an opening range is the commonest way a session starts, not the only
+       one — a story that joins a move already running is just as real */
+    let id = sePick([["range", 5], ["consolidation", 3], ["continuation", 2]], r);
+    while (ctx.out.length < target) {
+      const before = ctx.out.length;
+      const p = SE_BUILD[id](ctx, r, clarity);
+      seq.push({ id, p, at: before, len: ctx.out.length - before });
+      id = sePick(SE_NEXT[id], r);
+    }
+    ctx.out.length = target;            // the last primitive may overshoot
+    const story = { seq, clarity, seed, candles: ctx.out };
+    story.strategy = seStrategy(seq);
+    story.code = seStoryCode(story);
+    return story;
+  }
+
+  /* ---- backend-only story log ----
+     Admin/audit visibility, per item 8. Kept small and local, and mirrored to
+     the backend when there is a session to mirror it under. Nothing here is
+     read by any user-facing screen. */
+  const SE_LOG_MAX = 40;
+  function seLogStory(story, sym, tfId) {
+    if (!store.storyLog) store.storyLog = [];
+    const rec = { at: new Date().toISOString(), sym, tf: tfId,
+      code: story.code, strategy: story.strategy, clarity: +story.clarity.toFixed(2) };
+    store.storyLog.push(rec);
+    if (store.storyLog.length > SE_LOG_MAX) store.storyLog.splice(0, store.storyLog.length - SE_LOG_MAX);
+    try { if (window.FB && FB.logStory) FB.logStory(rec); } catch (e) { /* audit is best effort */ }
+  }
+
   const TP_BARS = 420;
   const tpCache = {};
+  /* A new story every 30 minutes: the bucket is part of the seed, so the
+     chart rolls over on its own without anything having to poll it. */
+  const SE_ROTATE_MS = 30 * 60 * 1000;
+  const seBucket = () => Math.floor(Date.now() / SE_ROTATE_MS);
+  /* the composed sequences behind the cached series, for the admin hook and
+     for the practice loop's questions. Never rendered on a user screen.
+     Declared above tpSeries, which writes to it — a const below its own
+     reader is a dead zone waiting for the first caller that runs early. */
+  const tpStories = {};
+
+  /* The chart is a run of stories laid end to end rather than one long random
+     walk, so every stretch of it is something with a name. The prices are the
+     instrument's own; the engine works in steps and is scaled onto them here. */
   function tpSeries(sym, tfId) {
-    const key = sym + "|" + tfId;
+    const bucket = seBucket();
+    const key = sym + "|" + tfId + "|" + bucket;
     if (tpCache[key]) return tpCache[key];
     const tf = TP_TFS.find((t) => t.id === tfId) || TP_TFS[3];
     const row = TP_UNI[sym] || TP_UNIVERSE[0];
-    const rng = paMakeRng(sym + tfId);
     const step = row.base * 0.0016 * tf.vol;
-    let price = row.base;
+    const clarity = seClarity();
     const out = [];
-    let phase = rng() < 0.75 ? "impulse" : "range";
-    let dir = rng() < 0.5 ? 1 : -1;
+    const stories = [];
+    let price = row.base;
+    let n = 0;
     while (out.length < TP_BARS) {
-      const len = phase === "impulse" ? 3 + Math.floor(rng() * 8) : 4 + Math.floor(rng() * 10);
-      for (let k = 0; k < len && out.length < TP_BARS; k++) {
-        const open = price;
-        const drift = phase === "impulse"
-          ? dir * step * (0.6 + rng() * 0.8)
-          : (rng() - 0.5) * 2 * step * 0.5;
-        const noise = (rng() - 0.5) * 2 * step * 0.6;
-        let close = open + drift + noise;
-        if (Math.abs(close - open) < step * 0.06) close = open + (close >= open ? 1 : -1) * step * 0.1;
-        const high = Math.max(open, close) + rng() * step * 0.7;
-        const low = Math.min(open, close) - rng() * step * 0.7;
-        out.push({ open, close, high, low, dir: close > open ? "up" : "down" });
-        price = close;
+      const story = seBuildStory(`${sym}|${tfId}|${bucket}|${n}`, clarity);
+      stories.push(story);
+      /* the engine's candles are in steps around zero; place them on top of
+         wherever the last story left the price */
+      for (const c of story.candles) {
+        if (out.length >= TP_BARS) break;
+        out.push({
+          open: price + c.open * step,
+          close: price + c.close * step,
+          high: price + c.high * step,
+          low: price + c.low * step,
+          dir: c.dir,
+        });
       }
-      if (phase === "impulse") dir = rng() < 0.35 ? -dir : dir;
-      phase = phase === "impulse" ? "range" : "impulse";
+      price += (story.candles[story.candles.length - 1].close) * step;
+      n++;
     }
     tpCache[key] = out;
+    /* only the newest one is worth auditing — the rest are history it was
+       built on top of */
+    seLogStory(stories[stories.length - 1], sym, tfId);
+    tpStories[key] = stories;
     return out;
+  }
+  function tpStoryAt(sym, tfId, globalIdx) {
+    const list = tpStories[sym + "|" + tfId + "|" + seBucket()];
+    if (!list) return null;
+    let at = 0;
+    for (const st of list) {
+      if (globalIdx < at + st.candles.length) return { story: st, offset: globalIdx - at };
+      at += st.candles.length;
+    }
+    return null;
+  }
+  /* the phase a given bar belongs to — the answer the practice loop marks
+     against, and the only place the sequence is consulted at all */
+  function tpPhaseAt(sym, tfId, globalIdx) {
+    const hit = tpStoryAt(sym, tfId, globalIdx);
+    if (!hit) return null;
+    for (const s of hit.story.seq) {
+      if (hit.offset >= s.at && hit.offset < s.at + s.len) return s.id;
+    }
+    return hit.story.seq[hit.story.seq.length - 1].id;
   }
 
   const TP_SPAN_MIN = 18, TP_SPAN_MAX = 220;
@@ -7281,6 +7621,9 @@
   function tpPaintBars() {
     const track = document.getElementById("tpTrack");
     if (track) track.innerHTML = tpBarsHTML();
+    /* the drawings are anchored to bars, so they move with them */
+    const ov = document.getElementById("tpOverlay");
+    if (ov) ov.innerHTML = dcOverlayHTML("m");
     const hd = document.getElementById("tpChg");
     if (hd) {
       const all = tpSeries(tpSymbol(), state.tpTf);
@@ -7306,6 +7649,7 @@
   }
 
   function tpChartHTML() {
+    if (state.tpPractice) return tpPracticeHTML();
     const sym = tpSymbol();
     const row = TP_UNI[sym] || { sym, name: sym, base: 100 };
     const all = tpSeries(sym, state.tpTf);
@@ -7324,8 +7668,21 @@
         ${TP_TFS.map((t) => `<button class="tp-tf-btn${t.id === state.tpTf ? " on" : ""}"
           data-tp-tf="${t.id}">${t.label}</button>`).join("")}
       </div>
-      <div class="tp-chart" id="tpChart">
+      <div class="tp-toolbar">
+        <button class="dc-tool tp-prac-btn" data-tp-prac>Practice</button>
+        ${DC_TOOLS.map((t) => `<button class="dc-tool${t.id === state.tpTool ? " on" : ""}"
+          data-tp-tool="${t.id}">${esc(t.label)}</button>`).join("")}
+        <button class="dc-tool dc-del${state.tpSel == null ? " off" : ""}"
+          ${state.tpSel == null ? "disabled" : ""} data-tp-draw-del>Delete</button>
+      </div>
+      <div class="tp-chart${state.tpTool !== "cursor" ? " drawing" : ""}" id="tpChart">
         <div class="tp-track" id="tpTrack">${tpBarsHTML()}</div>
+        <div class="dc-overlay" id="tpOverlay">${dcOverlayHTML("m")}</div>
+        <div class="dc-cross" id="tpCross" hidden>
+          <span class="dc-cross-v"></span><span class="dc-cross-h"></span>
+        </div>
+        <span class="dc-read dc-read-p" id="tpReadP" hidden></span>
+        <span class="dc-read dc-read-t" id="tpReadT" hidden></span>
       </div>
       ${tpStripHTML()}`;
   }
@@ -7351,6 +7708,56 @@
   /* Deliberately five levels, not the fuller standard set. */
   const DC_FIB = [0, 38.2, 50, 61.8, 100];
 
+  /* The two charts this layer serves. Everything below reads a chart through
+     one of these rather than naming dc* or tp* directly, so the crosshair and
+     the three tools are one implementation on both platforms — item 7 is a
+     port, not a second design. */
+  const DC = {
+    d: {
+      box: "dcBox", ov: "dcOverlay", cross: "dcCross", rp: "dcReadP", rt: "dcReadT",
+      draw: "dcDraw", sel: "dcSel", tool: "dcTool", draft: "dcDraft",
+      tf: () => state.dcTf,
+      geom: () => dcGeom(),
+      repaint: () => dcPaint(),
+      rerender: () => renderDesktopTools(),
+    },
+    m: {
+      box: "tpChart", ov: "tpOverlay", cross: "tpCross", rp: "tpReadP", rt: "tpReadT",
+      draw: "tpDraw", sel: "tpSel", tool: "tpTool", draft: "tpDraft",
+      tf: () => state.tpTf,
+      geom: () => { tpClampView(); return tpGeom(tpSymbol(), state.tpTf, state.tpFrom, state.tpSpan); },
+      repaint: () => tpPaintBars(),
+      /* NOT render(): rebuilding the panel replaces #tpChart, and replacing
+         it in the middle of a touch loses the pointerup that would have
+         ended the gesture. The overlay and the toolbar are updated in place
+         instead, which is all that ever changes. */
+      rerender: () => tpSyncTools(),
+    },
+  };
+  /* the phone's chart, updated where it stands */
+  function tpSyncTools() {
+    const ov = document.getElementById("tpOverlay");
+    if (ov) ov.innerHTML = dcOverlayHTML("m");
+    const del = document.querySelector("[data-tp-draw-del]");
+    if (del) {
+      del.disabled = state.tpSel == null;
+      del.classList.toggle("off", state.tpSel == null);
+    }
+    document.querySelectorAll("[data-tp-tool]").forEach((btn) => {
+      btn.classList.toggle("on", btn.getAttribute("data-tp-tool") === state.tpTool);
+    });
+    const chart = document.getElementById("tpChart");
+    if (chart) chart.classList.toggle("drawing", state.tpTool !== "cursor");
+  }
+
+  /* which chart an event landed in, or null */
+  function dcWhich(target) {
+    if (!target || !target.closest) return null;
+    if (target.closest("#dcBox")) return "d";
+    if (target.closest("#tpChart")) return "m";
+    return null;
+  }
+
   const dcSignedIn = () => !!(window.FB && FB.user());
   const dcTf = () => TP_TFS.find((t) => t.id === state.dcTf) || TP_TFS[3];
   function dcGeom() {
@@ -7360,8 +7767,9 @@
     return tpGeom(state.dcSym, state.dcTf, state.dcFrom, state.dcSpan);
   }
   /* the newest bar is now; everything before it steps back one timeframe */
-  function dcTimeAt(gi) {
-    const mins = (TP_BARS - 1 - gi) * dcTf().min;
+  function dcTimeAt(gi, tfId) {
+    const tf = TP_TFS.find((t) => t.id === (tfId || state.dcTf)) || TP_TFS[3];
+    const mins = (TP_BARS - 1 - gi) * tf.min;
     const d = new Date(Date.now() - mins * 60000);
     return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
   }
@@ -7403,19 +7811,20 @@
     }).join("");
   }
 
-  function dcOverlayHTML() {
-    const g = dcGeom();
-    const shapes = state.dcDraw.map((d, i) => dcShapeSVG(d, g, i, i === state.dcSel)).join("");
-    const draft = state.dcDraft ? dcShapeSVG(state.dcDraft, g, -1, false) : "";
+  function dcOverlayHTML(k) {
+    const C = DC[k], g = C.geom();
+    const list = state[C.draw], selIdx = state[C.sel], draftD = state[C.draft];
+    const shapes = list.map((d, i) => dcShapeSVG(d, g, i, i === selIdx)).join("");
+    const draft = draftD ? dcShapeSVG(draftD, g, -1, false) : "";
     /* handles only on the selected one, so a busy chart is not all dots */
-    const sel = state.dcDraw[state.dcSel];
+    const sel = list[selIdx];
     const handles = sel ? [sel.a, sel.b].map((pt, k) =>
       `<circle class="dc-handle" data-dc-handle="${k}" vector-effect="non-scaling-stroke"
         cx="${g.x(pt.i)}" cy="${g.y(pt.p)}" r="1.4"></circle>`).join("") : "";
     /* every fib keeps its levels labelled, selected or not — an unlabelled
        retracement is just five lines */
-    const labels = state.dcDraw.map((d) => dcLabelsHTML(d, g)).join("")
-      + dcLabelsHTML(state.dcDraft, g);
+    const labels = list.map((d) => dcLabelsHTML(d, g)).join("")
+      + dcLabelsHTML(draftD, g);
     return `<svg class="dc-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
         ${shapes}${draft}${handles}
       </svg>
@@ -7444,7 +7853,7 @@
       </div>
       <div class="dc-box${state.dcTool !== "cursor" ? " drawing" : ""}" id="dcBox">
         <div class="tp-track" id="dcTrack">${tpCandlesHTML(g)}</div>
-        <div class="dc-overlay" id="dcOverlay">${dcOverlayHTML()}</div>
+        <div class="dc-overlay" id="dcOverlay">${dcOverlayHTML("d")}</div>
         <div class="dc-cross" id="dcCross" hidden>
           <span class="dc-cross-v"></span><span class="dc-cross-h"></span>
         </div>
@@ -7517,7 +7926,136 @@
     const track = document.getElementById("dcTrack");
     if (track) track.innerHTML = tpCandlesHTML(g);
     const ov = document.getElementById("dcOverlay");
-    if (ov) ov.innerHTML = dcOverlayHTML();
+    if (ov) ov.innerHTML = dcOverlayHTML("d");
+  }
+
+  /* ==================== PRACTICE LOOP ====================
+     The two axes the Æway games already score separately: name the phase you
+     are looking at, and call the candle that has not printed yet. Both are
+     marked independently, because getting one right and the other wrong is
+     the interesting case — a reader who names the phase but calls the wrong
+     way has half the skill.
+
+     The story's composed sequence is what marks the phase answer. It is read
+     here and nowhere else, and nothing about it reaches the screen. */
+
+  /* nine to choose from: the eight the spec names, plus the opening range,
+     with the two rejections offered as one — the difference between a soft
+     and a hard rejection is not what this question is asking */
+  const TP_PHASE_OPTS = [
+    { id: "range", label: "Range Set" },
+    { id: "breakout", label: "Breakout" },
+    { id: "fakeout", label: "Fakeout" },
+    { id: "retrace", label: "Retracement" },
+    { id: "reject", label: "Rejection" },
+    { id: "retest", label: "Retest" },
+    { id: "continuation", label: "Continuation" },
+    { id: "reversal", label: "Reversal" },
+    { id: "consolidation", label: "Consolidation" },
+  ];
+  const tpPhaseKey = (id) => (id === "rejectsoft" || id === "rejecthard") ? "reject" : id;
+  const TP_SEEN = 8;          // candles on screen before the first question
+  const TP_ROUNDS = 6;        // questions in a session
+  const TP_GAP = 2;           // candles that print between one question and the next
+
+  /* which story the last session used, so "Another story" is another one and
+     not the same thirty candles again */
+  let tpPracAt = null;
+
+  function tpPracticeStart() {
+    const sym = tpSymbol(), tf = state.tpTf;
+    tpSeries(sym, tf);                       // makes sure the stories exist
+    const list = tpStories[sym + "|" + tf + "|" + seBucket()];
+    if (!list || !list.length) return;
+    /* newest first, then back through the ones it was built on top of */
+    const idx = tpPracAt == null || tpPracAt >= list.length
+      ? list.length - 1
+      : (tpPracAt - 1 + list.length) % list.length;
+    tpPracAt = idx;
+    let from = 0;
+    for (let i = 0; i < idx; i++) from += list[i].candles.length;
+    /* the last story can be cut short by the end of the series */
+    const len = Math.min(list[idx].candles.length, TP_BARS - from);
+    state.tpPractice = {
+      sym, tf, from, len,
+      shown: Math.min(TP_SEEN, Math.max(2, len - 1)),
+      phase: null, dir: null,                 // this round's two answers
+      graded: null,
+      phaseHits: 0, dirHits: 0, rounds: 0,
+    };
+    render();
+  }
+
+  function tpPracticeGeom(p) {
+    /* only what has printed: the rest of the story has not happened yet */
+    return tpGeom(p.sym, p.tf, p.from, Math.max(2, p.shown));
+  }
+
+  function tpPracticeHTML() {
+    const p = state.tpPractice;
+    const g = tpPracticeGeom(p);
+    const over = p.rounds >= TP_ROUNDS || p.shown >= p.len;
+    const ready = p.phase && p.dir;
+    const gr = p.graded;
+    return `
+      <div class="tp-prac-head">
+        <span class="tp-prac-cap">Practice</span>
+        <span class="tp-prac-score">Phase <b>${p.phaseHits}</b>/${p.rounds}
+          · Direction <b>${p.dirHits}</b>/${p.rounds}</span>
+        <button class="dc-tool" data-tp-prac-end>Exit</button>
+      </div>
+      <div class="tp-chart" id="tpPracChart">
+        <div class="tp-track">${tpCandlesHTML(g)}</div>
+      </div>
+      ${gr ? `<div class="tp-prac-mark">
+          <div class="tp-prac-line ${gr.phaseOk ? "ok" : "no"}">
+            Phase — ${gr.phaseOk ? "correct" : `you said ${esc(gr.said)}, it was ${esc(gr.was)}`}</div>
+          <div class="tp-prac-line ${gr.dirOk ? "ok" : "no"}">
+            Next candle — ${gr.dirOk ? "correct" : `it printed ${gr.actual}`}</div>
+          <button class="ci-submit" data-tp-prac-next>${over ? "See result" : "Next"}</button>
+        </div>`
+      : over ? `<div class="tp-prac-done">
+          <div class="ci-result-title">Session complete</div>
+          <div class="ci-result-body">Phase ${p.phaseHits} of ${p.rounds} ·
+            Direction ${p.dirHits} of ${p.rounds}</div>
+          <button class="btn-primary" data-tp-prac-again>Another story</button>
+          <button class="btn-secondary" data-tp-prac-end>Back to the chart</button>
+        </div>`
+      : `<div class="tp-prac-q">
+          <div class="bt-q">What's happening right now?</div>
+          <div class="bt-opts bt-opts-3">
+            ${TP_PHASE_OPTS.map((o) => `<button class="bt-opt${p.phase === o.id ? " on" : ""}"
+              data-tp-prac-phase="${o.id}">${esc(o.label)}</button>`).join("")}
+          </div>
+          <div class="bt-q">The next candle — green or red?</div>
+          <div class="bt-opts bt-opts-2">
+            <button class="bt-opt up${p.dir === "up" ? " on" : ""}" data-tp-prac-dir="up">Green</button>
+            <button class="bt-opt down${p.dir === "down" ? " on" : ""}" data-tp-prac-dir="down">Red</button>
+          </div>
+          <button class="ci-submit${ready ? "" : " off"}"${ready ? "" : " disabled"}
+            data-tp-prac-submit>Submit</button>
+        </div>`}`;
+  }
+
+  /* marks both axes, then lets the next candle print */
+  function tpPracticeSubmit() {
+    const p = state.tpPractice;
+    if (!p || !p.phase || !p.dir || p.graded) return;
+    const all = tpSeries(p.sym, p.tf);
+    const curIdx = p.from + p.shown - 1;      // the last candle on screen
+    const nextIdx = p.from + p.shown;
+    const was = tpPhaseKey(tpPhaseAt(p.sym, p.tf, curIdx) || "consolidation");
+    const actual = all[nextIdx] ? all[nextIdx].dir : "up";
+    const phaseOk = p.phase === was;
+    const dirOk = p.dir === actual;
+    p.rounds++;
+    if (phaseOk) p.phaseHits++;
+    if (dirOk) p.dirHits++;
+    p.graded = { phaseOk, dirOk, actual: actual === "up" ? "green" : "red",
+      said: (TP_PHASE_OPTS.find((o) => o.id === p.phase) || {}).label,
+      was: (TP_PHASE_OPTS.find((o) => o.id === was) || {}).label || was };
+    p.shown = Math.min(p.len, p.shown + 1);   // the candle they called prints
+    render();
   }
 
   function tpWatchHTML() {
@@ -8355,10 +8893,19 @@
   cardScroll.addEventListener("pointerdown", (e) => {
     const box = e.target.closest("#tpChart");
     if (!box) return;
+    /* With a drawing tool picked, or a finger on a handle or an existing
+       shape, the drawing layer takes the pointer and the chart does not pan
+       under it. One finger only — a second one is always a pinch. */
+    if (tpPtr.size === 0 && dcDown(e, "m")) { e.preventDefault(); return; }
     tpPtr.set(e.pointerId, { x: e.clientX, y: e.clientY });
+    /* dcDown may have cleared a selection, and clearing one re-renders the
+       panel — so the element captured above is detached by now. Re-query it:
+       a detached box measures zero wide, and a pan divided by that is
+       Infinity, which is a chart that never moves again. */
+    const live = document.getElementById("tpChart") || box;
     tpGesture = tpPtr.size >= 2
       ? { kind: "pinch", dist: tpDist(), span: state.tpSpan, from: state.tpFrom }
-      : { kind: "pan", x: e.clientX, from: state.tpFrom, w: box.getBoundingClientRect().width };
+      : { kind: "pan", x: e.clientX, from: state.tpFrom, w: live.getBoundingClientRect().width };
     /* Capture keeps the moves coming if the finger slides off the chart. It is
        an improvement, not a requirement, and it throws outright when there is
        no live pointer behind the event — so it goes after the gesture is set
@@ -8367,6 +8914,7 @@
     try { box.setPointerCapture(e.pointerId); } catch (x) { /* no live pointer */ }
   });
   cardScroll.addEventListener("pointermove", (e) => {
+    if (dcDrag && dcDrag.k === "m") return;   // the drawing layer has it
     if (!tpPtr.has(e.pointerId) || !tpGesture) return;
     tpPtr.set(e.pointerId, { x: e.clientX, y: e.clientY });
     e.preventDefault();
@@ -8477,7 +9025,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -8880,7 +9428,42 @@
       }
     }
     else if (t.hasAttribute("data-panel-close")) { commitSettingsName(); state.panel = null; render(); }
-    else if (t.hasAttribute("data-tp-tab")) { tpReadQuery(); state.tpTab = t.getAttribute("data-tp-tab"); render(); }
+    else if (t.hasAttribute("data-tp-tab")) {
+      tpReadQuery(); state.tpPractice = null;
+      state.tpTab = t.getAttribute("data-tp-tab"); render();
+    }
+    else if (t.hasAttribute("data-tp-prac")) tpPracticeStart();
+    else if (t.hasAttribute("data-tp-prac-end")) { state.tpPractice = null; render(); }
+    else if (t.hasAttribute("data-tp-prac-again")) tpPracticeStart();
+    else if (t.hasAttribute("data-tp-prac-phase")) {
+      const id = t.getAttribute("data-tp-prac-phase");
+      state.tpPractice.phase = state.tpPractice.phase === id ? null : id;
+      render();
+    }
+    else if (t.hasAttribute("data-tp-prac-dir")) {
+      const d = t.getAttribute("data-tp-prac-dir");
+      state.tpPractice.dir = state.tpPractice.dir === d ? null : d;
+      render();
+    }
+    else if (t.hasAttribute("data-tp-prac-submit")) tpPracticeSubmit();
+    else if (t.hasAttribute("data-tp-prac-next")) {
+      const p = state.tpPractice;
+      p.graded = null; p.phase = null; p.dir = null;
+      /* a couple more candles print between questions, so a session walks
+         through the story rather than sitting on its opening */
+      p.shown = Math.min(p.len, p.shown + TP_GAP);
+      render();
+    }
+    else if (t.hasAttribute("data-tp-tool")) {
+      state.tpTool = t.getAttribute("data-tp-tool");
+      state.tpSel = null; state.tpDraft = null;
+      tpSyncTools();
+    }
+    else if (t.hasAttribute("data-tp-draw-del")) {
+      if (state.tpSel != null) state.tpDraw.splice(state.tpSel, 1);
+      state.tpSel = null;
+      tpSyncTools();
+    }
     else if (t.hasAttribute("data-dc-tool")) {
       state.dcTool = t.getAttribute("data-dc-tool");
       state.dcSel = null; state.dcDraft = null;
@@ -8918,6 +9501,8 @@
       renderDesktopTools();
     }
     else if (t.hasAttribute("data-tp-tf")) {
+      /* the drawings belong to the series they were drawn on */
+      state.tpDraw = []; state.tpSel = null;
       state.tpTf = t.getAttribute("data-tp-tf");
       // a new timeframe is a new series, so start at its right edge
       state.tpSpan = 60; state.tpFrom = TP_BARS; tpClampView(); render();
@@ -9796,15 +10381,14 @@
     tryUnmuted(waveVideo);
   }
 
-  /* ---------------- desktop chart pointer work ----------------
-     One listener set on document, filtered to #dcBox, because the panel's
-     contents are rewritten wholesale on every repaint — a listener bound to
-     the box itself would be thrown away with it. */
+  /* ---------------- chart pointer work, both platforms ----------------
+     The move and up listeners are on the document because a drag leaves the
+     box; the down and wheel ones sit on the panel, which outlives its own
+     innerHTML. Everything is keyed by which chart the pointer is over, so
+     the crosshair and the three tools are one implementation. */
 
-  let dcDrag = null;
-
-  function dcPct(e) {
-    const box = document.getElementById("dcBox");
+  function dcPct(e, k) {
+    const box = document.getElementById(DC[k].box);
     if (!box) return null;
     const r = box.getBoundingClientRect();
     if (!r.width || !r.height) return null;
@@ -9815,12 +10399,13 @@
     };
   }
 
-  function dcPaintCross(pt) {
-    const cross = document.getElementById("dcCross");
-    const rp = document.getElementById("dcReadP"), rt = document.getElementById("dcReadT");
+  function dcPaintCross(pt, k) {
+    const C = DC[k];
+    const cross = document.getElementById(C.cross);
+    const rp = document.getElementById(C.rp), rt = document.getElementById(C.rt);
     if (!cross || !rp || !rt) return;
     if (!pt) { cross.hidden = true; rp.hidden = true; rt.hidden = true; return; }
-    const g = dcGeom();
+    const g = C.geom();
     cross.hidden = false; rp.hidden = false; rt.hidden = false;
     cross.querySelector(".dc-cross-v").style.left = pt.x.toFixed(2) + "%";
     cross.querySelector(".dc-cross-h").style.top = pt.y.toFixed(2) + "%";
@@ -9829,13 +10414,13 @@
     rp.textContent = dcPriceLabel(g.priceAt(pt.y));
     const gi = Math.max(0, Math.min(TP_BARS - 1, Math.round(g.barAt(pt.x))));
     rt.style.left = pt.x.toFixed(2) + "%";
-    rt.textContent = dcTimeAt(gi);
+    rt.textContent = dcTimeAt(gi, C.tf());
   }
 
   const dcPointOf = (pt, g) => ({ i: g.barAt(pt.x), p: g.priceAt(pt.y) });
 
   /* how far a percentage point is from a shape, for picking one up */
-  function dcHitTest(pt, g) {
+  function dcHitTest(pt, g, k) {
     const near = (x1, y1, x2, y2) => {
       const dx = x2 - x1, dy = y2 - y1;
       const len2 = dx * dx + dy * dy;
@@ -9843,8 +10428,9 @@
       const cx = x1 + t * dx, cy = y1 + t * dy;
       return Math.hypot(pt.x - cx, pt.y - cy) <= 2.2;
     };
-    for (let i = state.dcDraw.length - 1; i >= 0; i--) {
-      const d = state.dcDraw[i];
+    const list = state[DC[k].draw];
+    for (let i = list.length - 1; i >= 0; i--) {
+      const d = list[i];
       const x1 = g.x(d.a.i), y1 = g.y(d.a.p), x2 = g.x(d.b.i), y2 = g.y(d.b.p);
       if (d.type === "line" && near(x1, y1, x2, y2)) return i;
       if (d.type === "box") {
@@ -9868,36 +10454,60 @@
   const dcChartPanel = document.querySelector(".dt-panel-chart");
   const dcWidePanel = document.querySelector(".dt-panel-wide");
 
-  if (dcChartPanel) dcChartPanel.addEventListener("pointerdown", (e) => {
-    const box = e.target.closest ? e.target.closest("#dcBox") : null;
-    if (!box) return;
-    const pt = dcPct(e);
-    if (!pt) return;
-    const g = dcGeom();
-    e.preventDefault();
+  /* Shared by both charts. On the phone this runs alongside the pan/pinch
+     gestures that were already there: with the cursor tool selected the
+     gestures own the pointer, and with a drawing tool selected this does. */
+  function dcDown(e, k) {
+    const C = DC[k];
+    const pt = dcPct(e, k);
+    if (!pt) return false;
+    const g = C.geom();
     const handle = e.target.closest ? e.target.closest("[data-dc-handle]") : null;
-    if (handle && state.dcDraw[state.dcSel]) {
-      dcDrag = { kind: "handle", end: handle.getAttribute("data-dc-handle") === "0" ? "a" : "b" };
-      return;
+    if (handle && state[C.draw][state[C.sel]]) {
+      dcDrag = { k, kind: "handle", end: handle.getAttribute("data-dc-handle") === "0" ? "a" : "b" };
+      return true;
     }
-    if (state.dcTool !== "cursor") {
+    if (state[C.tool] !== "cursor") {
       const at = dcPointOf(pt, g);
-      state.dcDraft = { type: state.dcTool, a: at, b: at };
-      dcDrag = { kind: "draw" };
-      dcPaint();
-      return;
+      state[C.draft] = { type: state[C.tool], a: at, b: at };
+      dcDrag = { k, kind: "draw" };
+      dcRepaintOverlay(k);
+      return true;
     }
-    const hit = dcHitTest(pt, g);
-    if (hit !== null) { state.dcSel = hit; renderDesktopTools(); return; }
-    if (state.dcSel != null) { state.dcSel = null; renderDesktopTools(); }
-    dcDrag = { kind: "pan", x: e.clientX, from: state.dcFrom, w: pt.r.width };
+    const hit = dcHitTest(pt, g, k);
+    if (hit !== null) { state[C.sel] = hit; C.rerender(); return true; }
+    if (state[C.sel] != null) { state[C.sel] = null; C.rerender(); }
+    return false;      // nothing to draw or pick: the chart's own pan takes it
+  }
+
+  /* the overlay on its own — the bars have not moved */
+  function dcRepaintOverlay(k) {
+    const ov = document.getElementById(DC[k].ov);
+    if (ov) ov.innerHTML = dcOverlayHTML(k);
+  }
+
+  let dcDrag = null;
+
+  if (dcChartPanel) dcChartPanel.addEventListener("pointerdown", (e) => {
+    if (!e.target.closest || !e.target.closest("#dcBox")) return;
+    e.preventDefault();
+    if (!dcDown(e, "d")) {
+      const pt = dcPct(e, "d");
+      dcDrag = { k: "d", kind: "pan", x: e.clientX, from: state.dcFrom, w: pt.r.width };
+    }
   });
 
   document.addEventListener("pointermove", (e) => {
-    if (!document.getElementById("dcBox")) return;
-    const pt = dcPct(e);
-    const over = e.target.closest && e.target.closest("#dcBox");
-    if (!dcDrag) { dcPaintCross(over && pt ? pt : null); return; }
+    if (!dcDrag) {
+      /* no drag: just the crosshair, over whichever chart the pointer is on */
+      const k = dcWhich(e.target);
+      if (k) dcPaintCross(dcPct(e, k), k);
+      else { ["d", "m"].forEach((x) => {
+        if (document.getElementById(DC[x].cross)) dcPaintCross(null, x); }); }
+      return;
+    }
+    const k = dcDrag.k, C = DC[k];
+    const pt = dcPct(e, k);
     if (!pt) return;
     if (dcDrag.kind === "pan") {
       /* a bar is the box width over the span, so a drag of N pixels is N of
@@ -9907,35 +10517,39 @@
       dcPaint();
       return;
     }
-    const g = dcGeom();
-    if (dcDrag.kind === "draw" && state.dcDraft) { state.dcDraft.b = dcPointOf(pt, g); dcPaint(); }
-    if (dcDrag.kind === "handle") {
-      const d = state.dcDraw[state.dcSel];
-      if (d) { d[dcDrag.end] = dcPointOf(pt, g); dcPaint(); }
+    const g = C.geom();
+    if (dcDrag.kind === "draw" && state[C.draft]) {
+      state[C.draft].b = dcPointOf(pt, g);
+      dcRepaintOverlay(k);
     }
-    dcPaintCross(pt);
+    if (dcDrag.kind === "handle") {
+      const d = state[C.draw][state[C.sel]];
+      if (d) { d[dcDrag.end] = dcPointOf(pt, g); dcRepaintOverlay(k); }
+    }
+    dcPaintCross(pt, k);
   });
 
   document.addEventListener("pointerup", () => {
     if (!dcDrag) return;
-    const was = dcDrag.kind;
+    const { k, kind } = dcDrag;
+    const C = DC[k];
     dcDrag = null;
-    if (was === "draw" && state.dcDraft) {
-      const d = state.dcDraft;
-      state.dcDraft = null;
-      /* a click with no drag is not a drawing */
-      const g = dcGeom();
+    if (kind === "draw" && state[C.draft]) {
+      const d = state[C.draft];
+      state[C.draft] = null;
+      /* a tap with no drag is not a drawing */
+      const g = C.geom();
       if (Math.abs(g.x(d.b.i) - g.x(d.a.i)) < 1 && Math.abs(g.y(d.b.p) - g.y(d.a.p)) < 1) {
-        dcPaint();
+        dcRepaintOverlay(k);
         return;
       }
-      state.dcDraw.push(d);
-      state.dcSel = state.dcDraw.length - 1;
-      state.dcTool = "cursor";       // one shape per pick, the way charts do it
-      renderDesktopTools();
+      state[C.draw].push(d);
+      state[C.sel] = state[C.draw].length - 1;
+      state[C.tool] = "cursor";       // one shape per pick, the way charts do it
+      C.rerender();
       return;
     }
-    if (was === "handle") renderDesktopTools();
+    if (kind === "handle") C.rerender();
   });
 
   /* on the panel rather than the document: a non-passive wheel listener on
@@ -9944,7 +10558,7 @@
     const box = e.target.closest ? e.target.closest("#dcBox") : null;
     if (!box) return;
     e.preventDefault();
-    const pt = dcPct(e);
+    const pt = dcPct(e, "d");
     const g = dcGeom();
     const anchor = g.barAt(pt ? pt.x : 50);
     const next = Math.max(TP_SPAN_MIN, Math.min(TP_SPAN_MAX,
@@ -9953,21 +10567,22 @@
     state.dcFrom = Math.round(anchor - (pt ? pt.x : 50) / 100 * next + 0.5);
     state.dcSpan = next;
     dcPaint();
-    dcPaintCross(pt);
+    dcPaintCross(pt, "d");
   }, { passive: false });
 
   document.addEventListener("keydown", (e) => {
-    if (state.dcSel == null || !document.getElementById("dcBox")) return;
+    const k = document.getElementById("dcBox") ? "d" : document.getElementById("tpChart") ? "m" : null;
+    if (!k || state[DC[k].sel] == null) return;
     const tag = (e.target.tagName || "").toLowerCase();
     if (tag === "input" || tag === "textarea") return;
     if (e.key === "Delete" || e.key === "Backspace") {
       e.preventDefault();
-      state.dcDraw.splice(state.dcSel, 1);
-      state.dcSel = null;
-      renderDesktopTools();
+      state[DC[k].draw].splice(state[DC[k].sel], 1);
+      state[DC[k].sel] = null;
+      DC[k].rerender();
     } else if (e.key === "Escape") {
-      state.dcSel = null;
-      renderDesktopTools();
+      state[DC[k].sel] = null;
+      DC[k].rerender();
     }
   });
 
