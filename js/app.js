@@ -38,6 +38,8 @@
   if (!store.checkinLog) store.checkinLog = {};         // YYYY-MM-DD -> submitted answers
   if (!store.beforeTrade) store.beforeTrade = {};       // Before Trade Stage 1 picks
   if (!store.beforeTradeLog) store.beforeTradeLog = {}; // YYYY-MM-DD -> submitted Stage 1
+  if (!store.afterTrade) store.afterTrade = {};         // After Trade picks, before submit
+  if (!store.afterTradeLog) store.afterTradeLog = {};   // YYYY-MM-DD -> submitted After Trade
   if (!store.journalImport) store.journalImport = {};   // account -> YYYY-MM-DD -> day totals
   if (!store.journalManual) store.journalManual = {};   // account -> YYYY-MM-DD -> [manual trades]
   if (!store.journalAccounts) store.journalAccounts = [];  // user-added brokerage accounts
@@ -200,6 +202,8 @@
       checkinLog: store.checkinLog || {},
       beforeTrade: store.beforeTrade || {},
       beforeTradeLog: store.beforeTradeLog || {},
+      afterTrade: store.afterTrade || {},
+      afterTradeLog: store.afterTradeLog || {},
       journalImport: store.journalImport || {},
       journalManual: store.journalManual || {},
       journalAccounts: store.journalAccounts || [],
@@ -242,7 +246,7 @@
     if (!cloud) return false;
     const mapKeys = [
       "visited", "liked", "saved", "checklist", "notes", "videosWatched",
-      "checkinLog", "beforeTradeLog", "journalImport", "journalManual",
+      "checkinLog", "beforeTradeLog", "afterTradeLog", "journalImport", "journalManual",
       "journalBatches", "journalTrades", "journalOpen", "propLedger", "dayProgress",
     ];
     for (const k of mapKeys) {
@@ -251,6 +255,9 @@
     if (!store.lastScreen && cloud.lastScreen) store.lastScreen = cloud.lastScreen;
     if (cloud.beforeTrade && Object.keys(store.beforeTrade || {}).length === 0) {
       store.beforeTrade = cloud.beforeTrade;
+    }
+    if (cloud.afterTrade && Object.keys(store.afterTrade || {}).length === 0) {
+      store.afterTrade = cloud.afterTrade;
     }
     if (Array.isArray(cloud.journalAccounts) && !(store.journalAccounts || []).length) {
       store.journalAccounts = cloud.journalAccounts.slice();
@@ -300,6 +307,7 @@
     tpQuery: "",             // the watchlist search box
     tpDate: null,            // the calendar's day, YYYY-MM-DD; null means today
     view: "home",            // 'home' | 'screen' | 'videos' | 'checkin' | 'beforetrade'
+                             // | 'aftertrade'
                              // | 'journal' | 'pickaeway' | 'buildmatch' | 'match' | 'result' | 'replay'
                              // | 'aehome' — the Æway hub the bar-2 home icon opens
     homeTab: "sections",     // 'sections' | 'liked' | 'saved'
@@ -368,12 +376,12 @@
   ];
 
   /* Placeholders until the icon artwork lands — see the layout prompt.
-     Only Before Trade has a screen behind it so far; the other three are still
-     inert, so they render as plain markers rather than buttons. */
+     Discipline Streak is the only one with no screen behind it yet, so it is
+     the only one that renders as a plain marker rather than a button. */
   const CHECKIN_ACTIONS = [
     { label: "Start Day", icon: "cat-start-day" },
     { label: "Before Trade", icon: "cat-before-trade", go: "bt-open" },
-    { label: "After Trade", icon: "cat-after-trade" },
+    { label: "After Trade", icon: "cat-after-trade", go: "at-open" },
     { label: "Discipline Streak", icon: "cat-discipline-streak" },
   ];
 
@@ -414,7 +422,32 @@
   ];
   const bt2Label = (id) => (BT2_STRATS.find((x) => x.id === id) || {}).label || "—";
 
-  function bt1OptLabel(item, val) {
+  /* After Trade — the third daily section. Same one-tap-per-row shape as
+     Before Trade Stage 1, and deliberately about process rather than numbers:
+     the Trade Journal already holds entry, exit, instrument and P&L, so
+     nothing here asks for them again. */
+  const AT_ITEMS = [
+    { id: "plan", label: "Did you follow your plan?", cols: 2, opts: [
+      ["yes", "Yes"], ["no", "No"]] },
+    { id: "outcome", label: "Trade outcome", cols: 3, opts: [
+      ["win", "Win"], ["loss", "Loss"], ["breakeven", "Breakeven"]] },
+    { id: "exit", label: "Exit reason", cols: 2, opts: [
+      ["target", "Target hit"], ["stop", "Stop hit"],
+      ["manual", "Manual exit"], ["time", "Time ran out"]] },
+    { id: "state", label: "State during the trade", cols: 2, opts: [
+      ["calm", "Calm"], ["anxious", "Anxious"],
+      ["impulsive", "Impulsive"], ["confident", "Confident"]] },
+    { id: "again", label: "Would you take this trade again?", cols: 2, opts: [
+      ["yes", "Yes"], ["no", "No"]] },
+  ];
+  /* short forms for the summary, the same reason Stage 1 carries its own */
+  const AT_SHORT = {
+    plan: "Followed plan", outcome: "Outcome", exit: "Exit reason",
+    state: "State", again: "Take it again",
+  };
+
+  /* shared by both checklists: the label an option id stands for */
+  function optLabel(item, val) {
     const hit = item.opts.find((o) => o[0] === val);
     return hit ? hit[1] : "—";
   }
@@ -1133,7 +1166,7 @@
         ${BT1_ITEMS.map((it) => `
           <div class="bt-sum-row">
             <span class="bt-sum-k">${esc(BT1_SHORT[it.id])}</span>
-            <span class="bt-sum-v">${esc(bt1OptLabel(it, a[it.id]))}</span>
+            <span class="bt-sum-v">${esc(optLabel(it, a[it.id]))}</span>
           </div>`).join("")}
       </div>
       <button class="btn-primary" data-bt-stage2>Continue to Stage 2</button>
@@ -1215,6 +1248,79 @@
     render();
   }
 
+  /* ---------------- After Trade ----------------
+     Five one-tap rows, then a summary in place of them. Persistence follows
+     Start Day rather than Before Trade: the submitted state is read straight
+     back out of today's log, so navigating away and returning lands on the
+     summary and the questions only come back when the calendar day does.
+     There is no in-memory flag to fall out of step with the log. */
+
+  function atAnswered() {
+    return AT_ITEMS.every((it) => store.afterTrade[it.id]);
+  }
+  function atSubmitted(dayKey) {
+    return !!((store.afterTradeLog || {})[dayKey] || {}).answers;
+  }
+
+  function atRowsHTML() {
+    return `
+      <h1 class="ci-heading">After Trade</h1>
+      <div class="bt-sub">Process Review</div>
+      <div class="bt-list">
+        ${AT_ITEMS.map((it) => {
+          const picked = store.afterTrade[it.id];
+          return `<div class="bt-row${picked ? " done" : ""}">
+            <div class="bt-q">${esc(it.label)}</div>
+            <div class="bt-opts bt-opts-${it.cols}">
+              ${it.opts.map(([v, label]) => `
+                <button class="bt-opt${picked === v ? " on" : ""}" data-at="${it.id}" data-at-val="${v}"
+                        aria-pressed="${picked === v}">${esc(label)}</button>`).join("")}
+            </div>
+          </div>`;
+        }).join("")}
+      </div>
+      ${(() => {
+        const ready = atAnswered();
+        return `<button class="ci-submit${ready ? "" : " off"}"
+          ${ready ? "" : "disabled"} data-at-submit>Submit</button>`;
+      })()}`;
+  }
+
+  function atResultHTML() {
+    const a = (store.afterTradeLog[todayKey()] || {}).answers || store.afterTrade;
+    return `<div class="ci-result ci-result-inline go">
+      <div class="ci-result-title">After Trade Complete</div>
+      <div class="ci-result-body">Logged for today. Here's what you marked.</div>
+      <div class="bt-summary">
+        ${AT_ITEMS.map((it) => `
+          <div class="bt-sum-row">
+            <span class="bt-sum-k">${esc(AT_SHORT[it.id])}</span>
+            <span class="bt-sum-v">${esc(optLabel(it, a[it.id]))}</span>
+          </div>`).join("")}
+      </div>
+      <button class="btn-secondary" data-at-exit>Back to Check-In</button>
+    </div>`;
+  }
+
+  function renderAfterTrade() {
+    barTitle.textContent = "After Trade";
+    paintStreak();
+    const done = atSubmitted(todayKey());
+    cardScroll.innerHTML = (done ? atResultHTML() : atRowsHTML()) + checkinActionsHTML();
+    cardScroll.classList.toggle("ci-resulting", done);
+    cardScroll.scrollTop = ciKeepScroll ? ciScrollTop : 0;
+    ciKeepScroll = false;
+    cardFooter.style.display = "none";
+  }
+
+  function openAfterTrade() {
+    stopAudio();
+    state.view = "aftertrade";
+    state.slideDir = 0;
+    closeOverlay();
+    render();
+  }
+
   /* ---------------- Pickæway (Reward Battle) ----------------
      The Cool Down Game's home screen. Stats come from store.pickaeway and
      read zero until matches are actually played; Build Match sets a battle up
@@ -1227,12 +1333,12 @@
   /* The four sections a full trading day is made of. Each one fills its own
      dot the moment it is submitted, and stays filled for the rest of that
      calendar day — nothing here resets mid-day. Start Day and Before Trade
-     read their own submitted logs; the two that have no screen yet read
-     store.dayProgress, which is the hook they will write to when built. */
+     read their own submitted logs; the one that has no screen yet reads
+     store.dayProgress, which is the hook it will write to when built. */
   const DAY_SECTIONS = [
     { id: "startDay", label: "Start Day", done: (k) => !!(store.checkinLog || {})[k] },
     { id: "beforeTrade", label: "Before Trade", done: (k) => !!(store.beforeTradeLog || {})[k] },
-    { id: "afterTrade", label: "After Trade", done: (k) => !!(store.dayProgress[k] || {}).afterTrade },
+    { id: "afterTrade", label: "After Trade", done: (k) => !!(store.afterTradeLog || {})[k] },
     { id: "reviewCard", label: "Review Streak Report Card", done: (k) => !!(store.dayProgress[k] || {}).reviewCard },
   ];
 
@@ -6378,9 +6484,11 @@
     render();
   }
 
-  /* Start Day and Before Trade are the same section: same bar, same dock slot */
+  /* The daily sections are one section as far as the chrome is concerned:
+     same bar, same dock slot */
   function inChecklist() {
-    return state.view === "checkin" || state.view === "beforetrade";
+    return state.view === "checkin" || state.view === "beforetrade"
+      || state.view === "aftertrade";
   }
 
   /* every Gameæway view — the selector and both games — shares the same bar
@@ -6435,6 +6543,7 @@
     else if (state.view === "videos") renderVideos();
     else if (state.view === "checkin") renderCheckin();
     else if (state.view === "beforetrade") renderBeforeTrade();
+    else if (state.view === "aftertrade") renderAfterTrade();
     else if (state.view === "journal") renderJournal();
     else if (state.view === "aehome") renderAeHome();
     else if (state.view === "games") renderGames();
@@ -7874,7 +7983,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -8023,6 +8132,24 @@
       state.btResult = true;
       renderBeforeTrade();
     }
+    else if (t.hasAttribute("data-at-open")) openAfterTrade();
+    else if (t.dataset.at) {
+      const id = t.dataset.at, val = t.dataset.atVal;
+      // tapping the chosen answer clears it, same as the other two checklists
+      if (store.afterTrade[id] === val) delete store.afterTrade[id];
+      else store.afterTrade[id] = val;
+      save();
+      renderChecklistInPlace(renderAfterTrade);
+    }
+    else if (t.hasAttribute("data-at-submit")) {
+      if (!atAnswered()) return;
+      const answers = {};
+      AT_ITEMS.forEach((it) => { answers[it.id] = store.afterTrade[it.id]; });
+      store.afterTradeLog[todayKey()] = { answers, submittedAt: new Date().toISOString() };
+      save();
+      renderAfterTrade();
+    }
+    else if (t.hasAttribute("data-at-exit")) openCheckin();
     else if (t.hasAttribute("data-bt-stage2")) {
       state.btStage2 = true; state.btStrategyDone = false; renderBeforeTrade();
     }
