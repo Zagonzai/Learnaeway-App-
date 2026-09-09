@@ -338,6 +338,7 @@
     atAdding: false,         // logging another After Trade entry over today's list
     dsMonth: 0,              // Discipline Streak calendar, months from this one
     dsDay: null,             // 'YYYY-MM-DD' — a past day's scorecard, null = today
+    dsOpen: {},              // which scorecard rows have their detail showing
     journalDay: null,        // 'YYYY-MM-DD' — day view open in place of the calendar
     journalDelete: null,     // { kind:'manual'|'batch', id, acctId, label, count, days }
     journalReplace: null,    // { batchId, acctId } — CSV picker open to replace a batch
@@ -387,6 +388,15 @@
     { id: "market-awareness", label: "Are you aware of Current Market Conditions?" },
     { id: "ready-to-trade", label: "Are you ready to trade?" },
   ];
+
+  /* short forms for the scorecard — the rows are questions, and seven of them
+     stacked as questions reads as an interrogation rather than a recap */
+  const CHECKIN_SHORT = {
+    physically: "Physically ready", mentally: "Mentally ready",
+    emotionally: "Emotionally ready", distraction: "Distraction-free",
+    "economic-news": "Checked the news", "market-awareness": "Market conditions",
+    "ready-to-trade": "Ready to trade",
+  };
 
   /* Placeholders until the icon artwork lands — see the layout prompt.
      All four have a screen behind them now, so all four are buttons. */
@@ -1411,42 +1421,60 @@
     save();
   }
 
-  const dsEmptyHTML = `<div class="ds-empty">Not completed yet</div>`;
-
-  function dsCardHTML(title, inner) {
-    return `<div class="ds-card">
-      <div class="ds-card-cap">${esc(title)}</div>
-      ${inner}
+  /* One row of the scorecard: a caption, a headline, and the section's own
+     detail underneath once it is opened. A section with nothing logged is the
+     same row shape with nothing to open, so the stack keeps its rhythm
+     whether the day is finished or barely started. */
+  function dsRowHTML(cap, label, id, detail, sub) {
+    const head = detail
+      ? ciExpandHTML(label, !!state.dsOpen[id], `data-ds-detail="${esc(id)}"`)
+      : `<div class="ci-expand ci-expand-off">
+           <span class="ci-expand-lbl">Not completed yet</span>
+         </div>`;
+    return `<div class="ds-row">
+      <div class="ds-card-cap">${esc(cap)}${sub ? ` · ${esc(sub)}` : ""}</div>
+      ${head}
+      ${detail && state.dsOpen[id] ? detail : ""}
     </div>`;
   }
 
-  function dsStartDayHTML(key) {
-    const rec = (store.checkinLog || {})[key];
-    if (!rec || !rec.answers) return dsEmptyHTML;
-    const noCount = CHECKIN_ITEMS.filter((it) => rec.answers[it.id] === "no").length;
-    const go = noCount < 3;
-    return `<div class="ds-verdict ${go ? "go" : "stop"}">${go ? "Start Trade Day" : "Not a Trade Day"}</div>
-      <div class="ds-note">${noCount} of ${CHECKIN_ITEMS.length} marked No</div>`;
-  }
-
-  function dsBeforeTradeHTML(key) {
-    const rec = (store.beforeTradeLog || {})[key];
-    if (!rec || !rec.answers) return dsEmptyHTML;
+  function dsSumHTML(rows) {
     return `<div class="bt-summary">
-      ${BT1_ITEMS.map((it) => `
+      ${rows.map(([k, v]) => `
         <div class="bt-sum-row">
-          <span class="bt-sum-k">${esc(BT1_SHORT[it.id])}</span>
-          <span class="bt-sum-v">${esc(optLabel(it, rec.answers[it.id]))}</span>
+          <span class="bt-sum-k">${esc(k)}</span>
+          <span class="bt-sum-v">${esc(v)}</span>
         </div>`).join("")}
     </div>`;
   }
 
-  function dsAfterTradeHTML(key) {
+  /* Start Day's headline is its own verdict, so a day that was called off
+     says so here rather than claiming it started. */
+  function dsStartDayRow(key) {
+    const rec = (store.checkinLog || {})[key];
+    if (!rec || !rec.answers) return dsRowHTML("Start Day", "", "start", null);
+    const noCount = CHECKIN_ITEMS.filter((it) => rec.answers[it.id] === "no").length;
+    const label = noCount < 3 ? "Start Trade Day" : "Not a Trade Day";
+    const detail = `<div class="ds-note">${noCount} of ${CHECKIN_ITEMS.length} marked No</div>
+      ${dsSumHTML(CHECKIN_ITEMS.map((it) => [CHECKIN_SHORT[it.id],
+        rec.answers[it.id] === "yes" ? "Yes" : rec.answers[it.id] === "no" ? "No" : "—"]))}`;
+    return dsRowHTML("Start Day", label, "start", detail);
+  }
+
+  function dsBeforeTradeRow(key) {
+    const rec = (store.beforeTradeLog || {})[key];
+    if (!rec || !rec.answers) return dsRowHTML("Before Trade", "", "before", null);
+    return dsRowHTML("Before Trade", "Pre-Trade Check Complete", "before",
+      dsSumHTML(BT1_ITEMS.map((it) => [BT1_SHORT[it.id], optLabel(it, rec.answers[it.id])])));
+  }
+
+  /* one row per trade taken, in the order they were submitted */
+  function dsAfterTradeRows(key) {
     const list = atEntries(key);
-    if (!list.length) return dsEmptyHTML;
-    return `<div class="ds-entries">
-      ${list.map((e, i) => atEntryHTML(e, i, list.length)).join("")}
-    </div>`;
+    if (!list.length) return dsRowHTML("After Trade", "", "at", null);
+    return list.map((e, i) => dsRowHTML("After Trade", "Trade Logged", `at${i}`,
+      dsSumHTML(AT_ITEMS.map((it) => [AT_SHORT[it.id], optLabel(it, (e.answers || {})[it.id])])),
+      list.length > 1 ? `Trade ${i + 1}` : "")).join("");
   }
 
   /* the day's headline: what was done, said the way a coach would say it */
@@ -1468,9 +1496,11 @@
   function dsScorecardHTML(key, isToday) {
     return `
       ${dsHeadHTML(key, isToday)}
-      ${dsCardHTML("Start Day", dsStartDayHTML(key))}
-      ${dsCardHTML("Before Trade", dsBeforeTradeHTML(key))}
-      ${dsCardHTML("After Trade", dsAfterTradeHTML(key))}`;
+      <div class="ds-rows">
+        ${dsStartDayRow(key)}
+        ${dsBeforeTradeRow(key)}
+        ${dsAfterTradeRows(key)}
+      </div>`;
   }
 
   /* Same calendar the journal uses — month header, nav arrows, day grid — with
@@ -1560,6 +1590,7 @@
     state.slideDir = 0;
     state.dsDay = null;
     state.dsMonth = 0;
+    state.dsOpen = {};
     dsMarkReviewed(todayKey());
     closeOverlay();
     render();
@@ -8228,7 +8259,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -8423,8 +8454,13 @@
       state.dsMonth += Number(t.dataset.dsMonth);
       renderChecklistInPlace(renderStreak);
     }
-    else if (t.dataset.dsDay) { state.dsDay = t.dataset.dsDay; renderStreak(); }
-    else if (t.hasAttribute("data-ds-back")) { state.dsDay = null; renderStreak(); }
+    else if (t.dataset.dsDay) { state.dsDay = t.dataset.dsDay; state.dsOpen = {}; renderStreak(); }
+    else if (t.hasAttribute("data-ds-back")) { state.dsDay = null; state.dsOpen = {}; renderStreak(); }
+    else if (t.dataset.dsDetail) {
+      const id = t.dataset.dsDetail;
+      state.dsOpen[id] = !state.dsOpen[id];
+      renderChecklistInPlace(renderStreak);
+    }
     else if (t.hasAttribute("data-bt-stage2")) {
       state.btStage2 = true; state.btStrategyDone = false; renderBeforeTrade();
     }
