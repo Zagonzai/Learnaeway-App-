@@ -333,6 +333,8 @@
     journalRange: "1M",
     journalPicker: null,     // null | 'list' | 'add' | 'edit' | 'delete' (inline)
     journalPickerId: null,   // account being edited/deleted inside the panel
+    btDetail: false,         // Before Trade's completed recap expanded
+    atOpen: {},              // After Trade: which entries have their recap open
     atAdding: false,         // logging another After Trade entry over today's list
     dsMonth: 0,              // Discipline Streak calendar, months from this one
     dsDay: null,             // 'YYYY-MM-DD' — a past day's scorecard, null = today
@@ -1167,18 +1169,34 @@
       })()}`;
   }
 
+  /* A completed section shows its headline and nothing else until it is
+     asked. Same disclosure shape the prop-firm summary pill uses: the label
+     is the tap target and the caret turns over when the recap is showing. */
+  function ciExpandHTML(label, open, attr, big) {
+    return `<button class="ci-expand${big ? " ci-expand-lg" : ""}${open ? " open" : ""}" ${attr}
+            aria-expanded="${open ? "true" : "false"}">
+      <span class="ci-expand-lbl">${esc(label)}</span>
+      <span class="ci-expand-caret" aria-hidden="true">
+        <img src="assets/nav-icons/icon-chevron-down@2x.png" alt=""></span>
+    </button>`;
+  }
+
+  function bt1SummaryHTML(a) {
+    return `<div class="bt-summary">
+      ${BT1_ITEMS.map((it) => `
+        <div class="bt-sum-row">
+          <span class="bt-sum-k">${esc(BT1_SHORT[it.id])}</span>
+          <span class="bt-sum-v">${esc(optLabel(it, a[it.id]))}</span>
+        </div>`).join("")}
+    </div>`;
+  }
+
   function bt1ResultHTML() {
     const a = (store.beforeTradeLog[todayKey()] || {}).answers || store.beforeTrade;
+    const open = !!state.btDetail;
     return `<div class="ci-result ci-result-inline go">
-      <div class="ci-result-title">Stage 1 Complete</div>
-      <div class="ci-result-body">Chart read logged. Here's what you marked.</div>
-      <div class="bt-summary">
-        ${BT1_ITEMS.map((it) => `
-          <div class="bt-sum-row">
-            <span class="bt-sum-k">${esc(BT1_SHORT[it.id])}</span>
-            <span class="bt-sum-v">${esc(optLabel(it, a[it.id]))}</span>
-          </div>`).join("")}
-      </div>
+      ${ciExpandHTML("Pre-Trade Check Complete", open, "data-bt-detail", true)}
+      ${open ? bt1SummaryHTML(a) : ""}
       <button class="btn-primary" data-bt-stage2>Continue to Stage 2</button>
     </div>`;
   }
@@ -1256,8 +1274,9 @@
     state.view = "beforetrade";
     state.slideDir = 0;
     // the renderer reads today's log, so arriving lands on whichever of the
-    // two the day is actually in
+    // two the day is actually in, and always on the collapsed headline
     state.btResult = false;
+    state.btDetail = false;
     state.btStage2 = false;
     state.btStrategyDone = false;
     closeOverlay();
@@ -1308,18 +1327,26 @@
       ${more ? `<button class="btn-secondary" data-at-cancel>Cancel</button>` : ""}`;
   }
 
-  /* one submitted trade. The caption only appears once there is more than one,
-     so a single-trade day reads exactly as it did before. */
-  function atEntryHTML(entry, i, total) {
+  /* One submitted trade. The caption only appears once there is more than one,
+     so a single-trade day reads as one entry rather than "Trade 1 of 1".
+     `toggle` is what separates the After Trade screen, where each entry
+     collapses to its own headline and opens on its own, from the Discipline
+     Streak scorecard, whose whole job is showing the answers. */
+  function atEntryHTML(entry, i, total, toggle) {
+    const rows = `<div class="bt-summary">
+      ${AT_ITEMS.map((it) => `
+        <div class="bt-sum-row">
+          <span class="bt-sum-k">${esc(AT_SHORT[it.id])}</span>
+          <span class="bt-sum-v">${esc(optLabel(it, (entry.answers || {})[it.id]))}</span>
+        </div>`).join("")}
+    </div>`;
+    const cap = total > 1 ? `<div class="ds-entry-cap">Trade ${i + 1}</div>` : "";
+    if (!toggle) return `<div class="ds-entry">${cap}${rows}</div>`;
+    const open = !!state.atOpen[i];
     return `<div class="ds-entry">
-      ${total > 1 ? `<div class="ds-entry-cap">Trade ${i + 1}</div>` : ""}
-      <div class="bt-summary">
-        ${AT_ITEMS.map((it) => `
-          <div class="bt-sum-row">
-            <span class="bt-sum-k">${esc(AT_SHORT[it.id])}</span>
-            <span class="bt-sum-v">${esc(optLabel(it, (entry.answers || {})[it.id]))}</span>
-          </div>`).join("")}
-      </div>
+      ${cap}
+      ${ciExpandHTML("Trade Logged", open, `data-at-detail="${i}"`)}
+      ${open ? rows : ""}
     </div>`;
   }
 
@@ -1331,8 +1358,8 @@
       <div class="ci-result-title">After Trade Complete</div>
       <div class="ci-result-body">${list.length > 1
         ? `${list.length} trades logged today.`
-        : "Logged for today. Here's what you marked."}</div>
-      <div class="ds-entries">${list.map((e, i) => atEntryHTML(e, i, list.length)).join("")}</div>
+        : "Logged for today."}</div>
+      <div class="ds-entries">${list.map((e, i) => atEntryHTML(e, i, list.length, true)).join("")}</div>
       <div class="j-add-wrap at-add">
         <button class="j-add" data-at-add aria-label="Add another trade"></button>
         <span class="j-add-label">Add another trade</span>
@@ -1358,8 +1385,10 @@
     stopAudio();
     state.view = "aftertrade";
     state.slideDir = 0;
-    // arriving lands on the day's trades, never mid-way through adding one
+    // arriving lands on the day's trades, collapsed, never mid-way through
+    // adding one
     state.atAdding = false;
+    state.atOpen = {};
     closeOverlay();
     render();
   }
@@ -8199,7 +8228,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -8378,6 +8407,16 @@
       renderAfterTrade();
     }
     else if (t.hasAttribute("data-at-cancel")) { state.atAdding = false; renderAfterTrade(); }
+    else if (t.hasAttribute("data-bt-detail")) {
+      state.btDetail = !state.btDetail;
+      renderChecklistInPlace(renderBeforeTrade);
+    }
+    else if (t.dataset.atDetail !== undefined) {
+      // each entry opens on its own, so the key is the entry's own index
+      const i = t.dataset.atDetail;
+      state.atOpen[i] = !state.atOpen[i];
+      renderChecklistInPlace(renderAfterTrade);
+    }
     else if (t.hasAttribute("data-at-exit")) openCheckin();
     else if (t.hasAttribute("data-ds-open")) openStreak();
     else if (t.dataset.dsMonth) {
