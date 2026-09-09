@@ -316,20 +316,24 @@
        header is already playing. It runs the full width behind all three
        columns; the app column's own header video is hidden at this width so the
        banner shows through it, with the clock still on top. -->
-  <div class="dt-shell" id="dtShell" aria-hidden="true">
+  <!-- the two right-hand panels carry the chart and the watchlist for a
+       signed-in visitor, so the shell holds focusable content and cannot be
+       hidden from assistive tech wholesale; the decorative pieces say so
+       individually instead -->
+  <div class="dt-shell" id="dtShell">
     <!-- one video, the full width of the row; app.js fills this past the
          breakpoint so a phone never loads a second copy of the same clip -->
-    <div class="dt-banner" id="dtBanner"></div>
+    <div class="dt-banner" id="dtBanner" aria-hidden="true"></div>
     <div class="dt-col dt-left">
-      <div class="dt-bar"></div>
-      <div class="dt-panel dt-panel-square"></div>
-      <div class="dt-lower dt-lower-left"></div>
+      <div class="dt-bar" aria-hidden="true"></div>
+      <div class="dt-panel dt-panel-square" aria-hidden="true"></div>
+      <div class="dt-lower dt-lower-left" aria-hidden="true"></div>
     </div>
     <div class="dt-col dt-right">
-      <div class="dt-bar"></div>
+      <div class="dt-bar" aria-hidden="true"></div>
       <div class="dt-panel dt-panel-chart"></div>
       <div class="dt-panel dt-panel-wide"></div>
-      <div class="dt-lower dt-lower-right"></div>
+      <div class="dt-lower dt-lower-right" aria-hidden="true"></div>
     </div>
   </div>
 

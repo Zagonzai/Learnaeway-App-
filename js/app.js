@@ -313,6 +313,17 @@
     tpFrom: null,            // left edge of the window, in bars; null = the right edge
     tpSpan: 60,              // how many bars are on screen — this is the zoom
     tpQuery: "",             // the watchlist search box
+    /* the desktop right/bottom panels: their own view window, so panning the
+       chart there does not move the hamburger's copy of it */
+    dcSym: "ES",
+    dcTf: "5m",
+    dcFrom: null,            // null = the newest bars, same as the mobile chart
+    dcSpan: 90,
+    dcTool: "cursor",        // 'cursor' | 'line' | 'box' | 'fib'
+    dcDraw: [],              // finished drawings, in chart space
+    dcDraft: null,           // the one being dragged out
+    dcSel: null,             // index into dcDraw
+    dcQuery: "",             // the bottom panel's ticker search
     tpDate: null,            // the calendar's day, YYYY-MM-DD; null means today
     view: "home",            // 'home' | 'screen' | 'videos' | 'checkin' | 'beforetrade'
                              // | 'aftertrade' | 'streak'
@@ -7078,14 +7089,14 @@
      with a different step, which is what makes switching feel like a real
      timeframe change rather than a reshuffle. */
   const TP_TFS = [
-    { id: "1m",  label: "1m",  vol: 0.35 },
-    { id: "2m",  label: "2m",  vol: 0.45 },
-    { id: "3m",  label: "3m",  vol: 0.55 },
-    { id: "5m",  label: "5m",  vol: 0.7 },
-    { id: "15m", label: "15m", vol: 1.0 },
-    { id: "30m", label: "30m", vol: 1.3 },
-    { id: "1h",  label: "1h",  vol: 1.7 },
-    { id: "4h",  label: "4h",  vol: 2.4 },
+    { id: "1m",  label: "1m",  vol: 0.35, min: 1 },
+    { id: "2m",  label: "2m",  vol: 0.45, min: 2 },
+    { id: "3m",  label: "3m",  vol: 0.55, min: 3 },
+    { id: "5m",  label: "5m",  vol: 0.7,  min: 5 },
+    { id: "15m", label: "15m", vol: 1.0,  min: 15 },
+    { id: "30m", label: "30m", vol: 1.3,  min: 30 },
+    { id: "1h",  label: "1h",  vol: 1.7,  min: 60 },
+    { id: "4h",  label: "4h",  vol: 2.4,  min: 240 },
   ];
 
   /* The instrument universe the search looks through. No feed behind it, so
@@ -7226,28 +7237,45 @@
     state.tpFrom = Math.max(0, Math.min(TP_BARS - state.tpSpan, Math.round(state.tpFrom)));
   }
 
-  /* Just the bars. Rewritten on its own during a gesture so a pan does not
-     rebuild the tabs, the strip and the header sixty times a second. */
-  function tpBarsHTML() {
-    const sym = tpSymbol();
-    const all = tpSeries(sym, state.tpTf);
-    tpClampView();
-    const view = all.slice(state.tpFrom, state.tpFrom + state.tpSpan);
+  /* The one mapping between a price and its place in the box, and the one
+     between a bar and its column. Everything is percent for the same reason
+     the bars are: the box changes size with the panel, so nothing here can be
+     measured in pixels. Both directions are here because the desktop chart's
+     crosshair and its drawings have to run it backwards — a cursor gives a
+     percentage and needs a price and a bar back. */
+  const TP_PAD = 8, TP_USABLE = 100 - TP_PAD * 2;
+  function tpGeom(sym, tfId, from, span) {
+    const all = tpSeries(sym, tfId);
+    const view = all.slice(from, from + span);
     const gMax = Math.max.apply(null, view.map((c) => c.high));
     const gMin = Math.min.apply(null, view.map((c) => c.low));
     const range = Math.max(1e-9, gMax - gMin);
-    const PAD = 8, USABLE = 100 - PAD * 2;
-    const pct = (v) => PAD + USABLE - ((v - gMin) / range) * USABLE;
-    /* percent again, for the same reason it is percent everywhere else here:
-       the box changes size with the panel and the bars have to follow it */
-    return view.map((c) => {
-      const wt = pct(c.high), wh = Math.max(0.5, pct(c.low) - wt);
-      const bt = pct(Math.max(c.open, c.close));
-      const bh = Math.max(0.9, pct(Math.min(c.open, c.close)) - bt);
+    return {
+      view, gMin, gMax, range, from, span,
+      y: (v) => TP_PAD + TP_USABLE - ((v - gMin) / range) * TP_USABLE,
+      priceAt: (yPct) => gMin + ((TP_PAD + TP_USABLE - yPct) / TP_USABLE) * range,
+      /* x is the centre of a bar's own column */
+      x: (gi) => ((gi - from) + 0.5) / span * 100,
+      barAt: (xPct) => from + (xPct / 100) * span - 0.5,
+    };
+  }
+
+  function tpCandlesHTML(g) {
+    return g.view.map((c) => {
+      const wt = g.y(c.high), wh = Math.max(0.5, g.y(c.low) - wt);
+      const bt = g.y(Math.max(c.open, c.close));
+      const bh = Math.max(0.9, g.y(Math.min(c.open, c.close)) - bt);
       return `<div class="tp-col ${c.dir}">
         <span class="pa-wick" style="top:${wt.toFixed(2)}%;height:${wh.toFixed(2)}%"></span>
         <span class="pa-body" style="top:${bt.toFixed(2)}%;height:${bh.toFixed(2)}%"></span></div>`;
     }).join("");
+  }
+
+  /* Just the bars. Rewritten on its own during a gesture so a pan does not
+     rebuild the tabs, the strip and the header sixty times a second. */
+  function tpBarsHTML() {
+    tpClampView();
+    return tpCandlesHTML(tpGeom(tpSymbol(), state.tpTf, state.tpFrom, state.tpSpan));
   }
 
   function tpPaintBars() {
@@ -7300,6 +7328,196 @@
         <div class="tp-track" id="tpTrack">${tpBarsHTML()}</div>
       </div>
       ${tpStripHTML()}`;
+  }
+
+  /* ==================== DESKTOP CHART + WATCHLIST ====================
+     The right panel is the same chart the hamburger's Chart tab draws — the
+     same series, the same eight timeframes, the same percent geometry via
+     tpGeom — with its own view window so panning one does not move the other.
+     What is desktop-only is the pointer work: a crosshair with price and time
+     at the edges, and three drawings on top.
+
+     Drawings are held in chart space (a bar index and a price), never in
+     pixels, so they stay attached to the candles through a pan, a zoom and a
+     panel resize. They live for the session; nothing here writes to the
+     store. ==> a later pass can persist them per symbol+timeframe. */
+
+  const DC_TOOLS = [
+    { id: "cursor", label: "Cursor" },
+    { id: "line",   label: "Trend" },
+    { id: "box",    label: "Box" },
+    { id: "fib",    label: "Fib" },
+  ];
+  /* Deliberately five levels, not the fuller standard set. */
+  const DC_FIB = [0, 38.2, 50, 61.8, 100];
+
+  const dcSignedIn = () => !!(window.FB && FB.user());
+  const dcTf = () => TP_TFS.find((t) => t.id === state.dcTf) || TP_TFS[3];
+  function dcGeom() {
+    state.dcSpan = Math.max(TP_SPAN_MIN, Math.min(TP_SPAN_MAX, Math.round(state.dcSpan)));
+    if (state.dcFrom == null) state.dcFrom = TP_BARS;
+    state.dcFrom = Math.max(0, Math.min(TP_BARS - state.dcSpan, Math.round(state.dcFrom)));
+    return tpGeom(state.dcSym, state.dcTf, state.dcFrom, state.dcSpan);
+  }
+  /* the newest bar is now; everything before it steps back one timeframe */
+  function dcTimeAt(gi) {
+    const mins = (TP_BARS - 1 - gi) * dcTf().min;
+    const d = new Date(Date.now() - mins * 60000);
+    return d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+  }
+  const dcPriceLabel = (v) => v >= 1000 ? v.toFixed(1) : v >= 10 ? v.toFixed(2) : v.toFixed(3);
+
+  /* a drawing, in chart space, as SVG in the same percent box as the bars */
+  function dcShapeSVG(d, g, i, selected) {
+    const x1 = g.x(d.a.i), y1 = g.y(d.a.p), x2 = g.x(d.b.i), y2 = g.y(d.b.p);
+    const cls = `dc-shape${selected ? " sel" : ""}`;
+    if (d.type === "box") {
+      return `<rect class="${cls}" data-dc-shape="${i}" vector-effect="non-scaling-stroke"
+        x="${Math.min(x1, x2)}" y="${Math.min(y1, y2)}"
+        width="${Math.abs(x2 - x1)}" height="${Math.abs(y2 - y1)}"></rect>`;
+    }
+    if (d.type === "fib") {
+      const lo = Math.min(d.a.p, d.b.p), hi = Math.max(d.a.p, d.b.p);
+      const xa = Math.min(x1, x2), xb = Math.max(x1, x2);
+      return DC_FIB.map((lv) => {
+        const p = hi - (hi - lo) * (lv / 100);
+        const y = g.y(p);
+        return `<line class="${cls} fib" data-dc-shape="${i}" vector-effect="non-scaling-stroke"
+          x1="${xa}" y1="${y}" x2="${xb}" y2="${y}"></line>`;
+      }).join("");
+    }
+    return `<line class="${cls}" data-dc-shape="${i}" vector-effect="non-scaling-stroke"
+      x1="${x1}" y1="${y1}" x2="${x2}" y2="${y2}"></line>`;
+  }
+
+  /* fib's own labels are HTML, not SVG: the box is stretched to fill the
+     panel, so text inside it would stretch with it */
+  function dcLabelsHTML(d, g) {
+    if (!d || d.type !== "fib") return "";
+    const lo = Math.min(d.a.p, d.b.p), hi = Math.max(d.a.p, d.b.p);
+    const xa = Math.min(g.x(d.a.i), g.x(d.b.i));
+    return DC_FIB.map((lv) => {
+      const p = hi - (hi - lo) * (lv / 100);
+      return `<span class="dc-fib-lbl" style="left:${xa.toFixed(2)}%;top:${g.y(p).toFixed(2)}%">
+        ${lv.toFixed(1)}% · ${esc(dcPriceLabel(p))}</span>`;
+    }).join("");
+  }
+
+  function dcOverlayHTML() {
+    const g = dcGeom();
+    const shapes = state.dcDraw.map((d, i) => dcShapeSVG(d, g, i, i === state.dcSel)).join("");
+    const draft = state.dcDraft ? dcShapeSVG(state.dcDraft, g, -1, false) : "";
+    /* handles only on the selected one, so a busy chart is not all dots */
+    const sel = state.dcDraw[state.dcSel];
+    const handles = sel ? [sel.a, sel.b].map((pt, k) =>
+      `<circle class="dc-handle" data-dc-handle="${k}" vector-effect="non-scaling-stroke"
+        cx="${g.x(pt.i)}" cy="${g.y(pt.p)}" r="1.4"></circle>`).join("") : "";
+    /* every fib keeps its levels labelled, selected or not — an unlabelled
+       retracement is just five lines */
+    const labels = state.dcDraw.map((d) => dcLabelsHTML(d, g)).join("")
+      + dcLabelsHTML(state.dcDraft, g);
+    return `<svg class="dc-svg" viewBox="0 0 100 100" preserveAspectRatio="none">
+        ${shapes}${draft}${handles}
+      </svg>
+      <div class="dc-labels">${labels}</div>`;
+  }
+
+  function dcChartHTML() {
+    const g = dcGeom();
+    const row = TP_UNI[state.dcSym] || { sym: state.dcSym, name: state.dcSym };
+    const chg = (g.view[g.view.length - 1].close - g.view[0].open) / g.view[0].open * 100;
+    return `
+      <div class="dc-head">
+        <div class="dc-quote"><b>${esc(state.dcSym)}</b>
+          <span class="${chg >= 0 ? "up" : "down"}">${chg >= 0 ? "+" : ""}${chg.toFixed(2)}%</span>
+          <span class="dc-name">${esc(row.name)}</span></div>
+        <div class="dc-tools">
+          ${DC_TOOLS.map((t) => `<button class="dc-tool${t.id === state.dcTool ? " on" : ""}"
+            data-dc-tool="${t.id}">${esc(t.label)}</button>`).join("")}
+          <button class="dc-tool dc-del${state.dcSel == null ? " off" : ""}"
+            ${state.dcSel == null ? "disabled" : ""} data-dc-del>Delete</button>
+        </div>
+      </div>
+      <div class="dc-tf">
+        ${TP_TFS.map((t) => `<button class="dc-tf-btn${t.id === state.dcTf ? " on" : ""}"
+          data-dc-tf="${t.id}">${t.label}</button>`).join("")}
+      </div>
+      <div class="dc-box${state.dcTool !== "cursor" ? " drawing" : ""}" id="dcBox">
+        <div class="tp-track" id="dcTrack">${tpCandlesHTML(g)}</div>
+        <div class="dc-overlay" id="dcOverlay">${dcOverlayHTML()}</div>
+        <div class="dc-cross" id="dcCross" hidden>
+          <span class="dc-cross-v"></span><span class="dc-cross-h"></span>
+        </div>
+        <span class="dc-read dc-read-p" id="dcReadP" hidden></span>
+        <span class="dc-read dc-read-t" id="dcReadT" hidden></span>
+      </div>`;
+  }
+
+  /* The watchlist as the bottom panel: the same list and the same search the
+     hamburger's Watchlist tab uses, laid out along a strip instead of down a
+     column, and each row switches the chart above it. */
+  function dcWatchHTML() {
+    const key = todayKey();
+    const q = (state.dcQuery || "").trim().toUpperCase();
+    const hits = q
+      ? TP_UNIVERSE.filter((r) => r.sym.indexOf(q) >= 0 || r.name.toUpperCase().indexOf(q) >= 0).slice(0, 6)
+      : [];
+    return `
+      <div class="dc-wl-head">
+        <span class="dc-wl-cap">Watchlist</span>
+        <input id="dcSearch" class="dc-wl-search" type="search" autocomplete="off"
+               placeholder="Search a ticker" value="${esc(state.dcQuery || "")}" data-dc-q>
+      </div>
+      ${hits.length ? `<div class="dc-wl-hits">
+        ${hits.map((r) => {
+          const on = tpWatchlist().indexOf(r.sym) >= 0;
+          return `<button class="dc-wl-hit" data-dc-add="${esc(r.sym)}"${on ? " disabled" : ""}>
+            <b>${esc(r.sym)}</b><span>${esc(r.name)}</span>${on ? "<i>Added</i>" : "<i>+</i>"}</button>`;
+        }).join("")}
+      </div>` : ""}
+      <div class="dc-wl-rows">
+        ${tpWatchlist().map((sym) => {
+          const row = TP_UNI[sym] || { sym, name: sym, base: 100 };
+          const qt = tpQuote(row, key);
+          return `<div class="dc-wl-row${sym === state.dcSym ? " on" : ""}">
+            <button class="dc-wl-pick" data-dc-sym="${esc(sym)}">
+              <b>${esc(sym)}</b>
+              <span class="dc-wl-name">${esc(row.name)}</span>
+              <span class="dc-wl-last">${esc(qt.last)}</span>
+              <span class="dc-wl-chg ${qt.pct >= 0 ? "up" : "down"}">${qt.pct >= 0 ? "+" : ""}${qt.pct.toFixed(2)}%</span>
+            </button>
+            <button class="dc-wl-del" data-dc-del-sym="${esc(sym)}" aria-label="Remove ${esc(sym)}">×</button>
+          </div>`;
+        }).join("")}
+      </div>`;
+  }
+
+  /* Only a signed-in visitor gets either panel. FB.user() is the real thing —
+     the session is persisted and restored on load, and it is already what
+     gates cloud sync — so a logged-out visitor keeps the empty frames. */
+  function renderDesktopTools() {
+    const chart = document.querySelector(".dt-panel-chart");
+    const wide = document.querySelector(".dt-panel-wide");
+    if (!chart || !wide) return;
+    const on = dcSignedIn() && window.matchMedia(DESKTOP_MQ).matches;
+    /* both are built before either is written: assigning as we go once left
+       the chart rendered and the watchlist blank when the second threw */
+    const a = on ? dcChartHTML() : "";
+    const c = on ? dcWatchHTML() : "";
+    chart.classList.toggle("dt-live", on);
+    wide.classList.toggle("dt-live", on);
+    chart.innerHTML = a;
+    wide.innerHTML = c;
+  }
+
+  /* the bars and the drawings only; the toolbar and the watchlist stay put
+     while a pan is running */
+  function dcPaint() {
+    const g = dcGeom();
+    const track = document.getElementById("dcTrack");
+    if (track) track.innerHTML = tpCandlesHTML(g);
+    const ov = document.getElementById("dcOverlay");
+    if (ov) ov.innerHTML = dcOverlayHTML();
   }
 
   function tpWatchHTML() {
@@ -8259,7 +8477,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -8663,6 +8881,42 @@
     }
     else if (t.hasAttribute("data-panel-close")) { commitSettingsName(); state.panel = null; render(); }
     else if (t.hasAttribute("data-tp-tab")) { tpReadQuery(); state.tpTab = t.getAttribute("data-tp-tab"); render(); }
+    else if (t.hasAttribute("data-dc-tool")) {
+      state.dcTool = t.getAttribute("data-dc-tool");
+      state.dcSel = null; state.dcDraft = null;
+      renderDesktopTools();
+    }
+    else if (t.hasAttribute("data-dc-tf")) {
+      state.dcTf = t.getAttribute("data-dc-tf");
+      /* the drawings belong to the series they were drawn on */
+      state.dcDraw = []; state.dcSel = null;
+      renderDesktopTools();
+    }
+    else if (t.hasAttribute("data-dc-del")) {
+      if (state.dcSel != null) state.dcDraw.splice(state.dcSel, 1);
+      state.dcSel = null;
+      renderDesktopTools();
+    }
+    else if (t.hasAttribute("data-dc-sym")) {
+      state.dcSym = t.getAttribute("data-dc-sym");
+      state.dcDraw = []; state.dcSel = null; state.dcFrom = null;
+      renderDesktopTools();
+    }
+    else if (t.hasAttribute("data-dc-add")) {
+      const sym = t.getAttribute("data-dc-add");
+      if (!store.watchlist) store.watchlist = [];
+      if (store.watchlist.indexOf(sym) < 0) store.watchlist.push(sym);
+      state.dcQuery = "";
+      save();
+      renderDesktopTools();
+    }
+    else if (t.hasAttribute("data-dc-del-sym")) {
+      const sym = t.getAttribute("data-dc-del-sym");
+      store.watchlist = (store.watchlist || []).filter((x) => x !== sym);
+      if (state.dcSym === sym) state.dcSym = tpWatchlist()[0];
+      save();
+      renderDesktopTools();
+    }
     else if (t.hasAttribute("data-tp-tf")) {
       state.tpTf = t.getAttribute("data-tp-tf");
       // a new timeframe is a new series, so start at its right edge
@@ -8827,6 +9081,7 @@
       authScreen.classList.add("hidden");
       stopAuthVideo();          // nothing left to watch behind a hidden screen
       render();
+      renderDesktopTools();     // signing in is what unlocks the desktop panels
     } catch (ex) {
       err.textContent = ex.message || "Sign-in failed — please try again.";
       err.classList.remove("hidden");
@@ -9571,8 +9826,193 @@
     tryUnmuted(waveVideo);
   }
 
+  /* ---------------- desktop chart pointer work ----------------
+     One listener set on document, filtered to #dcBox, because the panel's
+     contents are rewritten wholesale on every repaint — a listener bound to
+     the box itself would be thrown away with it. */
+
+  let dcDrag = null;
+
+  function dcPct(e) {
+    const box = document.getElementById("dcBox");
+    if (!box) return null;
+    const r = box.getBoundingClientRect();
+    if (!r.width || !r.height) return null;
+    return {
+      x: Math.max(0, Math.min(100, ((e.clientX - r.left) / r.width) * 100)),
+      y: Math.max(0, Math.min(100, ((e.clientY - r.top) / r.height) * 100)),
+      r,
+    };
+  }
+
+  function dcPaintCross(pt) {
+    const cross = document.getElementById("dcCross");
+    const rp = document.getElementById("dcReadP"), rt = document.getElementById("dcReadT");
+    if (!cross || !rp || !rt) return;
+    if (!pt) { cross.hidden = true; rp.hidden = true; rt.hidden = true; return; }
+    const g = dcGeom();
+    cross.hidden = false; rp.hidden = false; rt.hidden = false;
+    cross.querySelector(".dc-cross-v").style.left = pt.x.toFixed(2) + "%";
+    cross.querySelector(".dc-cross-h").style.top = pt.y.toFixed(2) + "%";
+    /* price comes off the vertical position, time off the horizontal one */
+    rp.style.top = pt.y.toFixed(2) + "%";
+    rp.textContent = dcPriceLabel(g.priceAt(pt.y));
+    const gi = Math.max(0, Math.min(TP_BARS - 1, Math.round(g.barAt(pt.x))));
+    rt.style.left = pt.x.toFixed(2) + "%";
+    rt.textContent = dcTimeAt(gi);
+  }
+
+  const dcPointOf = (pt, g) => ({ i: g.barAt(pt.x), p: g.priceAt(pt.y) });
+
+  /* how far a percentage point is from a shape, for picking one up */
+  function dcHitTest(pt, g) {
+    const near = (x1, y1, x2, y2) => {
+      const dx = x2 - x1, dy = y2 - y1;
+      const len2 = dx * dx + dy * dy;
+      const t = len2 ? Math.max(0, Math.min(1, ((pt.x - x1) * dx + (pt.y - y1) * dy) / len2)) : 0;
+      const cx = x1 + t * dx, cy = y1 + t * dy;
+      return Math.hypot(pt.x - cx, pt.y - cy) <= 2.2;
+    };
+    for (let i = state.dcDraw.length - 1; i >= 0; i--) {
+      const d = state.dcDraw[i];
+      const x1 = g.x(d.a.i), y1 = g.y(d.a.p), x2 = g.x(d.b.i), y2 = g.y(d.b.p);
+      if (d.type === "line" && near(x1, y1, x2, y2)) return i;
+      if (d.type === "box") {
+        const xa = Math.min(x1, x2), xb = Math.max(x1, x2);
+        const ya = Math.min(y1, y2), yb = Math.max(y1, y2);
+        if (near(xa, ya, xb, ya) || near(xa, yb, xb, yb)
+         || near(xa, ya, xa, yb) || near(xb, ya, xb, yb)) return i;
+      }
+      if (d.type === "fib") {
+        const lo = Math.min(d.a.p, d.b.p), hi = Math.max(d.a.p, d.b.p);
+        const xa = Math.min(x1, x2), xb = Math.max(x1, x2);
+        for (const lv of DC_FIB) {
+          const y = g.y(hi - (hi - lo) * (lv / 100));
+          if (near(xa, y, xb, y)) return i;
+        }
+      }
+    }
+    return null;
+  }
+
+  const dcChartPanel = document.querySelector(".dt-panel-chart");
+  const dcWidePanel = document.querySelector(".dt-panel-wide");
+
+  if (dcChartPanel) dcChartPanel.addEventListener("pointerdown", (e) => {
+    const box = e.target.closest ? e.target.closest("#dcBox") : null;
+    if (!box) return;
+    const pt = dcPct(e);
+    if (!pt) return;
+    const g = dcGeom();
+    e.preventDefault();
+    const handle = e.target.closest ? e.target.closest("[data-dc-handle]") : null;
+    if (handle && state.dcDraw[state.dcSel]) {
+      dcDrag = { kind: "handle", end: handle.getAttribute("data-dc-handle") === "0" ? "a" : "b" };
+      return;
+    }
+    if (state.dcTool !== "cursor") {
+      const at = dcPointOf(pt, g);
+      state.dcDraft = { type: state.dcTool, a: at, b: at };
+      dcDrag = { kind: "draw" };
+      dcPaint();
+      return;
+    }
+    const hit = dcHitTest(pt, g);
+    if (hit !== null) { state.dcSel = hit; renderDesktopTools(); return; }
+    if (state.dcSel != null) { state.dcSel = null; renderDesktopTools(); }
+    dcDrag = { kind: "pan", x: e.clientX, from: state.dcFrom, w: pt.r.width };
+  });
+
+  document.addEventListener("pointermove", (e) => {
+    if (!document.getElementById("dcBox")) return;
+    const pt = dcPct(e);
+    const over = e.target.closest && e.target.closest("#dcBox");
+    if (!dcDrag) { dcPaintCross(over && pt ? pt : null); return; }
+    if (!pt) return;
+    if (dcDrag.kind === "pan") {
+      /* a bar is the box width over the span, so a drag of N pixels is N of
+         those — the chart tracks the cursor rather than a fixed rate */
+      const perBar = dcDrag.w / state.dcSpan;
+      state.dcFrom = dcDrag.from - Math.round((e.clientX - dcDrag.x) / perBar);
+      dcPaint();
+      return;
+    }
+    const g = dcGeom();
+    if (dcDrag.kind === "draw" && state.dcDraft) { state.dcDraft.b = dcPointOf(pt, g); dcPaint(); }
+    if (dcDrag.kind === "handle") {
+      const d = state.dcDraw[state.dcSel];
+      if (d) { d[dcDrag.end] = dcPointOf(pt, g); dcPaint(); }
+    }
+    dcPaintCross(pt);
+  });
+
+  document.addEventListener("pointerup", () => {
+    if (!dcDrag) return;
+    const was = dcDrag.kind;
+    dcDrag = null;
+    if (was === "draw" && state.dcDraft) {
+      const d = state.dcDraft;
+      state.dcDraft = null;
+      /* a click with no drag is not a drawing */
+      const g = dcGeom();
+      if (Math.abs(g.x(d.b.i) - g.x(d.a.i)) < 1 && Math.abs(g.y(d.b.p) - g.y(d.a.p)) < 1) {
+        dcPaint();
+        return;
+      }
+      state.dcDraw.push(d);
+      state.dcSel = state.dcDraw.length - 1;
+      state.dcTool = "cursor";       // one shape per pick, the way charts do it
+      renderDesktopTools();
+      return;
+    }
+    if (was === "handle") renderDesktopTools();
+  });
+
+  /* on the panel rather than the document: a non-passive wheel listener on
+     the document would cost the whole page its async scrolling */
+  if (dcChartPanel) dcChartPanel.addEventListener("wheel", (e) => {
+    const box = e.target.closest ? e.target.closest("#dcBox") : null;
+    if (!box) return;
+    e.preventDefault();
+    const pt = dcPct(e);
+    const g = dcGeom();
+    const anchor = g.barAt(pt ? pt.x : 50);
+    const next = Math.max(TP_SPAN_MIN, Math.min(TP_SPAN_MAX,
+      Math.round(state.dcSpan * (e.deltaY > 0 ? 1.12 : 0.89))));
+    /* zoom about the cursor: the bar under it stays under it */
+    state.dcFrom = Math.round(anchor - (pt ? pt.x : 50) / 100 * next + 0.5);
+    state.dcSpan = next;
+    dcPaint();
+    dcPaintCross(pt);
+  }, { passive: false });
+
+  document.addEventListener("keydown", (e) => {
+    if (state.dcSel == null || !document.getElementById("dcBox")) return;
+    const tag = (e.target.tagName || "").toLowerCase();
+    if (tag === "input" || tag === "textarea") return;
+    if (e.key === "Delete" || e.key === "Backspace") {
+      e.preventDefault();
+      state.dcDraw.splice(state.dcSel, 1);
+      state.dcSel = null;
+      renderDesktopTools();
+    } else if (e.key === "Escape") {
+      state.dcSel = null;
+      renderDesktopTools();
+    }
+  });
+
+  if (dcWidePanel) dcWidePanel.addEventListener("input", (e) => {
+    if (e.target.id !== "dcSearch") return;
+    state.dcQuery = e.target.value;
+    const at = e.target.selectionStart;
+    renderDesktopTools();
+    const again = document.getElementById("dcSearch");
+    if (again) { again.focus(); try { again.setSelectionRange(at, at); } catch (x) { /* not selectable */ } }
+  });
+
   function syncDesktopChrome() {
     if (window.matchMedia(DESKTOP_MQ).matches) buildDesktopBanner();
+    renderDesktopTools();
     // crossing the breakpoint changes which pre-login step applies
     if (!store.authSeen) showAuthStep();
   }

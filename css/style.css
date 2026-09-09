@@ -4302,6 +4302,169 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
     border-image: url("../assets/desktop/wide@2x.png") 152 fill / 26px stretch;
   }
 
+  /* ---- the two right panels once a signed-in visitor fills them ----
+     The 9-slice frame stays exactly as it is; the content lives inside the
+     26px border, which is why the panels get a flex column rather than any
+     padding of their own. */
+  .dt-panel.dt-live {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    overflow: hidden;
+  }
+  .dc-head {
+    flex: 0 0 auto;
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; flex-wrap: wrap;
+    margin-bottom: 6px;
+  }
+  .dc-quote { display: flex; align-items: baseline; gap: 8px; min-width: 0; }
+  .dc-quote b { font-size: calc(15px * var(--fs)); font-weight: 800; color: #F2FBFF; }
+  .dc-quote .up { color: var(--teal); font-weight: 800; font-size: calc(12px * var(--fs)); }
+  .dc-quote .down { color: var(--magenta); font-weight: 800; font-size: calc(12px * var(--fs)); }
+  .dc-name {
+    font-size: calc(11px * var(--fs)); color: #8FA9C4;
+    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  }
+  .dc-tools { display: flex; gap: 5px; }
+  .dc-tool {
+    padding: 4px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(120,150,180,.32);
+    background: rgba(5,9,22,.5);
+    font-size: calc(10.5px * var(--fs)); font-weight: 800;
+    letter-spacing: .06em; color: #8FA9C4;
+  }
+  .dc-tool.on { border-color: var(--cyan); color: var(--cyan);
+    box-shadow: 0 0 12px -3px rgba(61,223,255,.6); }
+  .dc-tool.off { opacity: .4; }
+  .dc-del.on, .dc-del:not(.off) { border-color: rgba(255,61,154,.5); color: #FF6B9D; }
+  .dc-tf { flex: 0 0 auto; display: flex; gap: 4px; margin-bottom: 6px; }
+  .dc-tf-btn {
+    flex: 1 1 0;
+    padding: 3px 0;
+    border-radius: 7px;
+    border: 1px solid rgba(120,150,180,.28);
+    background: rgba(5,9,22,.45);
+    font-size: calc(10px * var(--fs)); font-weight: 700; color: #8FA9C4;
+  }
+  .dc-tf-btn.on { border-color: var(--cyan); color: var(--cyan); }
+
+  /* the chart box: the bars, the drawings and the crosshair all share it, so
+     everything inside is positioned in percent off the same corner */
+  .dc-box {
+    position: relative;
+    flex: 1 1 auto;
+    min-height: 0;
+    border-radius: 10px;
+    border: 1px solid rgba(61,223,255,.16);
+    background: rgba(4,7,18,.55);
+    overflow: hidden;
+    cursor: grab;
+    touch-action: none;
+  }
+  .dc-box.drawing { cursor: crosshair; }
+  .dc-box .tp-track { position: absolute; inset: 0; }
+  .dc-overlay, .dc-cross, .dc-labels { position: absolute; inset: 0; pointer-events: none; }
+  .dc-svg { width: 100%; height: 100%; overflow: visible; }
+  .dc-shape {
+    fill: none;
+    stroke: var(--cyan);
+    stroke-width: 1.5px;
+    pointer-events: stroke;
+  }
+  .dc-shape.fib { stroke: rgba(61,223,255,.65); stroke-dasharray: 4 3; }
+  .dc-shape.sel { stroke: var(--magenta); stroke-width: 2px; }
+  .dc-handle { fill: var(--magenta); stroke: #fff; stroke-width: 1px; pointer-events: all; }
+  .dc-overlay { pointer-events: none; }
+  .dc-overlay .dc-svg { pointer-events: none; }
+  .dc-overlay .dc-shape, .dc-overlay .dc-handle { pointer-events: all; }
+  .dc-fib-lbl {
+    position: absolute;
+    transform: translate(4px, -50%);
+    font-size: 9px; font-weight: 700; white-space: nowrap;
+    color: #9FC0E0; text-shadow: 0 0 6px rgba(0,0,0,.9);
+  }
+  /* crosshair: two hairlines and the two readouts they point at */
+  .dc-cross-v, .dc-cross-h { position: absolute; background: rgba(61,223,255,.5); }
+  .dc-cross-v { top: 0; bottom: 0; width: 1px; }
+  .dc-cross-h { left: 0; right: 0; height: 1px; }
+  .dc-read {
+    position: absolute;
+    padding: 1px 5px;
+    border-radius: 4px;
+    background: rgba(61,223,255,.9);
+    color: #041018;
+    font-size: 9.5px; font-weight: 800;
+    white-space: nowrap;
+    pointer-events: none;
+  }
+  .dc-read-p { right: 2px; transform: translateY(-50%); }
+  .dc-read-t { bottom: 2px; transform: translateX(-50%); }
+
+  /* ---- the bottom panel: the watchlist as a strip ---- */
+  .dc-wl-head {
+    flex: 0 0 auto;
+    display: flex; align-items: center; gap: 10px;
+    margin-bottom: 7px;
+  }
+  .dc-wl-cap {
+    font-size: calc(10.5px * var(--fs)); font-weight: 800;
+    letter-spacing: .16em; text-transform: uppercase; color: #8FA9C4;
+  }
+  .dc-wl-search {
+    flex: 1 1 auto; min-width: 0;
+    padding: 5px 10px;
+    border-radius: 999px;
+    border: 1px solid rgba(120,150,180,.3);
+    background: rgba(5,9,22,.6);
+    color: var(--text);
+    font-family: inherit; font-size: calc(11.5px * var(--fs));
+  }
+  .dc-wl-hits { flex: 0 0 auto; display: flex; gap: 6px; margin-bottom: 7px; overflow-x: auto; }
+  .dc-wl-hit {
+    display: flex; align-items: baseline; gap: 6px;
+    padding: 4px 9px;
+    border-radius: 8px;
+    border: 1px solid rgba(61,223,255,.28);
+    background: rgba(5,9,22,.6);
+    white-space: nowrap;
+  }
+  .dc-wl-hit b { font-size: calc(11px * var(--fs)); color: #F2FBFF; }
+  .dc-wl-hit span { font-size: calc(10px * var(--fs)); color: #8FA9C4; }
+  .dc-wl-hit i { font-style: normal; font-weight: 800; color: var(--cyan); }
+  .dc-wl-hit[disabled] { opacity: .45; }
+  /* the rows run across the strip rather than down it — that is the whole
+     difference from the hamburger's copy of this list */
+  .dc-wl-rows {
+    flex: 1 1 auto; min-height: 0;
+    display: flex; flex-wrap: wrap; align-content: flex-start;
+    gap: 6px;
+    overflow-y: auto;
+  }
+  .dc-wl-row {
+    display: flex; align-items: center;
+    border-radius: 9px;
+    border: 1px solid rgba(120,150,180,.26);
+    background: rgba(5,9,22,.5);
+  }
+  .dc-wl-row.on { border-color: var(--cyan); box-shadow: 0 0 12px -4px rgba(61,223,255,.7); }
+  .dc-wl-pick { display: flex; align-items: baseline; gap: 7px; padding: 5px 4px 5px 10px; }
+  .dc-wl-pick b { font-size: calc(11.5px * var(--fs)); font-weight: 800; color: #F2FBFF; }
+  .dc-wl-name {
+    font-size: calc(10px * var(--fs)); color: #8FA9C4;
+    max-width: 96px; overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
+  }
+  .dc-wl-last { font-size: calc(10.5px * var(--fs)); color: #C9DDF2; font-variant-numeric: tabular-nums; }
+  .dc-wl-chg { font-size: calc(10.5px * var(--fs)); font-weight: 800; font-variant-numeric: tabular-nums; }
+  .dc-wl-chg.up { color: var(--teal); }
+  .dc-wl-chg.down { color: var(--magenta); }
+  .dc-wl-del {
+    padding: 4px 9px 5px;
+    font-size: calc(14px * var(--fs)); line-height: 1; color: #6E86A6;
+  }
+  .dc-wl-del:active { color: var(--magenta); }
+
   /* the login screen must not cover the header strip: at desktop it starts
      below it, so all five segments stay visible and playing while logged out.
      Its own wave spacer is redundant here — the strip above is the header. */
