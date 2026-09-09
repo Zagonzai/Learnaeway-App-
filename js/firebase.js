@@ -234,6 +234,17 @@
       }
     },
 
+    /* Story compositions, for admin/audit visibility. Fire-and-forget and
+       never read back by the app — the same shape as logGateAttempt. */
+    logStory(rec) {
+      if (!PROJECT || !session) return;
+      fetch(`${FS_BASE}/story-logs`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({ fields: toFields(Object.assign({ uid: session.uid }, rec)) }),
+      }).catch(() => { /* audit is best effort */ });
+    },
+
     async saveUserDoc(obj) {
       const token = await freshToken();
       if (!token) return false;
