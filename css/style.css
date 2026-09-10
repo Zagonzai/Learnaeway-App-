@@ -5509,34 +5509,6 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
 .tp-col.up { color: var(--pw-bull, #1FCBA0); }
 .tp-col.down { color: var(--pw-bear, #E5484D); }
 
-/* The drawn candles, on these two charts only — the hamburger's chart (the
-   practice chart is the same element) and the desktop right panel. Pickæway's
-   battle chart and Pointæway's cards keep the flat programmatic bars they
-   already had; .pa-body and .pa-wick are shared with them, so everything here
-   hangs off .tp-col.
-
-   The body is the artwork itself, stretched to whatever the candle's range
-   is — the glass gradient runs top to bottom of the body at any height, which
-   is what it should do. The bright rim is a full pixel of a 72px-wide source,
-   so it survives the downscale to a six-pixel column; the outer bloom does
-   not, and is put back with a shadow. */
-.tp-col .pa-body {
-  background: none no-repeat 50% 50% / 100% 100%;
-  border-radius: 1.5px;
-}
-.tp-col.up .pa-body {
-  background-image: url("../assets/chart/candle-bull@2x.png");
-  box-shadow: 0 0 5px rgba(47,230,194,.42);
-}
-.tp-col.down .pa-body {
-  background-image: url("../assets/chart/candle-bear@2x.png");
-  box-shadow: 0 0 5px rgba(255,74,74,.42);
-}
-/* the wick in the art is a hot near-white core with the candle's colour
-   bloomed around it */
-.tp-col .pa-wick { width: 1px; border-radius: 1px; }
-.tp-col.up .pa-wick { background: #6FF0DC; box-shadow: 0 0 4px rgba(47,230,194,.8); }
-.tp-col.down .pa-wick { background: #FF8E7E; box-shadow: 0 0 4px rgba(255,74,74,.8); }
 
 /* market watch */
 .tp-rows { display: flex; flex-direction: column; gap: 6px; }
@@ -6317,27 +6289,33 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
 /* $ÆWAY: the tape has no axis, no ticker chips and no price of any kind —
    only the shape, and the two calls under it */
 .ae-head .tp-quote b, .ae-head .dc-quote b { letter-spacing: .06em; }
-.ae-live {
-  font-size: calc(9px * var(--fs)); font-weight: 800;
-  letter-spacing: .18em; text-transform: uppercase; color: var(--teal);
-}
-.ae-live::before {
-  content: ""; display: inline-block;
-  width: 5px; height: 5px; margin-right: 4px; border-radius: 50%;
-  background: var(--teal); box-shadow: 0 0 6px var(--teal);
-  animation: aePulse 1.6s ease-in-out infinite;
-}
-@keyframes aePulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
 .ae-chart { cursor: default; touch-action: auto; }
-.ae-panel { margin-top: 9px; }
-.ae-score {
-  display: flex; align-items: baseline; justify-content: space-between;
-  gap: 8px; margin-bottom: 7px;
+/* the chart opens empty and says so, rather than looking like it failed */
+.ae-empty {
+  /* the track is a flex row, so this has to claim the width before it can
+     centre anything in it */
+  flex: 1 1 auto;
+  display: flex; align-items: center; justify-content: center;
+  height: 100%;
 }
-.ae-verdict { font-size: calc(11.5px * var(--fs)); font-weight: 700; color: #9FC0E0; }
-.ae-verdict.ok { color: var(--teal); }
-.ae-verdict.no { color: #FF6B9D; }
-.ae-tally { font-size: calc(10.5px * var(--fs)); color: #7E9CBB; font-variant-numeric: tabular-nums; }
+.ae-empty-line {
+  font-size: calc(11px * var(--fs)); font-weight: 700;
+  letter-spacing: .04em; color: #5F7C99;
+}
+.ae-panel { margin-top: 9px; }
+.ae-gen-row { display: flex; align-items: center; gap: 9px; margin-bottom: 8px; }
+.ae-gen {
+  flex: 1 1 0;
+  min-height: 38px;
+  border-radius: 12px;
+  border: 1px solid var(--cyan);
+  background: rgba(61,223,255,.12);
+  color: #F2FBFF;
+  font-size: calc(12px * var(--fs)); font-weight: 800;
+  letter-spacing: .1em; text-transform: uppercase;
+}
+.ae-gen:active { transform: translateY(1px); }
+.ae-note { flex: 0 0 auto; font-size: calc(10.5px * var(--fs)); color: #7E9CBB; }
 .ae-calls { display: flex; gap: 9px; }
 .ae-call {
   flex: 1 1 0;
@@ -6355,8 +6333,9 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
 /* on a short phone the two calls are what has to be on screen, not the last
    forty candles — the tape gives up the height */
 @media (max-height: 740px) {
-  .ae-chart { height: 90px; }
-  .ae-call { min-height: 46px; }
+  .ae-chart { height: 70px; }
+  .ae-gen { min-height: 34px; }
+  .ae-call { min-height: 44px; }
 }
 
 /* saved patterns */

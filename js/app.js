@@ -46,7 +46,6 @@
   if (!store.watchlist) store.watchlist = ["ES", "NQ", "CL", "GC", "BTC"];
   if (store.chartMode !== "normal" && store.chartMode !== "aeway") store.chartMode = "aeway";
   if (!Array.isArray(store.patterns)) store.patterns = [];   // saved chart patterns, local only
-  if (!store.aeScore) store.aeScore = { hits: 0, calls: 0, streak: 0, best: 0 };
   if (!store.journalActive) store.journalActive = "__all";   // "__all" = combined view
   if (!store.propLedger) store.propLedger = {};         // prop account -> [evaluation/reset/payout]
   if (!store.journalTrades) store.journalTrades = {};   // account -> [per-trade records]
@@ -317,8 +316,8 @@
        One setting for both surfaces: it is a mode of the feature, not of a
        panel. Restored from the store below. */
     tpMode: store.chartMode,
-    aeCall: null,          // the direction called on the candle still to print
-    aeFlash: null,           // { ok } for the moment after one resolves
+    aeCall: null,            // which of the two calls is pressed; nothing reads it yet
+    aeNote: "",              // what Generate says back until it does something
     tpPat: false,            // the saved-pattern list, expanded inline
     tpPatOpen: null,         // a saved pattern id, when one is being looked at
     tpSym: null,             // charted symbol; falls back to the watchlist's first
@@ -6887,8 +6886,6 @@
       </div>`;
       cardScroll.scrollTop = 0;
     }
-    /* the tape runs only while something is showing it */
-    aeSyncTimer();
   }
 
   /* ---------------- navigation ---------------- */
@@ -7583,102 +7580,33 @@
     return hit.story.seq[hit.story.seq.length - 1].id;
   }
 
-  /* ==================== $ÆWAY — THE LIVE TAPE ====================
-     The story engine with nothing in front of it: no instrument, no
-     timeframe, no axis, and — deliberately — no number anywhere that could
-     be read as a price. What prints is the shape of the move and nothing
-     else, which is the whole point: this is candle-reading practice, not a
-     quote for something you could imagine holding.
+  /* ==================== $ÆWAY — WAITING ON ITS MECHANIC ====================
+     This mode showed a tape that printed a candle every second and a half.
+     It is on hold while the generation mechanic is designed, so the chart
+     opens empty and Generate is a button and nothing behind it yet. The two
+     calls stay where they are — they press, and that is all they do for now.
 
-     So the engine's own units are used as-is. There is no base price to
-     scale onto because no price is ever shown, and the geometry only ever
-     works in the visible window's own range. */
-  const AE_TICK_MS = 1600;    // how often a candle prints
-  const AE_SPAN = 40;         // how many are on the tape at once
-  const AE_KEEP = 240;        // how much history is held behind them
-  const aeTape = { bars: [], q: [], n: 0, at: 0, bucket: null };
-
-  function aeRefill() {
-    if (aeTape.q.length) return;
-    const story = seBuildStory(`aeway|${aeTape.bucket}|${aeTape.n++}`, seClarity());
-    for (const c of story.candles) {
-      aeTape.q.push({
-        open: aeTape.at + c.open, close: aeTape.at + c.close,
-        high: aeTape.at + c.high, low: aeTape.at + c.low, dir: c.dir,
-      });
-    }
-    aeTape.at += story.candles[story.candles.length - 1].close;
+     The story engine itself is untouched: seBuildStory and the composed
+     series are what the practice loop and the instrument chart run on, and
+     they are what the mechanic will be built from when it is specified. */
+  function aeEmptyHTML() {
+    return `<div class="ae-empty">
+      <span class="ae-empty-line">No story on the chart yet</span>
+    </div>`;
   }
-  /* one candle prints */
-  function aeStep() {
-    if (aeTape.bucket == null) aeTape.bucket = seBucket();
-    aeRefill();
-    aeTape.bars.push(aeTape.q.shift());
-    if (aeTape.bars.length > AE_KEEP) aeTape.bars.splice(0, aeTape.bars.length - AE_KEEP);
-    return aeTape.bars[aeTape.bars.length - 1];
-  }
-  /* the tape opens with a screen already full, so it never starts blank */
-  function aeEnsure() {
-    if (aeTape.bucket == null) aeTape.bucket = seBucket();
-    while (aeTape.bars.length < AE_SPAN) aeStep();
-  }
-  function aeGeom() {
-    aeEnsure();
-    const from = Math.max(0, aeTape.bars.length - AE_SPAN);
-    return tpGeomOf(aeTape.bars, from, Math.min(AE_SPAN, aeTape.bars.length));
-  }
-  const aeBarsHTML = () => tpCandlesHTML(aeGeom());
-
-  /* the two big calls under the tape, and what the last one came to. The
-     numbers here are a score, not a price — the only ones this mode shows. */
   function aeCallsHTML() {
-    const s = store.aeScore;
-    const f = state.aeFlash;
-    const pct = s.calls ? Math.round(s.hits / s.calls * 100) : 0;
     return `
-      <div class="ae-score">
-        <span class="ae-verdict ${f ? (f.ok ? "ok" : "no") : ""}">${
-          state.aeCall ? `Called ${state.aeCall === "up" ? "green" : "red"} — waiting on the candle`
-          : f ? (f.ok ? "Right" : "Wrong")
-          : "Call the next candle"}</span>
-        <span class="ae-tally">${s.hits}/${s.calls} · ${pct}% · streak ${s.streak}</span>
+      <div class="ae-gen-row">
+        <button class="ae-gen" data-ae-gen>Generate</button>
+        ${state.aeNote ? `<span class="ae-note">${esc(state.aeNote)}</span>` : ""}
       </div>
       <div class="ae-calls">
         <button class="ae-call up${state.aeCall === "up" ? " on" : ""}" data-ae-call="up">Green</button>
         <button class="ae-call down${state.aeCall === "down" ? " on" : ""}" data-ae-call="down">Red</button>
       </div>`;
   }
-
-  let aeTimer = null;
-  /* the tape only runs while something is showing it */
-  function aeSyncTimer() {
-    const want = state.tpMode === "aeway" && !state.tpPractice && !state.tpPatOpen
-      && !!(document.getElementById("tpTrack") || document.getElementById("dcTrack"));
-    if (want && !aeTimer) aeTimer = setInterval(aeTick, AE_TICK_MS);
-    else if (!want && aeTimer) { clearInterval(aeTimer); aeTimer = null; }
-  }
-  function aeTick() {
-    const c = aeStep();
-    if (state.aeCall) {
-      const ok = state.aeCall === c.dir;
-      const s = store.aeScore;
-      s.calls++;
-      if (ok) { s.hits++; s.streak++; if (s.streak > s.best) s.best = s.streak; }
-      else s.streak = 0;
-      state.aeCall = null;
-      state.aeFlash = { ok };
-      save();
-    } else if (state.aeFlash) state.aeFlash = null;
-    aePaint();
-  }
-  /* in place, not through render(): a full rebuild every 1.6s would take the
-     panel's search box and its scroll position with it */
-  function aePaint() {
-    const bars = aeBarsHTML();
-    for (const id of ["tpTrack", "dcTrack"]) {
-      const t = document.getElementById(id);
-      if (t) t.innerHTML = bars;
-    }
+  /* the panel only: pressing a call rebuilds two buttons, not the chart */
+  function aePaintCalls() {
     const calls = aeCallsHTML();
     for (const el of document.querySelectorAll(".ae-panel")) el.innerHTML = calls;
   }
@@ -7926,14 +7854,14 @@
     return `
       ${tpModeHTML("data-tp-mode")}
       <div class="tp-chart-head ae-head">
-        <div class="tp-quote"><b>$ÆWAY</b><span class="ae-live">live</span></div>
+        <div class="tp-quote"><b>$ÆWAY</b></div>
         <div class="tp-sym-name">Æway Trading System — price action only</div>
       </div>
       <div class="tp-toolbar">
         <button class="dc-tool tp-prac-btn" data-tp-prac>Practice</button>
       </div>
       <div class="tp-chart ae-chart" id="tpChart">
-        <div class="tp-track" id="tpTrack">${aeBarsHTML()}</div>
+        <div class="tp-track" id="tpTrack">${aeEmptyHTML()}</div>
       </div>
       <div class="ae-panel">${aeCallsHTML()}</div>`;
   }
@@ -8122,11 +8050,11 @@
     return `
       ${tpModeHTML("data-dc-mode")}
       <div class="dc-head ae-head">
-        <div class="dc-quote"><b>$ÆWAY</b><span class="ae-live">live</span>
+        <div class="dc-quote"><b>$ÆWAY</b>
           <span class="dc-name">Æway Trading System — price action only</span></div>
       </div>
       <div class="dc-box ae-chart" id="dcBox">
-        <div class="tp-track" id="dcTrack">${aeBarsHTML()}</div>
+        <div class="tp-track" id="dcTrack">${aeEmptyHTML()}</div>
       </div>
       <div class="ae-panel">${aeCallsHTML()}</div>`;
   }
@@ -8210,7 +8138,6 @@
     wide.classList.toggle("dt-live", on);
     chart.innerHTML = a;
     wide.innerHTML = c;
-    aeSyncTimer();
   }
 
   /* the bars and the drawings only; the toolbar and the watchlist stay put
@@ -9319,7 +9246,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -9734,7 +9661,7 @@
       if (m !== state.tpMode) {
         state.tpMode = store.chartMode = m;
         /* a call is about a candle on the tape you just left */
-        state.aeCall = null; state.aeFlash = null;
+        state.aeCall = null; state.aeNote = "";
         state.tpPractice = null; state.tpPatOpen = null;
         save(); renderBothCharts();
       }
@@ -9742,8 +9669,12 @@
     else if (t.hasAttribute("data-ae-call")) {
       const d = t.getAttribute("data-ae-call");
       state.aeCall = state.aeCall === d ? null : d;
-      state.aeFlash = null;
-      aePaint();
+      aePaintCalls();
+    }
+    else if (t.hasAttribute("data-ae-gen")) {
+      /* a placeholder, and it says so rather than looking broken */
+      state.aeNote = "Coming soon";
+      aePaintCalls();
     }
     else if (t.hasAttribute("data-tp-patsave")) { patSave("m"); state.tpPat = true; renderBothCharts(); }
     else if (t.hasAttribute("data-dc-patsave")) { patSave("d"); state.dcPat = true; renderBothCharts(); }
