@@ -376,6 +376,11 @@
     profileNotice: null,     // { kind, text } — transient line under a Connect action
     profileCodeDraft: "",    // what's typed in the connect-code box, kept across renders
     checkinResult: null,     // { go, noCount } — result shown in place of the rows
+    /* Review Answers: the seven rows come back over an already-submitted
+       result, filled in with what was logged. Cleared on the way out of the
+       screen — leaving without resubmitting is what keeps the logged answers,
+       so coming back has to land on the result again. */
+    checkinReview: false,
     btResult: false,         // Before Trade Stage 1 summary shown in place of the rows
     btStage2: false,         // Stage 2 placeholder shown in place of that summary
     rtExpand: true,          // round history open on the result/replay screens
@@ -1099,6 +1104,7 @@
       ${res.go
         ? `<button class="btn-primary" data-ci-before>Continue to Before Trade</button>`
         : `<button class="btn-primary" data-ci-exit>Back to Home</button>`}
+      <button class="btn-secondary" data-ci-review>Review Answers</button>
     </div>`;
   }
 
@@ -1126,7 +1132,7 @@
   function renderCheckin() {
     barTitle.textContent = "Trade Day Checkin";
     paintStreak();
-    const res = state.checkinResult || checkinResultFor(todayKey());
+    const res = state.checkinReview ? null : (state.checkinResult || checkinResultFor(todayKey()));
     cardScroll.innerHTML = `
       ${res ? checkinResultHTML(res) : `
       <h1 class="ci-heading">Check List Before Trading Day</h1>
@@ -1156,9 +1162,8 @@
       </div>
       ${(() => {
         const ready = CHECKIN_ITEMS.every((it) => store.checklist[it.id]);
-        const sent = store.checkinLog[todayKey()];
         return `<button class="ci-submit${ready ? "" : " off"}"
-          ${ready ? "" : "disabled"} data-ci-submit>${sent ? "Submitted" : "Submit"}</button>`;
+          ${ready ? "" : "disabled"} data-ci-submit>${state.checkinReview ? "Resubmit" : "Submit"}</button>`;
       })()}`}
       ${checkinActionsHTML()}`;
     // the result stretches to fill the space the rows left behind, so it sits
@@ -6855,6 +6860,10 @@
     if (state.view !== "match" && mk.on) mkAbort();
     if (state.view !== "pointaeway") pwAbort();
     if (state.view !== "placeaway") paAbort();
+    /* walking away from a review is how the logged answers are kept: the
+       working set may hold an abandoned edit, so the flag has to go with the
+       screen or coming back would show the rows instead of the result */
+    if (state.view !== "checkin") state.checkinReview = false;
     const listy = state.view === "home" || state.view === "videos"
       || inChecklist() || state.view === "journal" || state.view === "profile" || inPickaeway();
     $("cardOuter").classList.toggle("outline-bg", listy);
@@ -9267,7 +9276,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -9397,6 +9406,21 @@
       else store.checklist[id] = val;
       save();
       renderChecklistInPlace(renderCheckin);
+    }
+    else if (t.hasAttribute("data-ci-review")) {
+      /* the rows come back holding what was logged, not what the working set
+         happens to have in it — an abandoned edit from a previous review is
+         not the answer of record */
+      const rec = (store.checkinLog || {})[todayKey()];
+      if (rec && rec.answers) {
+        CHECKIN_ITEMS.forEach((it) => {
+          if (rec.answers[it.id]) store.checklist[it.id] = rec.answers[it.id];
+          else delete store.checklist[it.id];
+        });
+        save();
+      }
+      state.checkinReview = true;
+      renderCheckin();
     }
     else if (t.hasAttribute("data-ci-before") || t.hasAttribute("data-bt-open")) openBeforeTrade();
     else if (t.dataset.bt) {
@@ -9630,7 +9654,7 @@
     else if (t.hasAttribute("data-mkrematch")) openBuildMatch();
     else if (t.hasAttribute("data-mkdone")) openPickaeway();
     else if (t.dataset.rvtf) { rv.tf = t.dataset.rvtf; rv.sel = null; renderReplay(); }
-    else if (t.hasAttribute("data-ci-exit")) { closeOverlay(); state.checkinResult = null; state.homeTab = "sections"; goHome(); }
+    else if (t.hasAttribute("data-ci-exit")) { closeOverlay(); state.checkinResult = null; state.checkinReview = false; state.homeTab = "sections"; goHome(); }
     else if (t.hasAttribute("data-ci-submit")) {
       if (!CHECKIN_ITEMS.every((it) => store.checklist[it.id])) return;
       const answers = {};
@@ -9641,6 +9665,7 @@
       // "Are you ready to trade?" is just one of the seven now, not an override.
       const noCount = CHECKIN_ITEMS.filter((it) => answers[it.id] === "no").length;
       state.checkinResult = { go: noCount < 3, noCount };
+      state.checkinReview = false;
       renderCheckin();
     }
     else if (t.dataset.grid) { state.gridItem = t.dataset.grid; render(); }

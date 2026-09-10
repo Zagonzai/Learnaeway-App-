@@ -2156,7 +2156,13 @@ select.mt-input {
   text-align: right;
 }
 .ci-result-title.soon { color: var(--cyan); text-shadow: 0 0 20px rgba(61,223,255,.6); }
-.ci-result-inline .btn-secondary { width: 78%; max-width: 300px; margin-top: 10px; }
+/* the secondary shares the primary's pill frame, as every secondary in the
+   app does, so it is dimmed here to keep the eye on the forward action */
+.ci-result-inline .btn-secondary {
+  width: 78%; max-width: 300px; margin-top: 10px;
+  filter: brightness(.72) saturate(.85);
+}
+.ci-result-inline .btn-secondary:active { filter: brightness(1); }
 
 /* four round action placeholders — laid out but inert until specified */
 .ci-actions {
