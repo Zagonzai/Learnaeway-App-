@@ -2012,6 +2012,12 @@ select.mt-input {
 .ci-yes.on { background-image: url("../assets/checkin/btn-yes-on@2x.png"); }
 .ci-no { background-image: url("../assets/checkin/btn-no-off@2x.png"); }
 .ci-no.on { background-image: url("../assets/checkin/btn-no-on@2x.png"); }
+/* Once a row is answered, only the answer stays on screen. Hidden rather
+   than faded, so there is nothing invisible left to tap, and the slot is
+   kept rather than removed, so the button that stands does not jump
+   sideways as its neighbour goes. Tapping it clears the row, which brings
+   the other one back — that is how an answer is changed. */
+.ci-row.on .ci-btn:not(.on) { visibility: hidden; }
 
 /* the narrowest phones: the row gives the title and its subtext the width
    back out of everything around them */
