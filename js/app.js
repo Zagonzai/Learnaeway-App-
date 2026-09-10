@@ -44,6 +44,9 @@
   if (!store.journalManual) store.journalManual = {};   // account -> YYYY-MM-DD -> [manual trades]
   if (!store.journalAccounts) store.journalAccounts = [];  // user-added brokerage accounts
   if (!store.watchlist) store.watchlist = ["ES", "NQ", "CL", "GC", "BTC"];
+  if (store.chartMode !== "normal" && store.chartMode !== "aeway") store.chartMode = "aeway";
+  if (!Array.isArray(store.patterns)) store.patterns = [];   // saved chart patterns, local only
+  if (!store.aeScore) store.aeScore = { hits: 0, calls: 0, streak: 0, best: 0 };
   if (!store.journalActive) store.journalActive = "__all";   // "__all" = combined view
   if (!store.propLedger) store.propLedger = {};         // prop account -> [evaluation/reset/payout]
   if (!store.journalTrades) store.journalTrades = {};   // account -> [per-trade records]
@@ -308,6 +311,16 @@
        "settings" (gear). One slot, so the two can never both be open. */
     panel: null,
     tpTab: "chart",          // which of the hamburger's sections
+    /* which chart both surfaces are showing: "aeway" is the story engine's
+       own tape — no instrument, no prices, candles printing live — and
+       "normal" is the real-instrument chart with its axes and drawings.
+       One setting for both surfaces: it is a mode of the feature, not of a
+       panel. Restored from the store below. */
+    tpMode: store.chartMode,
+    aeCall: null,          // the direction called on the candle still to print
+    aeFlash: null,           // { ok } for the moment after one resolves
+    tpPat: false,            // the saved-pattern list, expanded inline
+    tpPatOpen: null,         // a saved pattern id, when one is being looked at
     tpSym: null,             // charted symbol; falls back to the watchlist's first
     tpTf: "5m",              // chart timeframe
     tpFrom: null,            // left edge of the window, in bars; null = the right edge
@@ -324,6 +337,7 @@
     dcDraft: null,           // the one being dragged out
     dcSel: null,             // index into dcDraw
     dcQuery: "",             // the bottom panel's ticker search
+    dcPat: false,            // the saved-pattern list under the desktop chart
     /* the same three tools on the phone's chart, with their own state */
     tpPractice: null,        // the two-axis practice session, when one is running
     tpTool: "cursor",
@@ -6873,6 +6887,8 @@
       </div>`;
       cardScroll.scrollTop = 0;
     }
+    /* the tape runs only while something is showing it */
+    aeSyncTimer();
   }
 
   /* ---------------- navigation ---------------- */
@@ -7567,6 +7583,106 @@
     return hit.story.seq[hit.story.seq.length - 1].id;
   }
 
+  /* ==================== $ÆWAY — THE LIVE TAPE ====================
+     The story engine with nothing in front of it: no instrument, no
+     timeframe, no axis, and — deliberately — no number anywhere that could
+     be read as a price. What prints is the shape of the move and nothing
+     else, which is the whole point: this is candle-reading practice, not a
+     quote for something you could imagine holding.
+
+     So the engine's own units are used as-is. There is no base price to
+     scale onto because no price is ever shown, and the geometry only ever
+     works in the visible window's own range. */
+  const AE_TICK_MS = 1600;    // how often a candle prints
+  const AE_SPAN = 40;         // how many are on the tape at once
+  const AE_KEEP = 240;        // how much history is held behind them
+  const aeTape = { bars: [], q: [], n: 0, at: 0, bucket: null };
+
+  function aeRefill() {
+    if (aeTape.q.length) return;
+    const story = seBuildStory(`aeway|${aeTape.bucket}|${aeTape.n++}`, seClarity());
+    for (const c of story.candles) {
+      aeTape.q.push({
+        open: aeTape.at + c.open, close: aeTape.at + c.close,
+        high: aeTape.at + c.high, low: aeTape.at + c.low, dir: c.dir,
+      });
+    }
+    aeTape.at += story.candles[story.candles.length - 1].close;
+  }
+  /* one candle prints */
+  function aeStep() {
+    if (aeTape.bucket == null) aeTape.bucket = seBucket();
+    aeRefill();
+    aeTape.bars.push(aeTape.q.shift());
+    if (aeTape.bars.length > AE_KEEP) aeTape.bars.splice(0, aeTape.bars.length - AE_KEEP);
+    return aeTape.bars[aeTape.bars.length - 1];
+  }
+  /* the tape opens with a screen already full, so it never starts blank */
+  function aeEnsure() {
+    if (aeTape.bucket == null) aeTape.bucket = seBucket();
+    while (aeTape.bars.length < AE_SPAN) aeStep();
+  }
+  function aeGeom() {
+    aeEnsure();
+    const from = Math.max(0, aeTape.bars.length - AE_SPAN);
+    return tpGeomOf(aeTape.bars, from, Math.min(AE_SPAN, aeTape.bars.length));
+  }
+  const aeBarsHTML = () => tpCandlesHTML(aeGeom());
+
+  /* the two big calls under the tape, and what the last one came to. The
+     numbers here are a score, not a price — the only ones this mode shows. */
+  function aeCallsHTML() {
+    const s = store.aeScore;
+    const f = state.aeFlash;
+    const pct = s.calls ? Math.round(s.hits / s.calls * 100) : 0;
+    return `
+      <div class="ae-score">
+        <span class="ae-verdict ${f ? (f.ok ? "ok" : "no") : ""}">${
+          state.aeCall ? `Called ${state.aeCall === "up" ? "green" : "red"} — waiting on the candle`
+          : f ? (f.ok ? "Right" : "Wrong")
+          : "Call the next candle"}</span>
+        <span class="ae-tally">${s.hits}/${s.calls} · ${pct}% · streak ${s.streak}</span>
+      </div>
+      <div class="ae-calls">
+        <button class="ae-call up${state.aeCall === "up" ? " on" : ""}" data-ae-call="up">Green</button>
+        <button class="ae-call down${state.aeCall === "down" ? " on" : ""}" data-ae-call="down">Red</button>
+      </div>`;
+  }
+
+  let aeTimer = null;
+  /* the tape only runs while something is showing it */
+  function aeSyncTimer() {
+    const want = state.tpMode === "aeway" && !state.tpPractice && !state.tpPatOpen
+      && !!(document.getElementById("tpTrack") || document.getElementById("dcTrack"));
+    if (want && !aeTimer) aeTimer = setInterval(aeTick, AE_TICK_MS);
+    else if (!want && aeTimer) { clearInterval(aeTimer); aeTimer = null; }
+  }
+  function aeTick() {
+    const c = aeStep();
+    if (state.aeCall) {
+      const ok = state.aeCall === c.dir;
+      const s = store.aeScore;
+      s.calls++;
+      if (ok) { s.hits++; s.streak++; if (s.streak > s.best) s.best = s.streak; }
+      else s.streak = 0;
+      state.aeCall = null;
+      state.aeFlash = { ok };
+      save();
+    } else if (state.aeFlash) state.aeFlash = null;
+    aePaint();
+  }
+  /* in place, not through render(): a full rebuild every 1.6s would take the
+     panel's search box and its scroll position with it */
+  function aePaint() {
+    const bars = aeBarsHTML();
+    for (const id of ["tpTrack", "dcTrack"]) {
+      const t = document.getElementById(id);
+      if (t) t.innerHTML = bars;
+    }
+    const calls = aeCallsHTML();
+    for (const el of document.querySelectorAll(".ae-panel")) el.innerHTML = calls;
+  }
+
   const TP_SPAN_MIN = 18, TP_SPAN_MAX = 220;
   function tpClampView() {
     state.tpSpan = Math.max(TP_SPAN_MIN, Math.min(TP_SPAN_MAX, Math.round(state.tpSpan)));
@@ -7583,9 +7699,18 @@
      measured in pixels. Both directions are here because the desktop chart's
      crosshair and its drawings have to run it backwards — a cursor gives a
      percentage and needs a price and a bar back. */
+  /* $ÆWAY's tape and a saved pattern are both look-only: no pan, no pinch,
+     no drawing, and no crosshair — the crosshair carries a price, which is
+     the one thing $ÆWAY must never put on screen. */
+  const tpFrozen = () => state.tpMode === "aeway" || !!state.tpPatOpen;
+
   const TP_PAD = 8, TP_USABLE = 100 - TP_PAD * 2;
   function tpGeom(sym, tfId, from, span) {
-    const all = tpSeries(sym, tfId);
+    return tpGeomOf(tpSeries(sym, tfId), from, span);
+  }
+  /* the same geometry over any run of candles — the instrument series, the
+     $Æway live tape, or a saved pattern's frozen bars */
+  function tpGeomOf(all, from, span) {
     const view = all.slice(from, from + span);
     const gMax = Math.max.apply(null, view.map((c) => c.high));
     const gMin = Math.min.apply(null, view.map((c) => c.low));
@@ -7648,8 +7773,116 @@
     </div>`;
   }
 
+  /* ==================== SAVED PATTERNS (NORMAL CHART) ====================
+     A pattern is what was on the chart when you pressed the button: the bars
+     in the window, the lines and boxes and fibs drawn over them, and which
+     instrument and timeframe it was. The drawings are stored against the
+     window's own left edge rather than the series index, so a saved pattern
+     stands on its own once the live series has rolled past it.
+
+     These live in the local store only. They are candle data and geometry,
+     not progress, and a hundred of them would bloat the synced document for
+     no benefit. ==> revisit if patterns should follow a user between
+     devices. */
+  const PAT_MAX = 24;
+  const patRound = (v) => Math.round(v * 100) / 100;
+
+  function patSave(k) {
+    const m = k === "m";
+    const sym = m ? tpSymbol() : state.dcSym;
+    const tf = m ? state.tpTf : state.dcTf;
+    if (m) tpClampView();
+    const g = m ? tpGeom(sym, tf, state.tpFrom, state.tpSpan) : dcGeom();
+    const draw = m ? state.tpDraw : state.dcDraw;
+    store.patterns.unshift({
+      id: "p" + Date.now().toString(36) + Math.random().toString(36).slice(2, 6),
+      at: Date.now(), sym, tf,
+      bars: g.view.map((c) => ({ o: patRound(c.open), h: patRound(c.high),
+        l: patRound(c.low), c: patRound(c.close), d: c.dir })),
+      draw: draw.map((d) => ({ type: d.type,
+        a: { i: d.a.i - g.from, p: patRound(d.a.p) },
+        b: { i: d.b.i - g.from, p: patRound(d.b.p) } })),
+    });
+    if (store.patterns.length > PAT_MAX) store.patterns.length = PAT_MAX;
+    save();
+  }
+  const patFind = (id) => store.patterns.filter((p) => p.id === id)[0] || null;
+  function patGeom(rec) {
+    return tpGeomOf(rec.bars.map((b) => ({ open: b.o, high: b.h, low: b.l, close: b.c, dir: b.d })),
+      0, rec.bars.length);
+  }
+  function patOverlayHTML(rec) {
+    const g = patGeom(rec);
+    const shapes = rec.draw.map((d, i) => dcShapeSVG(d, g, i, false)).join("");
+    const labels = rec.draw.map((d) => dcLabelsHTML(d, g)).join("");
+    return `<svg class="dc-svg" viewBox="0 0 100 100" preserveAspectRatio="none">${shapes}</svg>
+      <div class="dc-labels">${labels}</div>`;
+  }
+
+  function tpSaveBarHTML(k) {
+    const m = k === "m";
+    const open = m ? state.tpPat : state.dcPat;
+    const n = store.patterns.length;
+    return `
+      <div class="tp-savebar">
+        <button class="dc-tool" ${m ? "data-tp-patsave" : "data-dc-patsave"}>Save pattern</button>
+        <button class="dc-tool${open ? " on" : ""}"
+          ${m ? "data-tp-pat" : "data-dc-pat"}="${open ? "0" : "1"}">Saved${n ? ` (${n})` : ""}</button>
+      </div>
+      ${open ? patListHTML() : ""}`;
+  }
+  function patListHTML() {
+    if (!store.patterns.length) {
+      return `<div class="tp-note">Nothing saved yet — draw on the chart, then press Save pattern.</div>`;
+    }
+    return `<div class="pat-list">
+      ${store.patterns.map((p) => {
+        const d = new Date(p.at);
+        const nd = p.draw.length;
+        return `<div class="pat-row">
+          <button class="pat-open" data-pat-open="${esc(p.id)}">
+            <span class="pat-sym">${esc(p.sym)}<small>${esc(p.tf)}</small></span>
+            <span class="pat-meta">${d.toLocaleDateString([], { month: "short", day: "numeric" })}
+              · ${p.bars.length} bars · ${nd} drawing${nd === 1 ? "" : "s"}</span>
+          </button>
+          <button class="pat-del" data-pat-del="${esc(p.id)}" aria-label="Delete this pattern">✕</button>
+        </div>`;
+      }).join("")}
+    </div>`;
+  }
+  /* a saved pattern, frozen: no gestures, no tools, nothing live */
+  function tpPatternHTML() {
+    const rec = patFind(state.tpPatOpen);
+    if (!rec) { state.tpPatOpen = null; return tpChartHTML(); }
+    const d = new Date(rec.at);
+    return `
+      <div class="tp-chart-head">
+        <div class="tp-quote"><b>${esc(rec.sym)}</b><span class="tp-pat-tf">${esc(rec.tf)}</span></div>
+        <div class="tp-sym-name">Saved ${d.toLocaleDateString([], { month: "short", day: "numeric" })}
+          ${d.toLocaleTimeString([], { hour: "numeric", minute: "2-digit" })}</div>
+      </div>
+      <div class="tp-chart pat-chart">
+        <div class="tp-track">${tpCandlesHTML(patGeom(rec))}</div>
+        <div class="dc-overlay">${patOverlayHTML(rec)}</div>
+      </div>
+      <div class="tp-savebar">
+        <button class="dc-tool" data-pat-close>Back to the chart</button>
+        <button class="dc-tool" data-pat-del="${esc(rec.id)}">Delete</button>
+      </div>`;
+  }
+
+  /* the two-way switch that sits at the top of both charts */
+  function tpModeHTML(attr) {
+    return `<div class="tp-mode">
+      <button class="tp-mode-btn${state.tpMode === "aeway" ? " on" : ""}" ${attr}="aeway">$ÆWAY</button>
+      <button class="tp-mode-btn${state.tpMode === "normal" ? " on" : ""}" ${attr}="normal">Normal chart</button>
+    </div>`;
+  }
+
   function tpChartHTML() {
     if (state.tpPractice) return tpPracticeHTML();
+    if (state.tpPatOpen) return tpPatternHTML();
+    if (state.tpMode === "aeway") return tpAewayHTML();
     const sym = tpSymbol();
     const row = TP_UNI[sym] || { sym, name: sym, base: 100 };
     const all = tpSeries(sym, state.tpTf);
@@ -7657,6 +7890,7 @@
     const view = all.slice(state.tpFrom, state.tpFrom + state.tpSpan);
     const chg = (view[view.length - 1].close - view[0].open) / view[0].open * 100;
     return `
+      ${tpModeHTML("data-tp-mode")}
       <div class="tp-chart-head">
         <div class="tp-quote">
           <b>${esc(sym)}</b>
@@ -7669,7 +7903,6 @@
           data-tp-tf="${t.id}">${t.label}</button>`).join("")}
       </div>
       <div class="tp-toolbar">
-        <button class="dc-tool tp-prac-btn" data-tp-prac>Practice</button>
         ${DC_TOOLS.map((t) => `<button class="dc-tool${t.id === state.tpTool ? " on" : ""}"
           data-tp-tool="${t.id}">${esc(t.label)}</button>`).join("")}
         <button class="dc-tool dc-del${state.tpSel == null ? " off" : ""}"
@@ -7684,7 +7917,25 @@
         <span class="dc-read dc-read-p" id="tpReadP" hidden></span>
         <span class="dc-read dc-read-t" id="tpReadT" hidden></span>
       </div>
+      ${tpSaveBarHTML("m")}
       ${tpStripHTML()}`;
+  }
+
+  /* ---- $ÆWAY: the tape, and the two calls under it ---- */
+  function tpAewayHTML() {
+    return `
+      ${tpModeHTML("data-tp-mode")}
+      <div class="tp-chart-head ae-head">
+        <div class="tp-quote"><b>$ÆWAY</b><span class="ae-live">live</span></div>
+        <div class="tp-sym-name">Æway Trading System — price action only</div>
+      </div>
+      <div class="tp-toolbar">
+        <button class="dc-tool tp-prac-btn" data-tp-prac>Practice</button>
+      </div>
+      <div class="tp-chart ae-chart" id="tpChart">
+        <div class="tp-track" id="tpTrack">${aeBarsHTML()}</div>
+      </div>
+      <div class="ae-panel">${aeCallsHTML()}</div>`;
   }
 
   /* ==================== DESKTOP CHART + WATCHLIST ====================
@@ -7752,7 +8003,7 @@
 
   /* which chart an event landed in, or null */
   function dcWhich(target) {
-    if (!target || !target.closest) return null;
+    if (!target || !target.closest || tpFrozen()) return null;
     if (target.closest("#dcBox")) return "d";
     if (target.closest("#tpChart")) return "m";
     return null;
@@ -7803,11 +8054,12 @@
   function dcLabelsHTML(d, g) {
     if (!d || d.type !== "fib") return "";
     const lo = Math.min(d.a.p, d.b.p), hi = Math.max(d.a.p, d.b.p);
-    const xa = Math.min(g.x(d.a.i), g.x(d.b.i));
+    /* the level, and only the level. A price at each line said nothing the
+       axis was not already saying, and it read as a quote. They sit against
+       the right edge so the lines themselves stay clear. */
     return DC_FIB.map((lv) => {
       const p = hi - (hi - lo) * (lv / 100);
-      return `<span class="dc-fib-lbl" style="left:${xa.toFixed(2)}%;top:${g.y(p).toFixed(2)}%">
-        ${lv.toFixed(1)}% · ${esc(dcPriceLabel(p))}</span>`;
+      return `<span class="dc-fib-lbl" style="top:${g.y(p).toFixed(2)}%">${lv.toFixed(1)}%</span>`;
     }).join("");
   }
 
@@ -7832,10 +8084,13 @@
   }
 
   function dcChartHTML() {
+    if (state.tpPatOpen) return dcPatternHTML();
+    if (state.tpMode === "aeway") return dcAewayHTML();
     const g = dcGeom();
     const row = TP_UNI[state.dcSym] || { sym: state.dcSym, name: state.dcSym };
     const chg = (g.view[g.view.length - 1].close - g.view[0].open) / g.view[0].open * 100;
     return `
+      ${tpModeHTML("data-dc-mode")}
       <div class="dc-head">
         <div class="dc-quote"><b>${esc(state.dcSym)}</b>
           <span class="${chg >= 0 ? "up" : "down"}">${chg >= 0 ? "+" : ""}${chg.toFixed(2)}%</span>
@@ -7859,6 +8114,39 @@
         </div>
         <span class="dc-read dc-read-p" id="dcReadP" hidden></span>
         <span class="dc-read dc-read-t" id="dcReadT" hidden></span>
+      </div>
+      ${tpSaveBarHTML("d")}`;
+  }
+
+  function dcAewayHTML() {
+    return `
+      ${tpModeHTML("data-dc-mode")}
+      <div class="dc-head ae-head">
+        <div class="dc-quote"><b>$ÆWAY</b><span class="ae-live">live</span>
+          <span class="dc-name">Æway Trading System — price action only</span></div>
+      </div>
+      <div class="dc-box ae-chart" id="dcBox">
+        <div class="tp-track" id="dcTrack">${aeBarsHTML()}</div>
+      </div>
+      <div class="ae-panel">${aeCallsHTML()}</div>`;
+  }
+
+  function dcPatternHTML() {
+    const rec = patFind(state.tpPatOpen);
+    if (!rec) { state.tpPatOpen = null; return dcChartHTML(); }
+    const d = new Date(rec.at);
+    return `
+      <div class="dc-head">
+        <div class="dc-quote"><b>${esc(rec.sym)}</b><span class="dc-name">${esc(rec.tf)} ·
+          saved ${d.toLocaleDateString([], { month: "short", day: "numeric" })}</span></div>
+        <div class="dc-tools">
+          <button class="dc-tool" data-pat-close>Back to the chart</button>
+          <button class="dc-tool" data-pat-del="${esc(rec.id)}">Delete</button>
+        </div>
+      </div>
+      <div class="dc-box pat-chart">
+        <div class="tp-track">${tpCandlesHTML(patGeom(rec))}</div>
+        <div class="dc-overlay">${patOverlayHTML(rec)}</div>
       </div>`;
   }
 
@@ -7904,6 +8192,11 @@
   /* Only a signed-in visitor gets either panel. FB.user() is the real thing —
      the session is persisted and restored on load, and it is already what
      gates cloud sync — so a logged-out visitor keeps the empty frames. */
+  /* both chart surfaces at once. The mode and the saved patterns belong to
+     the feature rather than to one panel, so a change to either has to reach
+     the phone's chart and the desktop panel together. */
+  function renderBothCharts() { render(); renderDesktopTools(); }
+
   function renderDesktopTools() {
     const chart = document.querySelector(".dt-panel-chart");
     const wide = document.querySelector(".dt-panel-wide");
@@ -7917,6 +8210,7 @@
     wide.classList.toggle("dt-live", on);
     chart.innerHTML = a;
     wide.innerHTML = c;
+    aeSyncTimer();
   }
 
   /* the bars and the drawings only; the toolbar and the watchlist stay put
@@ -8892,7 +9186,7 @@
   }
   cardScroll.addEventListener("pointerdown", (e) => {
     const box = e.target.closest("#tpChart");
-    if (!box) return;
+    if (!box || tpFrozen()) return;
     /* With a drawing tool picked, or a finger on a handle or an existing
        shape, the drawing layer takes the pointer and the chart does not pan
        under it. One finger only — a second one is always a pinch. */
@@ -8955,7 +9249,7 @@
   cardScroll.addEventListener("pointercancel", tpEndPointer);
   /* a mouse wheel is the same zoom, for anyone on a desktop */
   cardScroll.addEventListener("wheel", (e) => {
-    if (!e.target.closest("#tpChart")) return;
+    if (!e.target.closest("#tpChart") || tpFrozen()) return;
     e.preventDefault();
     const mid = state.tpFrom + state.tpSpan / 2;
     state.tpSpan *= e.deltaY > 0 ? 1.12 : 0.89;
@@ -9025,7 +9319,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -9431,6 +9725,37 @@
     else if (t.hasAttribute("data-tp-tab")) {
       tpReadQuery(); state.tpPractice = null;
       state.tpTab = t.getAttribute("data-tp-tab"); render();
+    }
+    /* the mode and the saved patterns are shared by both surfaces, so both
+       are rebuilt: the desktop panel has its own render and does not come
+       along with the phone's. */
+    else if (t.hasAttribute("data-tp-mode") || t.hasAttribute("data-dc-mode")) {
+      const m = t.getAttribute("data-tp-mode") || t.getAttribute("data-dc-mode");
+      if (m !== state.tpMode) {
+        state.tpMode = store.chartMode = m;
+        /* a call is about a candle on the tape you just left */
+        state.aeCall = null; state.aeFlash = null;
+        state.tpPractice = null; state.tpPatOpen = null;
+        save(); renderBothCharts();
+      }
+    }
+    else if (t.hasAttribute("data-ae-call")) {
+      const d = t.getAttribute("data-ae-call");
+      state.aeCall = state.aeCall === d ? null : d;
+      state.aeFlash = null;
+      aePaint();
+    }
+    else if (t.hasAttribute("data-tp-patsave")) { patSave("m"); state.tpPat = true; renderBothCharts(); }
+    else if (t.hasAttribute("data-dc-patsave")) { patSave("d"); state.dcPat = true; renderBothCharts(); }
+    else if (t.hasAttribute("data-tp-pat")) { state.tpPat = t.getAttribute("data-tp-pat") === "1"; render(); }
+    else if (t.hasAttribute("data-dc-pat")) { state.dcPat = t.getAttribute("data-dc-pat") === "1"; renderDesktopTools(); }
+    else if (t.hasAttribute("data-pat-open")) { state.tpPatOpen = t.getAttribute("data-pat-open"); renderBothCharts(); }
+    else if (t.hasAttribute("data-pat-close")) { state.tpPatOpen = null; renderBothCharts(); }
+    else if (t.hasAttribute("data-pat-del")) {
+      const id = t.getAttribute("data-pat-del");
+      store.patterns = store.patterns.filter((p) => p.id !== id);
+      if (state.tpPatOpen === id) state.tpPatOpen = null;
+      save(); renderBothCharts();
     }
     else if (t.hasAttribute("data-tp-prac")) tpPracticeStart();
     else if (t.hasAttribute("data-tp-prac-end")) { state.tpPractice = null; render(); }
@@ -10489,7 +10814,7 @@
   let dcDrag = null;
 
   if (dcChartPanel) dcChartPanel.addEventListener("pointerdown", (e) => {
-    if (!e.target.closest || !e.target.closest("#dcBox")) return;
+    if (!e.target.closest || !e.target.closest("#dcBox") || tpFrozen()) return;
     e.preventDefault();
     if (!dcDown(e, "d")) {
       const pt = dcPct(e, "d");
@@ -10556,7 +10881,7 @@
      the document would cost the whole page its async scrolling */
   if (dcChartPanel) dcChartPanel.addEventListener("wheel", (e) => {
     const box = e.target.closest ? e.target.closest("#dcBox") : null;
-    if (!box) return;
+    if (!box || tpFrozen()) return;
     e.preventDefault();
     const pt = dcPct(e, "d");
     const g = dcGeom();
@@ -10572,7 +10897,7 @@
 
   document.addEventListener("keydown", (e) => {
     const k = document.getElementById("dcBox") ? "d" : document.getElementById("tpChart") ? "m" : null;
-    if (!k || state[DC[k].sel] == null) return;
+    if (!k || tpFrozen() || state[DC[k].sel] == null) return;
     const tag = (e.target.tagName || "").toLowerCase();
     if (tag === "input" || tag === "textarea") return;
     if (e.key === "Delete" || e.key === "Backspace") {
