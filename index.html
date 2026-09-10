@@ -330,7 +330,12 @@
       <div class="dt-lower dt-lower-left" aria-hidden="true"></div>
     </div>
     <div class="dt-col dt-right">
-      <div class="dt-bar" aria-hidden="true"></div>
+      <!-- this column's info bar is where the chart's controls live — the
+           toggle, what it is showing, the drawings and the timeframe — so the
+           card below it is the plot and its two buttons and nothing else.
+           app.js fills it for a signed-in visitor and leaves it empty
+           otherwise, which is why it is not aria-hidden like its twin. -->
+      <div class="dt-bar dt-bar-chart" id="dtChartBar"></div>
       <div class="dt-panel dt-panel-chart"></div>
       <div class="dt-panel dt-panel-wide"></div>
       <div class="dt-lower dt-lower-right" aria-hidden="true"></div>

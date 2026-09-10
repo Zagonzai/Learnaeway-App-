@@ -4249,6 +4249,43 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   /* the app column sits over the banner; its own header video is hidden below
      so the clip shows through, with the clock still on top of it */
   .app { position: relative; z-index: 1; }
+
+  /* ---- the chart's controls, in this column's info bar ----
+     The bar at the top of the right column, level with the centre column's
+     two stacked bars, holds everything that steers the chart: the toggle,
+     what it is showing, the drawings and the timeframe. The card below is
+     then the plot and its two buttons and nothing else.
+
+     The bar's own frame is a 9-slice with 19px borders, so its content box is
+     already inset from the lit stroke — the rows sit inside that. */
+  .dt-bar-chart {
+    display: flex;
+    flex-direction: column;
+    justify-content: center;
+    gap: 5px;
+    min-width: 0;
+    padding: 0 4px;
+  }
+  .dt-bar-chart:empty { display: block; }
+  .dt-ht-row {
+    display: flex; align-items: center; justify-content: space-between;
+    gap: 10px; min-width: 0;
+  }
+  /* the bar is between 400 and 700px wide across the desktop range, and nine
+     timeframes and five tools have to share a line inside it at all of them,
+     so these run small everywhere rather than at a breakpoint */
+  .dt-ht-row .tp-mode { flex: 0 0 auto; margin-bottom: 0; width: 152px; gap: 4px; }
+  .dt-ht-row .tp-mode-btn { padding: 3px 4px; font-size: calc(8.5px * var(--fs)); letter-spacing: .02em; }
+  .dt-ht-row .dc-quote { flex: 1 1 auto; justify-content: flex-end; }
+  .dt-ht-row .dc-tf { flex: 1 1 auto; margin-bottom: 0; max-width: 210px; gap: 3px; }
+  .dt-ht-row .dc-tf-btn { font-size: calc(8.5px * var(--fs)); }
+  .dt-ht-row .dc-tools { flex: 0 0 auto; gap: 3px; }
+  .dt-ht-row .dc-tool { padding: 3px 6px; font-size: calc(9px * var(--fs)); letter-spacing: .02em; }
+  .dt-ht-note {
+    font-size: calc(10px * var(--fs)); font-weight: 700;
+    letter-spacing: .06em; color: #8FA9C4;
+  }
+
   .header-zone .wave-video, .header-zone .wave-still { display: none; }
 
   /* ---- columns ----
@@ -6395,6 +6432,81 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
   box-shadow: 0 0 12px -3px rgba(61,223,255,.6); }
 .dc-tool.off { opacity: .4; }
 .dc-del.on, .dc-del:not(.off) { border-color: rgba(255,61,154,.5); color: #FF6B9D; }
+
+/* ---- the phone's chart: two dropdowns and the ticker, inside the plot ----
+   Nine timeframes and five tools as two rows of pills cost the chart most of
+   its height on a phone. They collapse into a pair of buttons sitting over
+   the plot's top-left corner, which is what lets the plot start immediately
+   under the mode toggle and take that height back.
+
+   The wrapper does not take the pointer — the chart under it still pans and
+   pinches — only the buttons and the open menu do. */
+.tp-menus {
+  /* under the ticker rather than beside it: centred on a phone's chart box,
+     the ticker and these two buttons cannot share a line without one of them
+     running into the other */
+  position: absolute; top: 27px; left: 6px;
+  display: flex; gap: 5px;
+  pointer-events: none;
+  z-index: 3;
+}
+.tp-menu-wrap { position: relative; pointer-events: auto; }
+.tp-menu-btn {
+  display: flex; align-items: center; gap: 5px;
+  min-width: 44px;
+  padding: 3px 8px;
+  border-radius: 8px;
+  border: 1px solid rgba(120,150,180,.35);
+  background: rgba(5,9,22,.88);
+  font-size: calc(9.5px * var(--fs)); font-weight: 800; letter-spacing: .04em;
+  color: #9FC0E0;
+}
+.tp-menu-btn.on { border-color: var(--cyan); color: var(--cyan); }
+.tp-menu-btn i {
+  width: 0; height: 0; margin-top: 2px;
+  border: 3.5px solid transparent; border-top-color: currentColor;
+}
+.tp-menu {
+  position: absolute; top: calc(100% + 4px); left: 0;
+  display: flex; flex-direction: column; gap: 2px;
+  min-width: 76px; max-height: 172px; overflow-y: auto;
+  padding: 4px;
+  border-radius: 10px;
+  border: 1px solid rgba(61,223,255,.38);
+  background: rgba(4,8,20,.97);
+  box-shadow: 0 6px 20px rgba(0,0,0,.6);
+}
+.tp-menu-item {
+  padding: 5px 9px;
+  border: 0; border-radius: 6px; background: none;
+  text-align: left; white-space: nowrap;
+  font-size: calc(10.5px * var(--fs)); font-weight: 700; color: #9FC0E0;
+}
+.tp-menu-item.on { background: rgba(61,223,255,.16); color: var(--cyan); }
+.tp-menu-item.del { color: #FF6B9D; }
+.tp-menu-item.off { opacity: .4; }
+
+/* the ticker reads across the top of the plot rather than above the box */
+.tp-ticker {
+  position: absolute; top: 6px; left: 50%; transform: translateX(-50%);
+  max-width: calc(100% - 120px);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  font-size: calc(11px * var(--fs)); font-weight: 800; letter-spacing: .03em;
+  color: #EAF6FF; text-shadow: 0 0 8px rgba(2,4,12,.95);
+  pointer-events: none; z-index: 2;
+}
+.tp-chg {
+  position: absolute; top: 7px; right: 9px;
+  font-size: calc(10px * var(--fs)); font-weight: 800;
+  text-shadow: 0 0 8px rgba(2,4,12,.95);
+  pointer-events: none; z-index: 2;
+}
+.tp-chg.up { color: var(--pw-bull, #1FCBA0); }
+.tp-chg.down { color: var(--pw-bear, #E5484D); }
+/* the height the two rows of pills used to take */
+.tp-chart.tall { height: 300px; }
+/* a short phone did not have that height to give in the first place */
+@media (max-height: 740px) { .tp-chart.tall { height: 226px; } }
 
 /* the phone's chart carries the same three tools as the desktop panel */
 .tp-toolbar { display: flex; gap: 5px; margin-bottom: 7px; }
