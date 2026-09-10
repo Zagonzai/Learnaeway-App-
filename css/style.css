@@ -4327,18 +4327,6 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
     white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
   }
   .dc-tools { display: flex; gap: 5px; }
-  .dc-tool {
-    padding: 4px 10px;
-    border-radius: 999px;
-    border: 1px solid rgba(120,150,180,.32);
-    background: rgba(5,9,22,.5);
-    font-size: calc(10.5px * var(--fs)); font-weight: 800;
-    letter-spacing: .06em; color: #8FA9C4;
-  }
-  .dc-tool.on { border-color: var(--cyan); color: var(--cyan);
-    box-shadow: 0 0 12px -3px rgba(61,223,255,.6); }
-  .dc-tool.off { opacity: .4; }
-  .dc-del.on, .dc-del:not(.off) { border-color: rgba(255,61,154,.5); color: #FF6B9D; }
   .dc-tf { flex: 0 0 auto; display: flex; gap: 4px; margin-bottom: 6px; }
   .dc-tf-btn {
     flex: 1 1 0;
@@ -5609,6 +5597,35 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
 .tp-col.up { color: var(--pw-bull, #1FCBA0); }
 .tp-col.down { color: var(--pw-bear, #E5484D); }
 
+/* The drawn candles, on these two charts only — the hamburger's chart (the
+   practice chart is the same element) and the desktop right panel. Pickæway's
+   battle chart and Pointæway's cards keep the flat programmatic bars they
+   already had; .pa-body and .pa-wick are shared with them, so everything here
+   hangs off .tp-col.
+
+   The body is the artwork itself, stretched to whatever the candle's range
+   is — the glass gradient runs top to bottom of the body at any height, which
+   is what it should do. The bright rim is a full pixel of a 72px-wide source,
+   so it survives the downscale to a six-pixel column; the outer bloom does
+   not, and is put back with a shadow. */
+.tp-col .pa-body {
+  background: none no-repeat 50% 50% / 100% 100%;
+  border-radius: 1.5px;
+}
+.tp-col.up .pa-body {
+  background-image: url("../assets/chart/candle-bull@2x.png");
+  box-shadow: 0 0 5px rgba(47,230,194,.42);
+}
+.tp-col.down .pa-body {
+  background-image: url("../assets/chart/candle-bear@2x.png");
+  box-shadow: 0 0 5px rgba(255,74,74,.42);
+}
+/* the wick in the art is a hot near-white core with the candle's colour
+   bloomed around it */
+.tp-col .pa-wick { width: 1px; border-radius: 1px; }
+.tp-col.up .pa-wick { background: #6FF0DC; box-shadow: 0 0 4px rgba(47,230,194,.8); }
+.tp-col.down .pa-wick { background: #FF8E7E; box-shadow: 0 0 4px rgba(255,74,74,.8); }
+
 /* market watch */
 .tp-rows { display: flex; flex-direction: column; gap: 6px; }
 .tp-row {
@@ -6322,7 +6339,8 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
 .dc-overlay .dc-shape, .dc-overlay .dc-handle { pointer-events: all; }
 .dc-fib-lbl {
   position: absolute;
-  transform: translate(4px, -50%);
+  right: 3px;
+  transform: translateY(-50%);
   font-size: 9px; font-weight: 700; white-space: nowrap;
   color: #9FC0E0; text-shadow: 0 0 6px rgba(0,0,0,.9);
 }
@@ -6344,12 +6362,117 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
 .dc-read-t { bottom: 2px; transform: translateX(-50%); }
 
 
+/* The chart's control buttons. Shared by the desktop panel and the phone's
+   chart, so they live at top level: inside the desktop media query they left
+   the toolbar on a phone as a row of bare words. */
+.dc-tool {
+  padding: 4px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(120,150,180,.32);
+  background: rgba(5,9,22,.5);
+  font-size: calc(10.5px * var(--fs)); font-weight: 800;
+  letter-spacing: .06em; color: #8FA9C4;
+}
+.dc-tool.on { border-color: var(--cyan); color: var(--cyan);
+  box-shadow: 0 0 12px -3px rgba(61,223,255,.6); }
+.dc-tool.off { opacity: .4; }
+.dc-del.on, .dc-del:not(.off) { border-color: rgba(255,61,154,.5); color: #FF6B9D; }
+
 /* the phone's chart carries the same three tools as the desktop panel */
 .tp-toolbar { display: flex; gap: 5px; margin-bottom: 7px; }
 .tp-toolbar .dc-tool { flex: 1 1 0; padding: 5px 4px; text-align: center; }
 .tp-chart { position: relative; }
 .tp-chart.drawing { cursor: crosshair; }
 .tp-chart .dc-overlay, .tp-chart .dc-cross { position: absolute; inset: 0; }
+
+/* the switch between the $ÆWAY tape and the real-instrument chart */
+.tp-mode { display: flex; gap: 6px; margin-bottom: 8px; }
+.tp-mode-btn {
+  flex: 1 1 0;
+  padding: 6px 8px;
+  border-radius: 999px;
+  border: 1px solid rgba(120,150,180,.3);
+  background: rgba(9,13,30,.6);
+  color: #9FC0E0;
+  font-size: calc(10.5px * var(--fs)); font-weight: 800; letter-spacing: .06em;
+}
+.tp-mode-btn.on {
+  border-color: var(--cyan); color: #F2FBFF;
+  background: rgba(61,223,255,.14);
+  box-shadow: 0 0 12px rgba(61,223,255,.22);
+}
+
+/* $ÆWAY: the tape has no axis, no ticker chips and no price of any kind —
+   only the shape, and the two calls under it */
+.ae-head .tp-quote b, .ae-head .dc-quote b { letter-spacing: .06em; }
+.ae-live {
+  font-size: calc(9px * var(--fs)); font-weight: 800;
+  letter-spacing: .18em; text-transform: uppercase; color: var(--teal);
+}
+.ae-live::before {
+  content: ""; display: inline-block;
+  width: 5px; height: 5px; margin-right: 4px; border-radius: 50%;
+  background: var(--teal); box-shadow: 0 0 6px var(--teal);
+  animation: aePulse 1.6s ease-in-out infinite;
+}
+@keyframes aePulse { 0%, 100% { opacity: 1; } 50% { opacity: .25; } }
+.ae-chart { cursor: default; touch-action: auto; }
+.ae-panel { margin-top: 9px; }
+.ae-score {
+  display: flex; align-items: baseline; justify-content: space-between;
+  gap: 8px; margin-bottom: 7px;
+}
+.ae-verdict { font-size: calc(11.5px * var(--fs)); font-weight: 700; color: #9FC0E0; }
+.ae-verdict.ok { color: var(--teal); }
+.ae-verdict.no { color: #FF6B9D; }
+.ae-tally { font-size: calc(10.5px * var(--fs)); color: #7E9CBB; font-variant-numeric: tabular-nums; }
+.ae-calls { display: flex; gap: 9px; }
+.ae-call {
+  flex: 1 1 0;
+  min-height: 52px;
+  border-radius: 14px;
+  border: 1px solid transparent;
+  font-size: calc(14px * var(--fs)); font-weight: 900;
+  letter-spacing: .1em; text-transform: uppercase;
+  color: #04121A;
+}
+.ae-call.up { background: linear-gradient(180deg, #5CF0D2, #1FCBA0); box-shadow: 0 0 16px rgba(47,230,194,.35); }
+.ae-call.down { background: linear-gradient(180deg, #FF7C7C, #E5484D); box-shadow: 0 0 16px rgba(229,72,77,.35); }
+.ae-call.on { outline: 2px solid #F2FBFF; outline-offset: 1px; }
+.ae-call:active { transform: translateY(1px); }
+/* on a short phone the two calls are what has to be on screen, not the last
+   forty candles — the tape gives up the height */
+@media (max-height: 740px) {
+  .ae-chart { height: 90px; }
+  .ae-call { min-height: 46px; }
+}
+
+/* saved patterns */
+.tp-savebar { display: flex; gap: 5px; margin-top: 8px; }
+.tp-savebar .dc-tool { flex: 1 1 0; text-align: center; }
+.pat-list { margin-top: 7px; display: flex; flex-direction: column; gap: 5px; }
+.pat-row { display: flex; gap: 5px; align-items: stretch; }
+.pat-open {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; align-items: center; justify-content: space-between; gap: 8px;
+  padding: 7px 10px;
+  border-radius: 10px;
+  border: 1px solid rgba(120,150,180,.28);
+  background: rgba(9,13,30,.6);
+  text-align: left;
+}
+.pat-sym { font-size: calc(12px * var(--fs)); font-weight: 800; color: #F2FBFF; }
+.pat-sym small { margin-left: 6px; font-size: calc(9.5px * var(--fs)); font-weight: 700; color: var(--cyan); }
+.pat-meta { font-size: calc(10px * var(--fs)); color: #7E9CBB; white-space: nowrap; }
+.pat-del {
+  flex: 0 0 auto; width: 34px;
+  border-radius: 10px;
+  border: 1px solid rgba(255,61,154,.35);
+  background: rgba(255,61,154,.1);
+  color: #FF6B9D; font-weight: 800;
+}
+.pat-chart { cursor: default; touch-action: auto; }
+.tp-pat-tf { font-size: calc(10.5px * var(--fs)); font-weight: 800; color: var(--cyan); }
 
 /* the practice loop: the chart, then the two questions under it */
 .tp-prac-head {
