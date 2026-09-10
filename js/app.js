@@ -410,13 +410,20 @@
      10-item checklist overlay. Keyed by id (not index) so it can't collide
      with ticks written by that earlier version. */
   const CHECKIN_ITEMS = [
-    { id: "physically",    label: "Are you Physically ready?" },
-    { id: "mentally",      label: "Are you Mentally ready?" },
-    { id: "emotionally",   label: "Are you Emotionally ready?" },
-    { id: "distraction",   label: "Are you Distraction-Free Today?" },
-    { id: "economic-news", label: "Have you checked today's economic news?" },
-    { id: "market-awareness", label: "Are you aware of Current Market Conditions?" },
-    { id: "ready-to-trade", label: "Are you ready to trade?" },
+    { id: "physically", icon: "ico-01-physical",
+      label: "Are you physically ready?", sub: "Rested • No fatigue • Good energy" },
+    { id: "mentally", icon: "ico-02-mental",
+      label: "Are you mentally ready?", sub: "Focused • Clear mind • Present" },
+    { id: "emotionally", icon: "ico-03-emotional",
+      label: "Are you emotionally ready?", sub: "Calm • Patient • No revenge trading" },
+    { id: "distraction", icon: "ico-04-distraction",
+      label: "Are you distraction-free today?", sub: "No unnecessary interruptions" },
+    { id: "economic-news", icon: "ico-05-news",
+      label: "Have you checked today's economic news?", sub: "Aware of key events and data" },
+    { id: "market-awareness", icon: "ico-06-market",
+      label: "Are you aware of current market conditions?", sub: "Trend • Volatility • Key levels" },
+    { id: "ready-to-trade", icon: "ico-07-ready",
+      label: "Are you ready to trade?", sub: "Plan set • Risk defined • Let's go" },
   ];
 
   /* short forms for the scorecard — the rows are questions, and seven of them
@@ -1124,14 +1131,28 @@
       ${res ? checkinResultHTML(res) : `
       <h1 class="ci-heading">Check List Before Trading Day</h1>
       <div class="ci-list">
-        ${CHECKIN_ITEMS.map((it) => `
-          <div class="ci-row ${store.checklist[it.id] === "yes" ? "yes" : store.checklist[it.id] === "no" ? "no" : ""}">
-            <button class="ci-half ci-yes" data-ci="${it.id}" data-ci-val="yes"
-                    aria-label="${esc(it.label)} — yes" aria-pressed="${store.checklist[it.id] === "yes"}">YES</button>
-            <span class="ci-label">${esc(it.label)}</span>
-            <button class="ci-half ci-no" data-ci="${it.id}" data-ci-val="no"
-                    aria-label="${esc(it.label)} — no" aria-pressed="${store.checklist[it.id] === "no"}">NO</button>
-          </div>`).join("")}
+        ${CHECKIN_ITEMS.map((it, i) => {
+          const ans = store.checklist[it.id];
+          return `
+          <div class="ci-row${ans ? " on" : ""}">
+            <div class="ci-row-in">
+              <span class="ci-num">${String(i + 1).padStart(2, "0")}</span>
+              <img class="ci-ico" src="assets/checkin/${it.icon}@2x.png" alt="" aria-hidden="true">
+              <span class="ci-text">
+                <b>${esc(it.label)}</b>
+                <small>${esc(it.sub)}</small>
+              </span>
+              <span class="ci-btns">
+                <button class="ci-btn ci-yes${ans === "yes" ? " on" : ""}"
+                        data-ci="${it.id}" data-ci-val="yes"
+                        aria-label="${esc(it.label)} — yes" aria-pressed="${ans === "yes"}"></button>
+                <button class="ci-btn ci-no${ans === "no" ? " on" : ""}"
+                        data-ci="${it.id}" data-ci-val="no"
+                        aria-label="${esc(it.label)} — no" aria-pressed="${ans === "no"}"></button>
+              </span>
+            </div>
+          </div>`;
+        }).join("")}
       </div>
       ${(() => {
         const ready = CHECKIN_ITEMS.every((it) => store.checklist[it.id]);

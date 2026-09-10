@@ -3,7 +3,7 @@
  * deploys show up immediately; only falls back to cache when offline.
  * Heavy binary assets (images) are cache-first since they rarely change.
  */
-const CACHE = "learnaeway-v118";
+const CACHE = "learnaeway-v120";
 
 const SHELL = [
   "./",
@@ -45,9 +45,24 @@ const SHELL = [
   "./assets/nav-icons/icon-home@2x.png",
   "./assets/nav-icons/icon-trade-day@2x.png",
   "./assets/nav-icons/icon-trade-journal@2x.png",
-  "./assets/bars/checkin-row-plate@2x.png",
-  "./assets/buttons-icon/checkin-status-ring@2x.png",
-  "./assets/buttons-icon/checkin-yes-no-toggle@2x.png",
+  /* the Start Day checklist row: the two plate states, the two answers in
+     both their states, and one icon per question — all of it on screen the
+     moment the dock's check-in opens. The three assets the old row used
+     (checkin-row-plate, checkin-status-ring, checkin-yes-no-toggle) are no
+     longer fetched, so they are no longer paid for on install. */
+  "./assets/checkin/row-dim@2x.png",
+  "./assets/checkin/row-glow@2x.png",
+  "./assets/checkin/btn-yes-on@2x.png",
+  "./assets/checkin/btn-yes-off@2x.png",
+  "./assets/checkin/btn-no-on@2x.png",
+  "./assets/checkin/btn-no-off@2x.png",
+  "./assets/checkin/ico-01-physical@2x.png",
+  "./assets/checkin/ico-02-mental@2x.png",
+  "./assets/checkin/ico-03-emotional@2x.png",
+  "./assets/checkin/ico-04-distraction@2x.png",
+  "./assets/checkin/ico-05-news@2x.png",
+  "./assets/checkin/ico-06-market@2x.png",
+  "./assets/checkin/ico-07-ready@2x.png",
   "./assets/buttons-icon/label-button@2x.png",
   "./assets/buttons-icon/profile-ring@2x.png",
   "./assets/buttons-icon/streak-filled@2x.png",
