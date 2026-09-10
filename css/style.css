@@ -2027,57 +2027,91 @@ select.mt-input {
 
 /* rows: icon placeholder · title pill · status. One tap target per row so the
    whole thing is hittable; the status circle only ever reports state. */
-.ci-list { display: flex; flex-direction: column; gap: 10px; }
+.ci-list { display: flex; flex-direction: column; gap: 8px; }
 
-/* One component per row: the Yes/No toggle asset IS the row. It is 9-sliced so
-   the two end circles stay perfectly round (left/right border width is pinned
-   to the row height, and the artwork's circles are exactly its height across)
-   while only the centre bar stretches. The row title sits in that bar, so
-   there is no separate icon circle or title pill any more.
-   Retired but kept in the library: checkin-row-plate@2x.png (circle + pill)
-   and checkin-status-ring@2x.png (single status circle). */
+/* One component per row, and the bar artwork is the row: a rounded plate
+   9-sliced left and right so the corners keep their radius and only the
+   middle stretches. The slice is 50 of the artwork's 160px height, so the
+   rendered border width has to hold that same ratio against the row height
+   or the corners go elliptical.
+
+   The bars arrived with the transparency checkerboard baked into their
+   pixels, so they were cut at the neon core; the outer bloom that came off
+   with the checker is the shadow below.
+
+   Content does not live in the border box — a 19px inset on each side is a
+   lot of a phone's width to give up — so it sits in an absolutely positioned
+   layer over the whole row instead.
+
+   Retired but kept in the library: checkin-yes-no-toggle@2x.png (the old
+   two-circle row), checkin-row-plate@2x.png and checkin-status-ring@2x.png. */
 .ci-row {
+  --ci-h: 62px;
   position: relative;
-  display: flex;
-  align-items: center;
-  justify-content: center;
-  height: 58px;
+  height: var(--ci-h);
   border-style: solid;
-  border-width: 0 58px;              /* == height, so the circles stay circular */
-  border-image: url("../assets/buttons-icon/checkin-yes-no-toggle@2x.png") 0 108 fill / 0 58px stretch;
+  border-width: 0 calc(var(--ci-h) * 0.3125);   /* 50/160 of the artwork */
+  border-image: url("../assets/checkin/row-dim@2x.png") 0 50 fill / 0 calc(var(--ci-h) * 0.3125) stretch;
+  filter: drop-shadow(0 0 6px rgba(61,223,255,.16));
 }
-.ci-label {
-  font-size: calc(13.5px * var(--fs));
-  font-weight: 700;
-  line-height: 1.12;
-  letter-spacing: .01em;
-  color: #EAF6FF;
-  text-align: center;
-  padding: 0 4px;
+/* answered: the bar lights up */
+.ci-row.on {
+  border-image-source: url("../assets/checkin/row-glow@2x.png");
+  filter: drop-shadow(0 0 12px rgba(61,223,255,.34));
 }
-
-/* The two circles carry their own labels, so it's obvious which side is
-   which. Selection removes the label from the side that wasn't chosen — the
-   answer that stands is the one still showing. No colour overlay. */
-.ci-half {
+.ci-row-in {
+  /* an absolute child is positioned against the padding box, so inset:0 would
+     start inside the two 19px borders and hand back a fifth of a phone's
+     width. It reaches out over them instead. */
   position: absolute;
-  top: 0;
-  width: 58px;
-  height: 100%;
-  display: grid;
-  place-items: center;
-  font-size: 11.5px;
-  font-weight: 800;
-  letter-spacing: .1em;
-  color: #EAF6FF;
-  transition: opacity .18s ease, transform .12s ease;
+  top: 0; bottom: 0;
+  left: calc(var(--ci-h) * -0.3125); right: calc(var(--ci-h) * -0.3125);
+  display: flex; align-items: center; gap: 6px;
+  padding: 0 12px;
 }
-.ci-yes { left: -58px; }             /* reach back past the border box */
-.ci-no  { right: -58px; }
-.ci-half:active { transform: scale(.93); }
-/* the unchosen side's word clears away, leaving the answer on its own */
-.ci-row.yes .ci-no,
-.ci-row.no  .ci-yes { opacity: 0; }
+.ci-num {
+  flex: 0 0 auto;
+  font-size: calc(11px * var(--fs)); font-weight: 800;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .04em;
+  color: var(--cyan);
+  opacity: .85;
+}
+.ci-ico { flex: 0 0 auto; width: 24px; height: 24px; object-fit: contain; }
+.ci-text { flex: 1 1 auto; min-width: 0; display: flex; flex-direction: column; gap: 1px; }
+.ci-text b {
+  font-size: calc(11.5px * var(--fs)); font-weight: 800;
+  line-height: 1.15; color: #EAF6FF;
+}
+.ci-text small {
+  font-size: calc(8.4px * var(--fs)); font-weight: 600;
+  line-height: 1.15; color: #8FA9C4;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.ci-btns { flex: 0 0 auto; display: flex; gap: 4px; }
+.ci-btn {
+  width: 28px; height: 28px;
+  background: no-repeat 50% 50% / 100% 100%;
+  border: 0;
+  transition: transform .12s ease;
+}
+.ci-btn:active { transform: scale(.9); }
+.ci-yes { background-image: url("../assets/checkin/btn-yes-off@2x.png"); }
+.ci-yes.on { background-image: url("../assets/checkin/btn-yes-on@2x.png"); }
+.ci-no { background-image: url("../assets/checkin/btn-no-off@2x.png"); }
+.ci-no.on { background-image: url("../assets/checkin/btn-no-on@2x.png"); }
+
+/* the narrowest phones: the row gives the title and its subtext the width
+   back out of everything around them */
+@media (max-width: 370px) {
+  .ci-row-in { gap: 5px; padding: 0 9px; }
+  .ci-num { font-size: calc(10px * var(--fs)); }
+  .ci-ico { width: 21px; height: 21px; }
+  .ci-text b { font-size: calc(10.5px * var(--fs)); }
+  .ci-text small { font-size: calc(7.6px * var(--fs)); }
+  .ci-btns { gap: 3px; }
+  .ci-btn { width: 25px; height: 25px; }
+}
 
 /* label-button asset: a plain rounded pill with a gradient border, 9-sliced on
    all four sides so the rounded caps stay crisp and only the middle stretches.
