@@ -9955,6 +9955,7 @@
       save();
       closeOverlay();
       setAuthMode("login");
+      setLoginOpen(false);      // back to the one pill, not a form already open
       showAuthStep();
       $("authScreen").classList.remove("hidden");
     }
@@ -9990,34 +9991,43 @@
     ],
   };
 
+  /* The fields, the button that submits them, and the way across to the other
+     mode: which mode is showing decides all three, so one place writes all
+     three. The way across sits under the submit and reads smaller — signing
+     up is the second thing this screen is for, not the first. */
   function renderAuthForm() {
-    const label = authMode === "login" ? "Log In" : "Sign Up";
+    const login = authMode === "login";
     authForm.innerHTML =
       AUTH_FIELDS[authMode].map((f) =>
         `<input class="g-pill auth-input" name="${f.name}" type="${f.type}" placeholder="${f.placeholder}" autocomplete="off">`
       ).join("") +
       `<div id="authError" class="gate-error hidden"></div>` +
-      `<button type="submit" class="g-pill auth-submit">${label}</button>`;
+      `<button type="submit" class="g-pill auth-submit">${login ? "Login" : "Sign Up"}</button>` +
+      `<button type="button" class="auth-switch" data-auth-mode="${login ? "signup" : "login"}">${
+        login ? "Sign Up" : "Back to Login"}</button>`;
   }
 
   function setAuthMode(mode) {
     authMode = mode;
-    $("authTabLogin").classList.toggle("active", mode === "login");
-    $("authTabSignup").classList.toggle("active", mode === "signup");
-    $("authTabLogin").setAttribute("aria-selected", mode === "login");
-    $("authTabSignup").setAttribute("aria-selected", mode === "signup");
     renderAuthForm();
   }
 
+  /* the desktop dock's Log In shortcut, and anything else that names a mode:
+     both open the form on the login step rather than routing anywhere */
   document.addEventListener("click", (e) => {
     const t = e.target.closest("[data-intro]");
     if (!t) return;
     setAuthMode(t.dataset.intro === "signup" ? "signup" : "login");
     setIntroStage("form");
+    setLoginOpen(true);
   });
 
-  $("authTabLogin").addEventListener("click", () => setAuthMode("login"));
-  $("authTabSignup").addEventListener("click", () => setAuthMode("signup"));
+  /* the switch under the submit, and the single pill that opens the form */
+  authForm.addEventListener("click", (e) => {
+    const t = e.target.closest("[data-auth-mode]");
+    if (t) setAuthMode(t.getAttribute("data-auth-mode"));
+  });
+  $("loginOpenBtn").addEventListener("click", () => setLoginOpen(true));
 
   authForm.addEventListener("submit", async (e) => {
     e.preventDefault();
@@ -10118,7 +10128,6 @@
     v.play().catch(() => setIntroStage("cta"));   // autoplay refused -> show the CTA
   }
 
-  /* steps: access gate -> questionnaire -> (desktop: intro video -> CTA) -> login */
   function syncSurveyDock() {
     const onSurvey = !!store.gatePassed && !store.surveyDone;
     const show = onSurvey && surveyStep === 0;
@@ -10128,21 +10137,28 @@
     if (step) step.classList.toggle("sv-has-dock", show);
   }
 
+  /* steps: access gate -> questionnaire -> login.
+
+     The login step is now the same brand loop and the same one pill on both
+     platforms, which is the job the desktop's intro step used to do on its
+     own, so nothing routes to that step any more. Its markup and its code are
+     still here — the dock's Log In shortcut still opens the form through it —
+     ==> pull them out if the intro video is not coming back. */
   function showAuthStep() {
     const onGate = !store.gatePassed;
     const onSurvey = !onGate && !store.surveyDone;
     const past = !onGate && !onSurvey;
-    const onIntro = past && introDesktop() && introStage !== "form";
     if (onSurvey && !surveyRendered) { surveyStep = 0; renderSurveyStep(); surveyRendered = true; }
     $("gateStep").classList.toggle("hidden", !onGate);
     $("surveyStep").classList.toggle("hidden", !onSurvey);
-    $("introStep").classList.toggle("hidden", !onIntro);
-    $("loginStep").classList.toggle("hidden", !past || onIntro);
+    $("introStep").classList.add("hidden");
+    $("loginStep").classList.toggle("hidden", !past);
+    /* the wave band belongs to the gate and the questionnaire; the login step
+       brings its own clip and fills the column with it */
+    $("authScreen").classList.toggle("on-login", past);
     // the Log In shortcut sits in the dock slot through every pre-login state
     $("introDock").classList.toggle("hidden", !(past && introDesktop()));
-    $("introVideo").classList.toggle("hidden", !(onIntro && introStage === "video"));
-    $("introCta").classList.toggle("hidden", !(onIntro && introStage === "cta"));
-    if (onIntro && introStage === "video") wireIntroVideo();
+    if (past) startLoginVideo();
     syncSurveyDock();
   }
   function logGateAttempt(attempt) {
@@ -10469,10 +10485,11 @@
     showAuthStep();
   }
 
-  /* The gate's own copy of the header clip. Its source is attached on the way
-     in and the element is stopped on the way out, so once the user is through
-     the gate there is no second decoder running on a screen nobody can see.
-     Silent throughout: the hero sound button does not reach this one. */
+  /* The gate's own copy of the header clip, behind the access gate and the
+     questionnaire. Its source is attached on the way in and the element is
+     stopped on the way out, so once the user is through there is no second
+     decoder running on a screen nobody can see. Silent throughout: the hero
+     sound button does not reach this one. */
   function startAuthVideo() {
     const v = $("authVideo");
     if (!v || v.querySelector("source")) return;
@@ -10488,10 +10505,46 @@
   function stopAuthVideo() {
     const v = $("authVideo");
     if (v) v.pause();
+    const l = $("loginVideo");
+    if (l) l.pause();
+  }
+
+  /* ---------------- the way in ----------------
+     The brand loop fills the centre column behind the login step, and keeps
+     running through it: the source is attached once and nothing here ever
+     calls load() or pause() again, so opening the form does not restart the
+     clip or drop a frame. */
+  function startLoginVideo() {
+    const v = $("loginVideo");
+    if (!v || v.querySelector("source")) return;
+    /* if it cannot play at all the still behind it is what shows */
+    v.addEventListener("error", () => v.classList.add("hidden"));
+    const src = document.createElement("source");
+    src.src = "assets/video/login-loop.mp4";
+    src.type = "video/mp4";
+    v.appendChild(src);
+    v.muted = true;
+    v.load();
+    v.play().catch(() => {});
+  }
+
+  /* closed: one pill. open: the fields, the submit, and the way across. */
+  let loginOpen = false;
+  function setLoginOpen(open) {
+    loginOpen = open;
+    const btn = $("loginOpenBtn"), form = $("loginForm");
+    if (btn) btn.classList.toggle("hidden", open);
+    if (form) form.classList.toggle("hidden", !open);
+    if (open) {
+      renderAuthForm();
+      const first = authForm.querySelector("input");
+      if (first) first.focus({ preventScroll: true });
+    }
   }
 
   if (!store.authSeen) {
     renderAuthForm();
+    setLoginOpen(false);
     showAuthStep();
     authScreen.classList.remove("hidden");
     startAuthVideo();

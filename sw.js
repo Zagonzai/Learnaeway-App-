@@ -3,7 +3,7 @@
  * deploys show up immediately; only falls back to cache when offline.
  * Heavy binary assets (images) are cache-first since they rarely change.
  */
-const CACHE = "learnaeway-v127";
+const CACHE = "learnaeway-v129";
 
 const SHELL = [
   "./",
@@ -105,7 +105,12 @@ const SHELL = [
 
 /* assets/social/og-image.png is deliberately absent: link-preview scrapers
    fetch it directly from the network and never go through this worker, so
-   precaching it would cost every install 320KB nobody in the app ever sees. */
+   precaching it would cost every install 320KB nobody in the app ever sees.
+
+   assets/video/login-loop.mp4 is absent for a different reason: at 3.1MB it
+   would double what an install costs, and it is only ever wanted on one
+   screen that a signed-in visitor never sees again. /assets/ is cache-first,
+   so it is kept from the first time it is played and costs nothing after. */
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
