@@ -10493,9 +10493,15 @@
     src.src = "assets/video/login-loop.mp4";
     src.type = "video/mp4";
     v.appendChild(src);
-    v.muted = true;
     v.load();
-    v.play().catch(() => {});
+    /* Sound on, and the same bargain every hero in this app strikes: ask for
+       unmuted playback, settle for muted rather than for no playback at all
+       when the browser refuses an unmuted autoplay without a prior gesture.
+       The speaker at the top of the screen is what turns it back on, and it
+       is painted from this element's own .muted either way. */
+    watchHeroAudio(v);
+    tryUnmuted(v);
+    syncMuteButton();
   }
 
   /* closed: one pill. open: the fields, the submit, and the way across. */
@@ -10690,33 +10696,12 @@
      for a clip its own header is already playing. The clock, the mute button
      and the gear sit above it untouched — this is only the layer underneath. */
 
-  let dtBannerVideo = null;   // the desktop hero, and the one that carries sound
-
-  function buildDesktopBanner() {
-    const banner = $("dtBanner");
-    if (!banner || dtBannerVideo) return;
-    // the app's own header video is hidden at this width — stop it rather than
-    // leave a second decoder running on a clip nobody can see
-    if (waveVideo) { waveVideo.pause(); waveVideo.removeAttribute("autoplay"); }
-    /* H.264 only — the clip has no WebM twin, and offering a source that isn't
-       there costs a 404 on every desktop load. */
-    banner.innerHTML = `<video class="dtb-video" muted loop playsinline webkit-playsinline preload="auto">
-      <source src="assets/video/header-loop.mp4" type="video/mp4">
-    </video>`;
-    const v = banner.querySelector("video");
-    v.muted = true;                     // as a property too: the attribute
-    v.play().catch(() => {});           // alone doesn't satisfy autoplay policy
-    dtBannerVideo = v;
-    watchHeroAudio(v);
-    tryUnmuted(v);
-    syncMuteButton();
-  }
-
-  /* Autoplay can still be lost to a backgrounded tab or a stalled decode, and
-     nothing else is watching this element now that the sync loop is gone. */
-  function keepBannerPlaying() {
-    if (dtBannerVideo && dtBannerVideo.paused) dtBannerVideo.play().catch(() => {});
-  }
+  /* The banner across the top of the desktop grid used to carry a second copy
+     of the header clip. It does not any more: the centre column plays its own
+     copy at every width now, which is the one the mute button reaches, and
+     the strip behind it is just the black ground the clock sits on. */
+  function buildDesktopBanner() { /* the strip carries no video of its own */ }
+  function keepBannerPlaying() { /* nothing to keep playing */ }
 
   /* ---------------- hero sound ----------------
      One control for whichever video is the hero at this width: the header clip
@@ -10729,8 +10714,16 @@
      element's own .muted, never from what we hoped it would be, and it repaints
      on volumechange so it cannot drift out of step with reality. */
 
+  /* whichever clip is the one on screen: the brand loop while the way in is
+     showing, the header clip once the app itself is. The button reaches one
+     of them and it is always the one the listener can see. */
   function heroVideo() {
-    return window.matchMedia(DESKTOP_MQ).matches ? dtBannerVideo : waveVideo;
+    const screen = $("authScreen"), step = $("loginStep"), login = $("loginVideo");
+    if (login && screen && !screen.classList.contains("hidden")
+        && step && !step.classList.contains("hidden")) return login;
+    /* looked up rather than closed over: the way in starts its own clip
+       during boot, before the const below it has been initialised */
+    return $("waveVideo");
   }
 
   function syncMuteButton() {

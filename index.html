@@ -273,9 +273,15 @@
            the frame. One pill to start; tapping it opens the form in place,
            and the clip never stops or restarts through any of it. -->
       <div id="loginStep" class="auth-card-outer login-step">
-        <video id="loginVideo" class="login-video" muted loop playsinline
-               webkit-playsinline preload="auto" aria-hidden="true"></video>
-        <div class="login-stack">
+        <!-- the whole frame, letterboxed rather than cropped: the composition
+             carries type into all four corners and none of it may be cut -->
+        <div class="login-media">
+          <video id="loginVideo" class="login-video" loop playsinline
+                 webkit-playsinline preload="auto" aria-hidden="true"></video>
+        </div>
+        <!-- and the way in sits under the clip in its own pill dock, the same
+             bar the app's five icons ride in — never over the video -->
+        <div class="login-dock">
           <button type="button" id="loginOpenBtn" class="g-pill login-open">Login / Sign Up</button>
           <div id="loginForm" class="login-form hidden">
             <form id="authForm" autocomplete="off" novalidate>
