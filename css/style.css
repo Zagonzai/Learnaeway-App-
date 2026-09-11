@@ -4417,6 +4417,13 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
      floor is what applies. If that floor ever changes, this padding follows. */
   .dt-col {
     grid-row: 2;
+    /* Above the centre column's own header. The bars start six pixels into
+       row 1 to sit flush under the banner, and now that these columns reach
+       in toward the centre their inner top corners land inside the header's
+       box — which is positioned, so without this it paints over them and
+       clips the corner off each one. */
+    position: relative;
+    z-index: 1;
     display: flex;
     flex-direction: column;
     gap: 8px;                                   /* == .card-outer's top margin */
@@ -4674,6 +4681,24 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   /* One way in, not two. The pill in the dock below is the control now; the
      form it opens still rides on the clip, so nothing else moves. */
   .login-dock { display: none; }
+
+  /* The way in is this column's panel, so it carries the frame the signed-in
+     card carries and fills the slot exactly as the two beside it do.
+
+     The clip inside it is 9:16 and this slot is not — on a 1920x950 window it
+     is nearer 7:10 — so the clip is drawn as large as it can be without
+     losing an edge, and what is left over is the panel's own ground rather
+     than a black void. Cropping would fill the last of it, at the cost of the
+     type the composition runs into all four corners. */
+  .login-step {
+    background: none;
+    border-radius: var(--radius-card);
+  }
+  .login-step::before { content: ""; }
+  .login-media {
+    background: none;
+    border-radius: calc(var(--radius-card) - 4px);
+  }
 }
 
 /* ---- desktop pre-login: intro video, CTA, and the Log In dock ----
