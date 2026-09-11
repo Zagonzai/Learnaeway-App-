@@ -1099,9 +1099,9 @@ img { user-select: none; -webkit-user-drag: none; }
 .auth-card-outer.hidden { display: none; }
 
 /* ---------------- the way in ----------------
-   The brand loop fills the centre column above, and the way in sits under it
-   in a dock of its own — the same pill bar the app's five icons ride in — so
-   nothing is ever laid over the clip.
+   The brand loop fills the centre column. Idle, the way in is a single pill
+   in a dock under it; tapped, the dock folds away and the fields ride on the
+   clip itself, at a fixed point in the composition.
 
    The clip is letterboxed, not cropped: its composition runs type into all
    four corners, and cover would cut whichever pair the column's aspect does
@@ -1126,6 +1126,8 @@ img { user-select: none; -webkit-user-drag: none; }
   flex: 1 1 auto;
   min-height: 0;
   background: #000;
+  /* so the frame below can be measured against this box's own height */
+  container-type: size;
 }
 .login-video {
   position: absolute; inset: 0;
@@ -1135,37 +1137,65 @@ img { user-select: none; -webkit-user-drag: none; }
 }
 .login-video.hidden { display: none; }
 
-/* the dock: same nine-slice bar as the app's own, same height and margins */
-.login-dock {
-  position: relative;
-  isolation: isolate;
-  flex: 0 0 auto;
-  display: flex;
-  flex-direction: column;
-  align-items: center;
-  justify-content: center;
-  gap: 7px;
-  margin: 8px 3.5% var(--gap-bottom);
-  padding: 10px 16px;
-  min-height: clamp(48px, 6.2vh, 58px);
-  border-radius: 999px;
-}
-.login-dock::before {
-  content: "";
+/* The clip's own frame inside the media box. object-fit: contain fits the
+   2160x3840 source to whichever axis runs out first and centres it; this is
+   the same arithmetic, so the box lines up with the picture exactly and the
+   letterbox bars fall outside it. Percentages within it are therefore
+   percentages of the composition, which is what "below the tagline, above
+   the globe" has to mean. */
+.login-frame {
   position: absolute;
   inset: 0;
-  z-index: -1;
-  border: 24px solid transparent;
-  border-left-width: 27px;
-  border-right-width: 27px;
-  border-image: url("../assets/bars/background-bar-pill@2x.png") 54 60 fill / 24px 27px stretch;
+  margin: auto;
+  width: min(100%, 100cqh * 2160 / 3840);
+  aspect-ratio: 2160 / 3840;
+  pointer-events: none;             /* the clip's frame catches nothing */
 }
-.login-open { width: 100%; max-width: 340px; }
+/* Without container units the frame cannot be derived, so it falls back to
+   the media box. On a phone column the two are within a few percent. */
+@supports not (width: 1cqh) {
+  .login-frame { width: 100%; height: 100%; aspect-ratio: auto; }
+}
+
+/* the dock under the clip. It is a place to stand, not a second shape: the
+   pill inside it is the only frame, which is why it paints no bar of its
+   own — two nine-slices here read as a pill inside a pill. */
+.login-dock {
+  position: relative;
+  flex: 0 0 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  margin: 10px 3.5% var(--gap-bottom);
+  min-height: clamp(48px, 6.2vh, 58px);
+}
+/* open, the fields are on the clip and the dock has nothing left to hold */
+.login-step.form-open .login-dock { display: none; }
+
+.login-open { width: 100%; max-width: 320px; height: 54px; }
 .login-open.hidden { display: none; }
-.login-form { width: 100%; max-width: 340px; }
+
+/* The fields, on the clip and at the weight of the one pill they replace:
+   the same 54px pills, capped at the same width.
+
+   Anchored by their FOOT, not their middle. The globe sits low in the frame
+   and the constraint it imposes is a floor, so this line is the lowest the
+   group may reach; sign-up, which carries four fields to login's two, grows
+   upward from it rather than down onto the globe. One number moves the whole
+   group against the composition. */
+.login-form {
+  position: absolute;
+  left: 50%;
+  bottom: calc(100% - var(--login-fields-foot, 78%));
+  transform: translateX(-50%);
+  width: min(84%, 320px);
+  pointer-events: auto;             /* but the fields themselves do */
+}
 .login-form.hidden { display: none; }
+.login-form #authForm { gap: 12px; }
 .login-form .auth-input { width: 100%; }
-.login-form .auth-submit { width: 100%; }
+.login-form .auth-submit { width: 100%; margin-top: 2px; }
+.login-form .auth-switch { margin-top: 2px; }
 /* the way across to the other mode: under the submit, and quieter than it */
 .auth-switch {
   display: block;

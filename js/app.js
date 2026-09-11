@@ -10538,9 +10538,13 @@
   let loginOpen = false;
   function setLoginOpen(open) {
     loginOpen = open;
-    const btn = $("loginOpenBtn"), form = $("loginForm");
+    const btn = $("loginOpenBtn"), form = $("loginForm"), step = $("loginStep");
     if (btn) btn.classList.toggle("hidden", open);
     if (form) form.classList.toggle("hidden", !open);
+    /* open, the dock folds away and the clip takes the whole column: the
+       fields are laid on the frame itself, so an empty bar under it would
+       only be a band of black */
+    if (step) step.classList.toggle("form-open", open);
     if (open) {
       renderAuthForm();
       const first = authForm.querySelector("input");
