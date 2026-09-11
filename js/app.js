@@ -4071,69 +4071,59 @@
     </div>`;
   }
 
-  /* Their count, never their cards — the same rule the old bar kept. */
-  function pwOppHandHTML() {
-    const n = pw.aiHand.length;
-    const show = Math.max(1, Math.min(6, n));
-    return `<div class="pw-opphand">
-      <div class="pw-opphand-cap">Opponent Hand</div>
-      <div class="pw-opphand-stack" aria-hidden="true">
-        ${n ? Array.from({ length: show }, () => `<i class="${pw.aiSide}"></i>`).join("") : ""}
-      </div>
-      <div class="pw-opphand-n">${n} card${n === 1 ? "" : "s"}</div>
-    </div>`;
-  }
-
   /* The meter, upright: +25 at the top, −25 at the bottom, the print in the
-     middle of it and the two sides' targets flanking. The fill still grows
-     from the midline and still goes out as one percentage, so the number the
-     old track spent on height this one spends the same way. */
+     middle. It used to carry a written target either side; the two played
+     cards stand there now, which says the same thing and says it about this
+     round rather than about the rules. */
   function pwPrintHTML() {
     const c = pw.candle;
     const pct = Math.min(1, Math.abs(c) / PW_TARGET);
     const tone = c === 0 ? "flat" : c > 0 ? "bull" : "bear";
-    const mine = pw.playerSide;
     return `<div class="pw-print">
-      <div class="pw-print-side bull${mine === "bull" ? " mine" : ""}">
-        <span class="pw-print-side-name">Bull</span>
-        <span class="pw-print-side-goal">Push up<br>to +${PW_TARGET}</span>
-      </div>
-      <div class="pw-print-col">
-        <div class="pw-print-gauge">
-          <div class="pw-print-fill ${tone} ${c >= 0 ? "up" : "down"}"
-               style="--pw-fill:${(pct * 50).toFixed(2)}%"></div>
-          ${/* the two ends ride inside the gauge rather than above and below
-                it: stacked outside they cost thirty-odd pixels, and thirty-odd
-                pixels is the difference between the hand being on this screen
-                and being under it */""}
-          <span class="pw-print-end top">+${PW_TARGET}</span>
-          <span class="pw-print-end bot">−${PW_TARGET}</span>
-          <div class="pw-print-read">
-            <span class="pw-print-val ${tone}" data-pw-candle="${c}">${c > 0 ? "+" : ""}${c}</span>
-            <span class="pw-print-cap">The Print</span>
-          </div>
+      <div class="pw-print-gauge">
+        <div class="pw-print-fill ${tone} ${c >= 0 ? "up" : "down"}"
+             style="--pw-fill:${(pct * 50).toFixed(2)}%"></div>
+        ${/* the two ends ride inside the gauge rather than above and below it:
+              stacked outside they cost thirty-odd pixels, and this screen has
+              none to spend */""}
+        <span class="pw-print-end top">+${PW_TARGET}</span>
+        <span class="pw-print-end bot">−${PW_TARGET}</span>
+        <div class="pw-print-read">
+          <span class="pw-print-val ${tone}" data-pw-candle="${c}">${c > 0 ? "+" : ""}${c}</span>
+          <span class="pw-print-cap">The Print</span>
         </div>
-      </div>
-      <div class="pw-print-side bear${mine === "bear" ? " mine" : ""}">
-        <span class="pw-print-side-name">Bear</span>
-        <span class="pw-print-side-goal">Push down<br>to −${PW_TARGET}</span>
       </div>
     </div>`;
   }
 
-  /* One line, changed by the round, so it is something read in passing rather
-     than a panel to dismiss. */
-  const PW_TIPS = [
-    "Higher strength candles have more impact.",
-    "A wild answers the card in front of it — hold one for a 5.",
-    "Lose a round and you choose: your own deck, or the wild pile.",
-    "Seen tracks what they have already spent. Count it.",
-    "Take Profit doubles if you hold the match to their card.",
-    "Discipline shows you their card before you answer it.",
-    "Equal strength is a wash — the print does not move.",
-    "Run both a deck and a hand dry and the print decides it.",
-  ];
-  const pwTip = () => PW_TIPS[(pw.round - 1) % PW_TIPS.length];
+  /* One row where there used to be three: your card, the meter, theirs.
+     The left seat is also the drop target — the card you are dragging is
+     going to the place it will sit, which is the whole reason the separate
+     "your turn" slot below the meter could go. */
+  function pwArenaHTML(canPlay, peeking) {
+    const aiDeck = pwOwnDeck(pw.aiSide).length;
+    const youHint = pw.playerPlayed ? "On the table"
+      : peeking ? "Answer with a number"
+      : canPlay ? "Drag or tap a card" : "…";
+    return `<div class="pw-arena">
+      <div class="pw-seat you">
+        <span class="pw-seat-tag you">You</span>
+        <div class="pw-seat-slot${pw.playerPlayed ? " filled" : ""}" data-pw-drop>
+          ${pw.playerPlayed ? pwCardHTML(pw.playerPlayed, {}) : ""}
+        </div>
+        <span class="pw-seat-cap">${esc(youHint)}</span>
+      </div>
+      ${pwPrintHTML()}
+      <div class="pw-seat opp">
+        <span class="pw-seat-tag opp">Opp</span>
+        <div class="pw-seat-slot${pw.aiPlayed ? " filled" : ""}">
+          ${pw.aiPlayed ? pwCardHTML(pw.aiPlayed, {}) : pwBackHTML(pw.aiSide)}
+        </div>
+        <span class="pw-seat-cap">${pw.aiPlayed
+          ? `${esc(pw.aiSide)} · ${aiDeck} left` : "Awaiting play…"}</span>
+      </div>
+    </div>`;
+  }
 
   /* The ten wilds and what each does, in one list. It expands in place under
      the button — nothing in this app opens over a dimmed screen. */
@@ -4164,6 +4154,7 @@
     if (pickName) pickName.textContent = "Cool Down Game";
     cardFooter.style.display = "none";
 
+    cardScroll.classList.remove("pw-playing");
     if (pw.phase === "setup") {
       cardScroll.innerHTML = `
         <div class="pw-setup">
@@ -4228,64 +4219,45 @@
        the hand's place rather than adding a row. There is nothing to play
        while any of them is up, so nothing is lost by the swap. */
     const canPlay = pw.phase === "selecting";
-    const aiDeck = pwOwnDeck(pw.aiSide).length;
+    /* the same bargain Placeæway strikes: the scroller becomes a fixed-height
+       flex column, the arena takes what the rows above and below leave, and
+       nothing scrolls vertically */
+    cardScroll.classList.add("pw-playing");
     cardScroll.innerHTML = `
-      <div class="pw-field">
-        <span class="pw-flank bull" aria-hidden="true"></span>
-        <span class="pw-flank bear" aria-hidden="true"></span>
-
-        <div class="pw-counts">
+      <div class="pw-counts">
           <span class="pw-count"><b>${ownCount}</b><i>Deck</i></span>
           <span class="pw-count wild"><b>${pw.special.length}</b><i>Wild</i></span>
+          ${/* their hand, as a number and nothing else. It used to be a stack
+                of card backs in a box of its own, which is a lot of screen to
+                spend saying "six" */""}
+          <span class="pw-count opp"><b>${pw.aiHand.length}</b><i>Opp</i></span>
           <span class="pw-counts-gap"></span>
           <button type="button" class="pw-count-btn${pw.showSeen ? " on" : ""}" data-pw-seen
                   aria-pressed="${pw.showSeen}"
                   aria-label="What the opponent has played">Seen</button>
           <button type="button" class="pw-count-btn" data-pw-restart
-                  aria-label="Restart match">Restart <span aria-hidden="true">⟳</span></button>
-        </div>
-
-        <div class="pw-opp">
-          <div class="pw-opp-mid">
-            <div class="pw-opp-cap">Opponent</div>
-            <div class="pw-opp-sub">${pw.aiPlayed ? `${esc(pw.aiSide)} · ${aiDeck} left`
-                                                  : "Awaiting play…"}</div>
-            <div class="pw-opp-slot">
-              ${pw.aiPlayed ? pwCardHTML(pw.aiPlayed, {}) : pwBackHTML(pw.aiSide)}
-            </div>
-          </div>
-          ${pwOppHandHTML()}
-        </div>
-
-        ${pwPrintHTML()}
-
-        <div class="pw-turn${pw.playerPlayed ? " filled" : ""}">
-          <div class="pw-turn-cap">Your Turn</div>
-          <div class="pw-turn-sub">${
-            pw.playerPlayed ? "On the table" :
-            peeking ? "Answer their card with a numbered card" :
-            canPlay ? "Drag a card here to play — or just tap it" : "…"}</div>
-          <div class="pw-turn-slot${pw.playerPlayed ? " filled" : ""}" data-pw-drop>
-            ${pw.playerPlayed ? pwCardHTML(pw.playerPlayed, {}) : ""}
-          </div>
-        </div>
-
-        <div class="pw-foot">
-          <div class="pw-tip">
-            <span class="pw-tip-cap">Tip</span>
-            <p class="pw-tip-text">${esc(pwTip())}</p>
-          </div>
-          <button type="button" class="pw-specials-btn${pw.showSpecials ? " on" : ""}"
-                  data-pw-specials aria-expanded="${pw.showSpecials}" aria-controls="pwSheet">
-            <span class="pw-specials-ico" aria-hidden="true"></span>
-            <span>View<br>Specials</span>
-          </button>
-        </div>
-
-        ${pw.showSpecials ? pwSpecialsSheetHTML() : ""}
+                aria-label="Restart match">Restart <span aria-hidden="true">⟳</span></button>
       </div>
 
-      ${pw.showSeen ? `
+      <div class="pw-field">
+        <span class="pw-flank bull" aria-hidden="true"></span>
+        <span class="pw-flank bear" aria-hidden="true"></span>
+        ${pwArenaHTML(canPlay, peeking)}
+      </div>
+
+      ${/* The hand's header row carries the way into the ten wilds, so it is
+            on screen without going looking for it. Below it, whichever of the
+            five things belongs in the hand's place right now. */""}
+      <div class="pw-handhead">
+        <span class="pw-hand-cap">Your Hand <b>(${pw.playerHand.length})</b></span>
+        <button type="button" class="pw-specials-btn${pw.showSpecials ? " on" : ""}"
+                data-pw-specials aria-expanded="${pw.showSpecials}" aria-controls="pwSheet">
+          <span class="pw-specials-ico" aria-hidden="true"></span>
+          <span>View Specials</span>
+        </button>
+      </div>
+
+      ${pw.showSpecials ? pwSpecialsSheetHTML() : pw.showSeen ? `
       <div class="pw-seen">
         <div class="pw-seen-cap">Opponent has played</div>
         ${pwTiers(pw.aiSide).map((t) => {
@@ -4316,22 +4288,14 @@
             ${pw.special.length === 0 ? "disabled" : ""}>Wild pile (${pw.special.length})</button>
         </div>
       </div>` : `
-      ${/* The hand rides at the foot of the scroller rather than at the end of
-            it. The table above is taller than a phone once the meter, both
-            slots and the tip are on it, and a card game whose hand you have to
-            go looking for is the wrong way round: the table scrolls, the cards
-            you hold stay put. */""}
-      <div class="pw-handbar">
-        <div class="pw-hand-cap">Your Hand <b>(${pw.playerHand.length})</b></div>
-        <div class="pw-hand${peeking ? " peeking" : ""}">
-          ${pw.playerHand.length
-            ? pw.playerHand.map((c) => pwCardHTML(c, {
-                play: canPlay,
-                answer: peeking && c.kind === "tier",
-                dim: peeking && c.kind !== "tier",
-                depth: true })).join("")
-            : `<div class="pw-hand-empty">Empty — nothing left to play.</div>`}
-        </div>
+      <div class="pw-hand${peeking ? " peeking" : ""}">
+        ${pw.playerHand.length
+          ? pw.playerHand.map((c) => pwCardHTML(c, {
+              play: canPlay,
+              answer: peeking && c.kind === "tier",
+              dim: peeking && c.kind !== "tier",
+              depth: true })).join("")
+          : `<div class="pw-hand-empty">Empty — nothing left to play.</div>`}
       </div>`}`;
     pw.flipAnim = null;      // the turn animation plays once, on the render after the tap
     cardScroll.scrollTop = 0;
@@ -4348,7 +4312,7 @@
   let pwDrag = null;
   let pwAteClick = false;
 
-  const pwDropSlot = () => document.querySelector(".pw-turn-slot");
+  const pwDropSlot = () => document.querySelector("[data-pw-drop]");
 
   function pwDragStop(commit) {
     if (!pwDrag) return;
@@ -4905,7 +4869,7 @@
        leaving mid-round by the dock would carry it out of the game and leave
        the journal — the whole app — unable to scroll. Taken off here, which
        runs on every render that is not this view. */
-    cardScroll.classList.remove("pa-playing");
+    cardScroll.classList.remove("pa-playing", "pw-playing");
     /* An abandoned round is not a result — it never reaches times[], so the
        match is simply dropped. Coming back lands on setup. */
     if (pa && pa.screen === "game" && !pa.ended) {
@@ -7162,7 +7126,7 @@
     if (state.panel) {
       stopAudio();
       cardFooter.style.display = "none";
-      cardScroll.classList.remove("pa-playing", "ci-resulting");
+      cardScroll.classList.remove("pa-playing", "pw-playing", "ci-resulting");
       cardScroll.innerHTML = `<div class="ip-panel">
         <div class="ip-head">
           <span class="ip-title">${state.panel === "settings" ? "Settings" : "Tools"}</span>
