@@ -977,6 +977,8 @@ img { user-select: none; -webkit-user-drag: none; }
      behind the status bar. The spacer below carries the inset instead. */
 }
 .auth-screen.hidden { display: none; }
+/* the desktop centre column's top band — see the rule further down */
+.auth-topbar { display: none; }
 /* While a field is focused, shrink the scroll area to the visible viewport
    (set from visualViewport in JS) so the active input scrolls clear of the
    keyboard and its QuickType/autofill toolbar instead of hiding behind it. */
@@ -4210,6 +4212,12 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
     --dt-dock: clamp(48px, 6.2vh, 58px);   /* == .bottom-nav height */
     /* transparent glow inside the bar asset's box: border-width 19px x 40/131 */
     --dt-bar-glow: 6px;
+    /* How far the centre column's content sits inside its own grid column:
+       .card-outer's 3.5% of an app column that is two of eight, i.e. 25vw.
+       The side columns read it too — it is what they have to reach across to
+       leave an even gap either side of the centre. */
+    --dt-centre-inset: 0.875vw;
+    --dt-gap: 8px;                          /* between the three columns */
     display: grid;
     grid-template-columns: repeat(8, 1fr);
     /* the same expression .header-zone uses, so row 1 is exactly as tall as
@@ -4327,8 +4335,19 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
     min-height: 0;
     padding: 0 14px 4px;     /* == .bottom-nav's own bottom margin here */
   }
-  .dt-left  { grid-column: 1 / 4; }
-  .dt-right { grid-column: 6 / 9; }
+  /* Each reaches across its own grid line to within --dt-gap of the centre
+     column's content, which is --dt-centre-inset inside the line. The centre
+     does not move; the two beside it grow toward it. */
+  .dt-left {
+    grid-column: 1 / 4;
+    padding-right: 0;
+    margin-right: calc(var(--dt-gap) - var(--dt-centre-inset));
+  }
+  .dt-right {
+    grid-column: 6 / 9;
+    padding-left: 0;
+    margin-left: calc(var(--dt-gap) - var(--dt-centre-inset));
+  }
 
   /* One bar, as tall as the centre column's two stacked bars together.
      The border width is not arbitrary. A 9-slice scales the corner arc
@@ -4531,7 +4550,39 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
     background: #000;
   }
   .auth-wave { display: none; }
-  .auth-card-outer { margin: 8px 14px calc(16px + var(--dt-dock)); }
+
+  /* The centre column gets the same three parts as the two beside it: a band
+     where the bars go, the panel, then the dock pill. This is the band —
+     the same nine-sliced bar asset and the same box as .dt-bar, so its top
+     and bottom edges land on the side bars' exactly. Once someone signs in
+     the auth screen goes and the app's own two bars stand here instead. */
+  /* Only on the login step. It is the band above the phone mockup — the gate
+     and the questionnaire are taller than their slot on a 1280x800 screen and
+     would start scrolling to pay for it. */
+  .auth-screen.on-login .auth-topbar {
+    display: block;
+    flex: 0 0 auto;
+    margin: calc(-1 * var(--dt-bar-glow)) var(--dt-centre-inset) 0;
+    height: calc(2 * var(--dt-barh) + 10px + 2 * var(--dt-bar-glow));
+    border-style: solid;
+    border-width: 19px;
+    border-image: url("../assets/desktop/bar@2x.png") 131 fill / 19px stretch;
+  }
+
+  /* The panel's slot, exactly: it starts where the side panels start — one
+     gap below the band — and stops one gap above the dock pill, so all three
+     columns run panel-then-pill on the same two lines. */
+  .auth-card-outer {
+    margin: 8px var(--dt-centre-inset) calc(var(--dt-dock) + 12px);
+  }
+  /* and the signed-in card takes the same slot, so the panel band does not
+     move under someone as they log in. The dock is flex: 0 0 auto at the end
+     of the column, so the card giving back these pixels cannot shift it. */
+  .card-outer { margin-top: 14px; margin-bottom: 8px; }
+
+  /* One way in, not two. The pill in the dock below is the control now; the
+     form it opens still rides on the clip, so nothing else moves. */
+  .login-dock { display: none; }
 }
 
 /* ---- desktop pre-login: intro video, CTA, and the Log In dock ----
@@ -4580,9 +4631,11 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   .intro-dock {
     display: flex;
     position: absolute;
-    left: 4%;
-    right: 4%;
-    bottom: 8px;
+    /* the same box the app's own dock has, so the three bottom pills across
+       the row sit on one line whichever state the centre column is in */
+    left: 3.5%;
+    right: 3.5%;
+    bottom: 4px;
     height: var(--dt-dock);
     align-items: center;
     justify-content: center;
@@ -4614,9 +4667,6 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   .intro-dock-btn img { width: 24px; height: 24px; object-fit: contain; }
   .intro-dock-btn:active { filter: brightness(1.35); transform: scale(.97); }
 
-  /* the auth screen has to stop above the dock slot so the Log In shortcut
-     sits where the app's own dock does rather than under it */
-  .auth-card-outer { margin-bottom: calc(16px + var(--dt-dock)); }
 }
 
 /* ===================== GAMEÆWAY SELECTOR ===================== */
