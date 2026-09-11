@@ -4421,7 +4421,10 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
     flex-direction: column;
     gap: 8px;                                   /* == .card-outer's top margin */
     min-height: 0;
-    padding: 0 14px 4px;     /* == .bottom-nav's own bottom margin here */
+    /* the same bottom margin the centre dock has, read from the variable
+       rather than written out: the two lines have to agree, and --gap-bottom
+       is not the same number on every build of this app */
+    padding: 0 14px var(--gap-bottom);
   }
   /* Each reaches across its own grid line to within --dt-gap of the centre
      column's content, which is --dt-centre-inset inside the line. The centre
@@ -4723,7 +4726,7 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
        the row sit on one line whichever state the centre column is in */
     left: 3.5%;
     right: 3.5%;
-    bottom: 4px;
+    bottom: var(--gap-bottom);
     height: var(--dt-dock);
     align-items: center;
     justify-content: center;
