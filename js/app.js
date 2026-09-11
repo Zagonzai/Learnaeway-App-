@@ -3203,10 +3203,17 @@
      different things depending on which way the market is read, so each side
      has its own names — and two shapes appear on both sides at opposite
      values: small body high with a long lower wick is the bull's 4-point
-     Hammer and the bear's 1-point Hanging Man; small body low with a long
-     upper wick is the bull's 1-point Inverted Hammer and the bear's 4-point
+     Hammer and the bear's 4-point Hanging Man; small body low with a long
+     upper wick is the bull's 1-point Inverted Hammer and the bear's 1-point
      Shooting Star. Name, shape and points therefore have to be looked up
-     together, per side — there is no shared shape-to-points mapping. */
+     together, per side — there is no shared shape-to-points mapping.
+
+     The bear's two ranks read the other way round before the illustrated deck
+     landed: Shooting Star was the 4 and Hanging Man the 1. The card faces
+     carry their strength in the artwork — bear-4-hanging-man prints a 4 —
+     so the art is what these follow now. The deck is unchanged by it: still
+     five copies each of 5, 4, 3, 2 and 1 a side, with the same shapes; only
+     which of the two names carries which number has moved. */
   const PW_TIERS_BY_SIDE = {
     bull: [
       { type: "Bullish Marubozu",     pts: 5, body: 0.92, up: 0.02, down: 0.02 },
@@ -3217,10 +3224,10 @@
     ],
     bear: [
       { type: "Bearish Marubozu",     pts: 5, body: 0.92, up: 0.02, down: 0.02 },
-      { type: "Shooting Star",        pts: 4, body: 0.28, up: 0.58, down: 0.06 },
+      { type: "Hanging Man",          pts: 4, body: 0.28, up: 0.06, down: 0.58 },
       { type: "Standard",             pts: 3, body: 0.46, up: 0.22, down: 0.22 },
       { type: "Bearish Spinning Top", pts: 2, body: 0.18, up: 0.36, down: 0.36 },
-      { type: "Hanging Man",          pts: 1, body: 0.28, up: 0.06, down: 0.58 },
+      { type: "Shooting Star",        pts: 1, body: 0.28, up: 0.58, down: 0.06 },
     ],
   };
   const pwTiers = (side) => PW_TIERS_BY_SIDE[side] || PW_TIERS_BY_SIDE.bull;
@@ -3496,9 +3503,9 @@
       discipline: null,     // a peek in progress: the Discipline card and theirs
       tp: null,             // a Take Profit waiting on the double-up answer
       aiDoubledUp: null,    // the card the AI spent doubling its own Take Profit
-      flipped: {},          // wild card ids currently showing their effect text
-      flipAnim: null,       // the one card that just turned, for a single render
+      flipAnim: null,       // their card, on the render that reveals it
       showSeen: false,      // the opponent's per-tier breakdown, on demand
+      showSpecials: false,  // the ten wilds and what they do, on demand
       spin: null,           // the random side picker, while it is turning
     };
   }
@@ -3613,6 +3620,9 @@
     }
     pw.playerPlayed = card;
     pw.aiPlayed = aCard;
+    /* their slot held a card back until this moment, so the face turns over
+       as it arrives — one render, then renderPointaeway clears the mark */
+    pw.flipAnim = aCard.id;
     /* Discipline is a peek, not a play. Their card is revealed now and the
        real answer is chosen against it — which means this one case genuinely
        breaks simultaneous reveal, deliberately. */
@@ -3900,66 +3910,84 @@
     return n;
   }
 
+  /* The illustrated deck. Every face is a finished card — frame, art, name and
+     strength are all in the pixels — so nothing here draws a card; it picks
+     the right file and gets out of the way. The names are the engine's own,
+     which is why the bear's two look-alike ranks had to be settled against the
+     art first: the number on the face is not something markup can override. */
+  const PW_ART = "assets/pointaeway/cards/";
+  const PW_TIER_ART = {
+    bull: {
+      "Bullish Marubozu": "bull-5-bullish-marubozu",
+      "Hammer": "bull-4-hammer",
+      "Standard": "bull-3-standard",
+      "Bullish Spinning Top": "bull-2-bullish-spinning-top",
+      "Inverted Hammer": "bull-1-inverted-hammer",
+    },
+    bear: {
+      "Bearish Marubozu": "bear-5-bearish-marubozu",
+      "Hanging Man": "bear-4-hanging-man",
+      "Standard": "bear-3-standard",
+      "Bearish Spinning Top": "bear-2-bearish-spinning-top",
+      "Shooting Star": "bear-1-shooting-star",
+    },
+  };
+  const PW_SPECIAL_ART = {
+    "Volatility Spike": "special-volatility-spike",
+    "Canceled Order": "special-canceled-order",
+    "Liquidated": "special-liquidated",
+    "FOMO": "special-fomo",
+    "Stop Loss": "special-stop-loss",
+    "Market News": "special-market-news",
+    "Reversal": "special-reversal",
+    "Take Profit": "special-take-profit",
+    "Momentum": "special-momentum",
+    "Discipline": "special-discipline",
+  };
+  function pwArtFile(card) {
+    const n = card.side === "special"
+      ? PW_SPECIAL_ART[card.type]
+      : (PW_TIER_ART[card.side] || {})[card.type];
+    return n ? `${PW_ART}${n}.png` : null;
+  }
+  /* The face is a picture, so everything it says has to be said again here or
+     it is said to no one. */
+  function pwCardAlt(card) {
+    return card.side === "special"
+      ? `Special card, ${card.type}. ${card.desc}`
+      : `${card.side === "bull" ? "Bull" : "Bear"} card, ${card.type}, strength ${card.pts}.`;
+  }
+
   function pwCardHTML(card, opts) {
     const o = opts || {};
     const special = card.side === "special";
-    const sideCls = card.side === "bull" ? "bull" : card.side === "bear" ? "bear" : "wild";
-    const pts = special ? (card.cls === "B" ? card.pts : null) : card.pts;
+    const sideCls = special ? "wild" : card.side;
     const clickable = o.play || o.answer;
     const tag = clickable ? "button" : "div";
     const attrs = o.play ? ` type="button" data-pw-play="${esc(card.id)}"`
                 : o.answer ? ` type="button" data-pw-answer="${esc(card.id)}"` : "";
     /* Deck depth for this tier, on the player's own hand cards only — they
        already know their own deck. Nothing to show on a wild, which has no
-       tier, or on the opponent's slot. */
+       tier, or on the opponent's slot. It rides bottom-right: the art keeps
+       its own strength badge in the top-left corner. */
     const left = o.depth && card.kind === "tier" ? pwTierLeft(card.type) : null;
     const size = o.small ? " sm" : "";
     const anim = pw.flipAnim === card.id ? " flipping" : "";
+    const art = pwArtFile(card);
 
-    /* A wild's whole point is its effect, and the face has no room for it — so
-       it turns over. In hand the body still plays the card in one tap and a
-       corner mark does the turning, because a card that had to be turned over
-       and back before it could be played would be worse than not explaining
-       itself. A played wild has nothing else to do, so the whole face turns. */
-    if (special && pw.flipped[card.id]) {
-      return `<button type="button" class="pw-card wild back${size}${anim}" data-pw-flip="${esc(card.id)}">
-        <span class="pw-back-name">${esc(card.type)}</span>
-        <span class="pw-back-desc">${esc(card.desc)}</span>
-        <span class="pw-back-hint">tap to turn back</span>
-      </button>`;
-    }
-    const flipMark = special
-      ? (o.play
-          /* A plain span, not a nested button: a button may not contain
-             interactive content, and the card face itself is the play button.
-             The same effect text is on the setup screen's legend for anyone
-             who cannot reach this by tap. */
-          ? `<span class="pw-card-flip" data-pw-flip="${esc(card.id)}"
-                   title="What does ${esc(card.type)} do?">?</span>`
-          : "")
-      : "";
-    const wholeFaceFlips = special && !o.play;
-    const ftag = wholeFaceFlips ? "button" : tag;
-    const fattrs = wholeFaceFlips ? ` type="button" data-pw-flip="${esc(card.id)}"` : attrs;
-    return `<${ftag} class="pw-card ${sideCls}${size}${anim}${o.dim ? " dim" : ""}"${fattrs}>
-      ${left != null ? `<span class="pw-card-left" title="${left} of this candle left in your deck">${left}</span>` : ""}
-      ${flipMark}
-      <span class="pw-card-side">${special ? "WILD" : card.side.toUpperCase()}</span>
-      <span class="pw-card-icon">${pwCandleSvg(card.visual, card.side, o.small ? 26 : 32)}</span>
-      <span class="pw-card-foot">
-        <span class="pw-card-name">${esc(card.type)}</span>
-        ${pts != null ? `<span class="pw-card-pts">${pts}</span>` : ""}
-      </span>
-    </${ftag}>`;
-  }
-
-  /* The hand is always two rows, whatever it holds. A fixed column count would
-     spill onto a third row and start the screen scrolling, which this layout
-     exists to avoid — and hands do grow: FOMO adds two, and two FOMOs in a
-     match can leave ten cards down there. Columns follow the count instead, so
-     six cards sit wide and comfortable and twelve still fit in the same band. */
-  function pwHandCols(n) {
-    return Math.min(6, Math.max(3, Math.ceil(n / 2)));
+    /* A wild used to turn over to explain itself, because the drawn face had
+       nowhere to put its effect. The illustrated face prints the effect, so
+       there is nothing left to turn: the card says what it does while it is
+       being chosen, and View Specials holds the same ten in one list. */
+    return `<${tag} class="pw-card ${sideCls}${size}${anim}${o.dim ? " dim" : ""}"${attrs}>
+      ${art
+        ? `<img class="pw-card-art" src="${art}" alt="${esc(pwCardAlt(card))}" draggable="false">`
+        : `<span class="pw-card-alt">${esc(card.type)}</span>`}
+      ${left != null
+        ? `<span class="pw-card-left" title="${left} of this candle left in your deck"
+                 aria-label="${left} left in your deck">×${left}</span>`
+        : ""}
+    </${tag}>`;
   }
 
   function pwTrackHTML() {
@@ -4030,6 +4058,106 @@
     </div>`;
   }
 
+  /* ---- the match screen's own pieces ----
+     There is no card back in the art set, so it is built here rather than
+     drawn: the app's own plate, the side's animal behind it, the wordmark
+     across it. Same for the flanks and the empty slot's watermark, all three
+     cut from the card illustrations so nothing on this screen is in a
+     different hand from the deck. */
+  function pwBackHTML(side, cls) {
+    return `<div class="pw-back ${side}${cls ? " " + cls : ""}" aria-hidden="true">
+      <span class="pw-back-art"></span>
+      <span class="pw-back-word">Pointæway</span>
+    </div>`;
+  }
+
+  /* Their count, never their cards — the same rule the old bar kept. */
+  function pwOppHandHTML() {
+    const n = pw.aiHand.length;
+    const show = Math.max(1, Math.min(6, n));
+    return `<div class="pw-opphand">
+      <div class="pw-opphand-cap">Opponent Hand</div>
+      <div class="pw-opphand-stack" aria-hidden="true">
+        ${n ? Array.from({ length: show }, () => `<i class="${pw.aiSide}"></i>`).join("") : ""}
+      </div>
+      <div class="pw-opphand-n">${n} card${n === 1 ? "" : "s"}</div>
+    </div>`;
+  }
+
+  /* The meter, upright: +25 at the top, −25 at the bottom, the print in the
+     middle of it and the two sides' targets flanking. The fill still grows
+     from the midline and still goes out as one percentage, so the number the
+     old track spent on height this one spends the same way. */
+  function pwPrintHTML() {
+    const c = pw.candle;
+    const pct = Math.min(1, Math.abs(c) / PW_TARGET);
+    const tone = c === 0 ? "flat" : c > 0 ? "bull" : "bear";
+    const mine = pw.playerSide;
+    return `<div class="pw-print">
+      <div class="pw-print-side bull${mine === "bull" ? " mine" : ""}">
+        <span class="pw-print-side-name">Bull</span>
+        <span class="pw-print-side-goal">Push up<br>to +${PW_TARGET}</span>
+      </div>
+      <div class="pw-print-col">
+        <div class="pw-print-gauge">
+          <div class="pw-print-fill ${tone} ${c >= 0 ? "up" : "down"}"
+               style="--pw-fill:${(pct * 50).toFixed(2)}%"></div>
+          ${/* the two ends ride inside the gauge rather than above and below
+                it: stacked outside they cost thirty-odd pixels, and thirty-odd
+                pixels is the difference between the hand being on this screen
+                and being under it */""}
+          <span class="pw-print-end top">+${PW_TARGET}</span>
+          <span class="pw-print-end bot">−${PW_TARGET}</span>
+          <div class="pw-print-read">
+            <span class="pw-print-val ${tone}" data-pw-candle="${c}">${c > 0 ? "+" : ""}${c}</span>
+            <span class="pw-print-cap">The Print</span>
+          </div>
+        </div>
+      </div>
+      <div class="pw-print-side bear${mine === "bear" ? " mine" : ""}">
+        <span class="pw-print-side-name">Bear</span>
+        <span class="pw-print-side-goal">Push down<br>to −${PW_TARGET}</span>
+      </div>
+    </div>`;
+  }
+
+  /* One line, changed by the round, so it is something read in passing rather
+     than a panel to dismiss. */
+  const PW_TIPS = [
+    "Higher strength candles have more impact.",
+    "A wild answers the card in front of it — hold one for a 5.",
+    "Lose a round and you choose: your own deck, or the wild pile.",
+    "Seen tracks what they have already spent. Count it.",
+    "Take Profit doubles if you hold the match to their card.",
+    "Discipline shows you their card before you answer it.",
+    "Equal strength is a wash — the print does not move.",
+    "Run both a deck and a hand dry and the print decides it.",
+  ];
+  const pwTip = () => PW_TIPS[(pw.round - 1) % PW_TIPS.length];
+
+  /* The ten wilds and what each does, in one list. It expands in place under
+     the button — nothing in this app opens over a dimmed screen. */
+  function pwSpecialsSheetHTML() {
+    return `<div class="pw-sheet" id="pwSheet">
+      <div class="pw-sheet-cap">
+        <span>Special cards</span>
+        <button type="button" class="pw-sheet-x" data-pw-specials aria-label="Close">Close</button>
+      </div>
+      <div class="pw-sheet-rows">
+        ${PW_SPECIALS.map((s) => {
+          const art = PW_SPECIAL_ART[s.type];
+          return `<div class="pw-sheet-row">
+            ${art ? `<img class="pw-sheet-art" src="${PW_ART}${art}.png" alt="" draggable="false">` : ""}
+            <div class="pw-sheet-text">
+              <span class="pw-sheet-name">${esc(s.type)}</span>
+              <span class="pw-sheet-desc">${esc(s.desc)}</span>
+            </div>
+          </div>`;
+        }).join("")}
+      </div>
+    </div>`;
+  }
+
   function renderPointaeway() {
     barTitle.textContent = "Pointæway";
     const pickName = document.querySelector("#pickBar .pick-name");
@@ -4090,36 +4218,71 @@
     const choosing = pw.phase === "draw-choice";
     const peeking = pw.phase === "discipline-pick";
     const doubling = pw.phase === "takeprofit-choice";
-    /* Everything the match needs, in one screenful and in reading order: the
-       two played cards with the meter between them, the two running totals,
-       then your hand. The round log, the stat pills and the per-tier deck
-       panels are all gone — the cards on the table say what happened, the bar
-       says what is left, and each card carries its own tier's depth.
-       The draw choice takes the hand's place rather than adding a row: there
-       is nothing to play while it is up, so nothing is lost and the view stays
-       inside one screen. */
-    cardScroll.innerHTML = `
-      <div class="pw-arena">
-        <div class="pw-slot">
-          <div class="pw-slot-cap">Opponent
-            <span class="pw-slot-deck">${pwOwnDeck(pw.aiSide).length}</span>
-          </div>
-          ${pw.aiPlayed ? pwCardHTML(pw.aiPlayed, {}) : `<div class="pw-empty"></div>`}
-        </div>
-        ${pwTrackHTML()}
-        <div class="pw-slot">
-          <div class="pw-slot-cap">You</div>
-          ${pw.playerPlayed ? pwCardHTML(pw.playerPlayed, {}) : `<div class="pw-empty"></div>`}
-        </div>
-      </div>
+    /* The table, top to bottom: what is left to draw from, their side of it,
+       the meter both sides are pulling on, your side of it, then your hand.
+       The two animals stand behind the whole thing rather than in it — they
+       are the room, not a row.
 
-      <div class="pw-bar">
-        <span class="pw-bar-stat"><b>${ownCount}</b> deck</span>
-        <span class="pw-bar-sep"></span>
-        <span class="pw-bar-stat wild"><b>${pw.special.length}</b> wild</span>
-        <button class="pw-bar-seen${pw.showSeen ? " on" : ""}" data-pw-seen
-                aria-pressed="${pw.showSeen}" aria-label="What the opponent has played">Seen</button>
-        <button class="pw-bar-restart" data-pw-restart aria-label="Restart match">Restart</button>
+       The four things that interrupt a turn — the opponent's breakdown, the
+       double-up question, the draw choice, and answering a peek — all take
+       the hand's place rather than adding a row. There is nothing to play
+       while any of them is up, so nothing is lost by the swap. */
+    const canPlay = pw.phase === "selecting";
+    const aiDeck = pwOwnDeck(pw.aiSide).length;
+    cardScroll.innerHTML = `
+      <div class="pw-field">
+        <span class="pw-flank bull" aria-hidden="true"></span>
+        <span class="pw-flank bear" aria-hidden="true"></span>
+
+        <div class="pw-counts">
+          <span class="pw-count"><b>${ownCount}</b><i>Deck</i></span>
+          <span class="pw-count wild"><b>${pw.special.length}</b><i>Wild</i></span>
+          <span class="pw-counts-gap"></span>
+          <button type="button" class="pw-count-btn${pw.showSeen ? " on" : ""}" data-pw-seen
+                  aria-pressed="${pw.showSeen}"
+                  aria-label="What the opponent has played">Seen</button>
+          <button type="button" class="pw-count-btn" data-pw-restart
+                  aria-label="Restart match">Restart <span aria-hidden="true">⟳</span></button>
+        </div>
+
+        <div class="pw-opp">
+          <div class="pw-opp-mid">
+            <div class="pw-opp-cap">Opponent</div>
+            <div class="pw-opp-sub">${pw.aiPlayed ? `${esc(pw.aiSide)} · ${aiDeck} left`
+                                                  : "Awaiting play…"}</div>
+            <div class="pw-opp-slot">
+              ${pw.aiPlayed ? pwCardHTML(pw.aiPlayed, {}) : pwBackHTML(pw.aiSide)}
+            </div>
+          </div>
+          ${pwOppHandHTML()}
+        </div>
+
+        ${pwPrintHTML()}
+
+        <div class="pw-turn${pw.playerPlayed ? " filled" : ""}">
+          <div class="pw-turn-cap">Your Turn</div>
+          <div class="pw-turn-sub">${
+            pw.playerPlayed ? "On the table" :
+            peeking ? "Answer their card with a numbered card" :
+            canPlay ? "Drag a card here to play — or just tap it" : "…"}</div>
+          <div class="pw-turn-slot${pw.playerPlayed ? " filled" : ""}" data-pw-drop>
+            ${pw.playerPlayed ? pwCardHTML(pw.playerPlayed, {}) : ""}
+          </div>
+        </div>
+
+        <div class="pw-foot">
+          <div class="pw-tip">
+            <span class="pw-tip-cap">Tip</span>
+            <p class="pw-tip-text">${esc(pwTip())}</p>
+          </div>
+          <button type="button" class="pw-specials-btn${pw.showSpecials ? " on" : ""}"
+                  data-pw-specials aria-expanded="${pw.showSpecials}" aria-controls="pwSheet">
+            <span class="pw-specials-ico" aria-hidden="true"></span>
+            <span>View<br>Specials</span>
+          </button>
+        </div>
+
+        ${pw.showSpecials ? pwSpecialsSheetHTML() : ""}
       </div>
 
       ${pw.showSeen ? `
@@ -4153,19 +4316,108 @@
             ${pw.special.length === 0 ? "disabled" : ""}>Wild pile (${pw.special.length})</button>
         </div>
       </div>` : `
-      ${peeking ? `<div class="pw-peek-cap">Their card is up — answer it with a numbered card.</div>` : ""}
-      <div class="pw-hand${peeking ? " peeking" : ""}" style="--pw-cols:${pwHandCols(pw.playerHand.length)}">
-        ${pw.playerHand.length
-          ? pw.playerHand.map((c) => pwCardHTML(c, {
-              play: pw.phase === "selecting",
-              answer: peeking && c.kind === "tier",
-              dim: peeking && c.kind !== "tier",
-              small: true, depth: true })).join("")
-          : `<div class="pw-hand-empty">Empty — nothing left to play.</div>`}
+      ${/* The hand rides at the foot of the scroller rather than at the end of
+            it. The table above is taller than a phone once the meter, both
+            slots and the tip are on it, and a card game whose hand you have to
+            go looking for is the wrong way round: the table scrolls, the cards
+            you hold stay put. */""}
+      <div class="pw-handbar">
+        <div class="pw-hand-cap">Your Hand <b>(${pw.playerHand.length})</b></div>
+        <div class="pw-hand${peeking ? " peeking" : ""}">
+          ${pw.playerHand.length
+            ? pw.playerHand.map((c) => pwCardHTML(c, {
+                play: canPlay,
+                answer: peeking && c.kind === "tier",
+                dim: peeking && c.kind !== "tier",
+                depth: true })).join("")
+            : `<div class="pw-hand-empty">Empty — nothing left to play.</div>`}
+        </div>
       </div>`}`;
     pw.flipAnim = null;      // the turn animation plays once, on the render after the tap
     cardScroll.scrollTop = 0;
   }
+
+  /* ---- dragging a card onto the slot ----
+     The hand is a row that scrolls sideways, so the press cannot simply become
+     a drag: it is only a drag once it has travelled further up the screen than
+     along it, and a press that runs along the row is handed straight back so
+     the row scrolls as it always did. A tap is untouched — the click reaches
+     the dispatcher and plays the card — and only a drag that actually moved
+     swallows the click that follows it. */
+  const PW_DRAG_SLOP = 9;
+  let pwDrag = null;
+  let pwAteClick = false;
+
+  const pwDropSlot = () => document.querySelector(".pw-turn-slot");
+
+  function pwDragStop(commit) {
+    if (!pwDrag) return;
+    const d = pwDrag;
+    pwDrag = null;
+    if (d.ghost) d.ghost.remove();
+    if (d.el) d.el.classList.remove("dragging");
+    const slot = pwDropSlot();
+    if (slot) slot.classList.remove("over");
+    if (!d.moved) return;
+    pwAteClick = true;                  // a drag is not also a tap
+    if (commit && d.over) pwPlay(d.id);
+  }
+
+  function pwDragMove(e) {
+    if (!pwDrag) return;
+    const d = pwDrag;
+    const dx = e.clientX - d.x0, dy = e.clientY - d.y0;
+    if (!d.moved) {
+      /* Which gesture this is, decided on travel rather than on the first
+         sample. The slot is always above the hand, so lifting the card is the
+         thing that means "play" — and it cannot be "whichever axis leads",
+         because the card at the left end of the row reaches the slot on a path
+         that is mostly sideways. So: any real upward travel is a drag, and
+         only a flat run along the row is handed back to the scroller. */
+      if (dy > -PW_DRAG_SLOP) {
+        if (Math.abs(dx) > PW_DRAG_SLOP * 2) { pwDragStop(false); return; }
+        return;                                   // not yet either one
+      }
+      d.moved = true;
+      const r = d.el.getBoundingClientRect();
+      d.w = r.width; d.h = r.height;
+      const g = d.el.cloneNode(true);
+      g.className = "pw-card pw-ghost " + d.el.className.replace("pw-card", "").trim();
+      g.style.width = `${r.width}px`;
+      g.style.height = `${r.height}px`;
+      g.removeAttribute("data-pw-play");
+      document.body.appendChild(g);
+      d.ghost = g;
+      d.el.classList.add("dragging");
+    }
+    if (e.cancelable) e.preventDefault();      // stop the row scrolling under it
+    d.ghost.style.transform =
+      `translate(${e.clientX - d.w / 2}px, ${e.clientY - d.h / 2}px) scale(1.04)`;
+    const slot = pwDropSlot();
+    const s = slot && slot.getBoundingClientRect();
+    d.over = !!s && e.clientX >= s.left && e.clientX <= s.right
+                 && e.clientY >= s.top  && e.clientY <= s.bottom;
+    if (slot) slot.classList.toggle("over", d.over);
+  }
+
+  cardScroll.addEventListener("pointerdown", (e) => {
+    if (state.view !== "pointaeway" || !pw || pw.phase !== "selecting") return;
+    if (e.button != null && e.button !== 0) return;
+    const el = e.target.closest(".pw-card[data-pw-play]");
+    if (!el) return;
+    pwDrag = { el, id: el.getAttribute("data-pw-play"),
+               x0: e.clientX, y0: e.clientY, moved: false, over: false };
+  });
+  window.addEventListener("pointermove", pwDragMove, { passive: false });
+  window.addEventListener("pointerup", () => pwDragStop(true));
+  window.addEventListener("pointercancel", () => pwDragStop(false));
+  /* capture, so it lands before the document-level dispatcher gets it */
+  cardScroll.addEventListener("click", (e) => {
+    if (!pwAteClick) return;
+    pwAteClick = false;
+    e.stopPropagation();
+    e.preventDefault();
+  }, true);
 
   function openPointaeway() {
     stopAudio();
@@ -9341,7 +9593,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-flip],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -9673,12 +9925,7 @@
     else if (t.hasAttribute("data-pw-answer")) pwDisciplineAnswer(t.getAttribute("data-pw-answer"));
     else if (t.hasAttribute("data-pw-tp")) pwTakeProfitChoose(t.getAttribute("data-pw-tp") === "double");
     else if (t.hasAttribute("data-pw-draw")) pwChooseDraw(t.getAttribute("data-pw-draw"));
-    else if (t.hasAttribute("data-pw-flip")) {
-      const id = t.getAttribute("data-pw-flip");
-      if (pw.flipped[id]) delete pw.flipped[id]; else pw.flipped[id] = true;
-      pw.flipAnim = id;
-      renderPointaeway();
-    }
+    else if (t.hasAttribute("data-pw-specials")) { pw.showSpecials = !pw.showSpecials; renderPointaeway(); }
     else if (t.hasAttribute("data-pw-seen")) { pw.showSeen = !pw.showSeen; renderPointaeway(); }
     else if (t.hasAttribute("data-pw-legend")) { pw.showLegend = !pw.showLegend; renderPointaeway(); }
     else if (t.hasAttribute("data-pw-restart") || t.hasAttribute("data-pw-again")) {

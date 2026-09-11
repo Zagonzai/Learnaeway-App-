@@ -3,7 +3,7 @@
  * deploys show up immediately; only falls back to cache when offline.
  * Heavy binary assets (images) are cache-first since they rarely change.
  */
-const CACHE = "learnaeway-v132";
+const CACHE = "learnaeway-v134";
 
 const SHELL = [
   "./",
@@ -74,6 +74,11 @@ const SHELL = [
   "./assets/nav-icons/icon-dock-match-replay@2x.png",
   "./assets/nav-icons/icon-game-pickaeway@2x.png",
   "./assets/nav-icons/icon-game-pointaeway@2x.png",
+  /* the two animals that stand behind Pointæway's table. Small, and the match
+     screen is unreadable without them — the twenty card faces are not here,
+     see the note below */
+  "./assets/pointaeway/flank-bull.png",
+  "./assets/pointaeway/flank-bear.png",
   "./assets/nav-icons/icon-chevron-down@2x.png",
   "./assets/desktop/bar@2x.png",
   "./assets/desktop/square@2x.png",
@@ -109,7 +114,12 @@ const SHELL = [
    assets/video/login-loop.mp4 is absent for a different reason: at 3.1MB it
    would double what an install costs, and it is only ever wanted on one
    screen that a signed-in visitor never sees again. /assets/ is cache-first,
-   so it is kept from the first time it is played and costs nothing after. */
+   so it is kept from the first time it is played and costs nothing after.
+
+   assets/pointaeway/cards/ is absent on the same grounds: twenty card faces
+   come to 2.3MB, and they are wanted on one screen of one of three games.
+   Cache-first keeps each one from the first time it is dealt, so a player who
+   opens Pointæway pays once and nobody else pays at all. */
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
