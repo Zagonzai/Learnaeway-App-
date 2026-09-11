@@ -223,6 +223,13 @@
                muted loop playsinline webkit-playsinline preload="none"></video>
       </div>
 
+      <!-- Desktop only, and only while this screen is up: the band the app's
+           two bars occupy once someone is signed in. Empty and decorative —
+           it is there so the centre column reads as three parts like the two
+           beside it, rather than as a panel with a hole above it. Hiding the
+           auth screen is what swaps it for the real bars. -->
+      <div class="auth-topbar" aria-hidden="true"></div>
+
       <!-- Step 1: access gate — data capture + passcode gatekeeper -->
       <div id="gateStep" class="auth-card-outer hidden">
         <div class="auth-card">
