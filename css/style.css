@@ -4867,44 +4867,9 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 .pw-random-lock.bull { color: var(--pw-bull); }
 .pw-random-lock.bear { color: var(--pw-bear); }
 
-/* ---- arena ----
-   The match has to sit in one screenful: the two played cards with the meter
-   between them, a two-number bar, and the hand. Nothing else is on this
-   screen, so the meter gets the space the log and the stat pills used to take
-   and carries no frame of its own. */
-.pw-arena {
-  display: grid;
-  grid-template-columns: 1fr auto 1fr;
-  align-items: center;
-  gap: 8px;
-  padding: 6px 2px 10px;
-}
-.pw-slot { display: flex; flex-direction: column; align-items: center; gap: 6px; }
-.pw-slot-cap {
-  display: flex; align-items: center; justify-content: center; gap: 5px;
-  font-size: calc(9px * var(--fs));
-  font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
-  color: var(--pw-muted);
-}
-/* what the opponent has left, grouped with their own side of the board rather
-   than mixed into the player's stat bar */
-.pw-slot-deck {
-  min-width: 17px;
-  padding: 1px 4px;
-  border-radius: 999px;
-  border: 1px solid var(--pw-line);
-  background: rgba(4,7,18,.8);
-  font-size: calc(9px * var(--fs));
-  letter-spacing: 0;
-  color: var(--text);
-}
-.pw-empty {
-  width: 82px; height: 112px;
-  border: 1.5px dashed var(--pw-line);
-  border-radius: 10px;
-}
-
-/* the meter, unframed: value, then the track, ends labelled outside it */
+/* ---- the game-over meter ----
+   The match screen has its own upright gauge below; this is the one the
+   final print is held on, kept as it was. */
 .pw-track-panel {
   display: flex; flex-direction: column; align-items: center; gap: 5px;
 }
@@ -4962,131 +4927,500 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 .pw-track-fill.bear { background: var(--pw-bear); }
 .pw-track-fill.flat { background: transparent; }
 
-/* ---- cards ---- */
-.pw-card {
+/* ---- the table ----
+   Top to bottom: what is left to draw from, their side, the meter both sides
+   pull on, your side, then your hand. The two animals are behind all of it
+   rather than in it — they are the room, not a row, which is why they sit on
+   their own layer and catch nothing.
+
+   Card faces are finished artwork: frame, name and strength are all in the
+   pixels. Nothing here paints a card, so every card rule is about how big the
+   picture is and what may be done to it. */
+.pw-field {
   position: relative;
-  width: 82px; height: 112px;
-  flex-shrink: 0;
-  display: flex; flex-direction: column; align-items: center; justify-content: space-between;
-  padding: 7px 4px 6px;
-  border-radius: 10px;
-  border: 1.5px solid var(--pw-line);
-  background: linear-gradient(160deg, rgba(11,18,38,.9), rgba(7,10,24,.9));
-  transition: transform .12s ease, filter .12s ease;
+  isolation: isolate;
+  /* the flanks are placed to bleed off both edges; without this their tails
+     count toward the scroller's width and the whole screen slides sideways */
+  overflow: hidden;
+  padding: 2px 2px 6px;
 }
-.pw-card.sm { width: 100%; height: 100px; }
-.pw-card.bull { border-color: var(--pw-bull); background: linear-gradient(160deg, var(--pw-bull-dim), rgba(7,10,24,.92)); }
-.pw-card.bear { border-color: var(--pw-bear); background: linear-gradient(160deg, var(--pw-bear-dim), rgba(7,10,24,.92)); }
-.pw-card.wild { border-color: var(--pw-wild); background: linear-gradient(160deg, var(--pw-wild-dim), rgba(7,10,24,.92)); }
-button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
-.pw-card-side {
-  font-size: calc(7.5px * var(--fs));
-  font-weight: 700; letter-spacing: .1em;
-  color: var(--pw-muted);
-}
-.pw-card-icon { display: block; line-height: 0; }
-.pw-card-foot { text-align: center; display: block; }
-.pw-card-name {
-  display: block;
-  font-size: calc(8.5px * var(--fs));
-  line-height: 1.12; color: var(--text);
-}
-.pw-card-pts { display: block; font-size: calc(12px * var(--fs)); font-weight: 800; }
-.pw-card.bull .pw-card-pts { color: var(--pw-bull); }
-.pw-card.bear .pw-card-pts { color: var(--pw-bear); }
-.pw-card.wild .pw-card-pts { color: var(--pw-wild); }
-/* deck depth for this tier, tucked into the corner so it never reads as the
-   card's strength — that is the big number at the foot */
-.pw-card-left {
+.pw-flank {
   position: absolute;
-  top: 4px; left: 5px;
-  min-width: 14px;
-  padding: 0 3px;
-  border-radius: 999px;
-  background: rgba(4,7,18,.85);
+  top: 8%;
+  z-index: -1;
+  width: min(46%, 190px);
+  aspect-ratio: 364 / 480;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  opacity: .34;
+  pointer-events: none;
+}
+.pw-flank.bull { left: -9%;  background-image: url("../assets/pointaeway/flank-bull.png"); }
+.pw-flank.bear { right: -9%; background-image: url("../assets/pointaeway/flank-bear.png"); }
+
+/* ---- what is left, and the two controls that belong with it ---- */
+.pw-counts {
+  display: flex; align-items: center; gap: 7px;
+  padding: 2px 2px 6px;
+}
+.pw-count {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  min-width: 52px;
+  padding: 3px 8px;
   border: 1px solid var(--pw-line);
+  border-radius: 11px;
+  background: rgba(4,7,18,.7);
+  line-height: 1.1;
+}
+.pw-count b { font-size: calc(15px * var(--fs)); font-weight: 800; color: var(--text); }
+.pw-count i {
+  font-style: normal;
   font-size: calc(8px * var(--fs));
-  font-weight: 700; line-height: 1.5;
+  font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
   color: var(--pw-muted);
-  text-align: center;
+}
+.pw-count.wild b { color: var(--pw-wild); }
+.pw-counts-gap { flex: 1 1 auto; }
+.pw-count-btn {
+  padding: 7px 11px;
+  border: 1px solid var(--pw-line);
+  border-radius: 11px;
+  background: rgba(4,7,18,.7);
+  font-size: calc(9.5px * var(--fs));
+  font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--pw-muted);
+}
+.pw-count-btn.on { border-color: var(--pw-wild); color: var(--pw-wild); }
+.pw-count-btn:active { filter: brightness(1.5); }
+
+/* ---- their side: one slot, and a count that is never a hand ---- */
+.pw-opp {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 8px;
+}
+.pw-opp-mid { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.pw-opp-cap {
+  font-size: calc(11px * var(--fs));
+  font-weight: 800; letter-spacing: .18em; text-transform: uppercase;
+  color: var(--pw-bear);
+}
+.pw-opp-sub {
+  font-size: calc(8.5px * var(--fs));
+  font-weight: 700; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--pw-muted);
+  margin-bottom: 3px;
+}
+.pw-opp-slot { --pw-card-h: clamp(92px, 13vh, 118px); line-height: 0; }
+
+/* the back. There is none in the art set, so it is the app's own plate with
+   the side's animal behind the wordmark — never their card. */
+.pw-back {
+  position: relative;
+  display: flex; flex-direction: column;
+  align-items: center; justify-content: flex-end;
+  height: var(--pw-card-h, 118px);
+  aspect-ratio: 249 / 334;
+  padding-bottom: 12%;
+  border: 1.5px solid var(--pw-bear);
+  border-radius: 10px;
+  background:
+    radial-gradient(120% 80% at 50% 30%, rgba(255,60,90,.14), transparent 70%),
+    linear-gradient(165deg, rgba(20,6,14,.96), rgba(6,8,20,.96));
+  overflow: hidden;
+}
+.pw-back.bull { border-color: var(--pw-bull);
+  background:
+    radial-gradient(120% 80% at 50% 30%, rgba(47,230,194,.14), transparent 70%),
+    linear-gradient(165deg, rgba(5,20,18,.96), rgba(6,8,20,.96)); }
+.pw-back-art {
+  position: absolute;
+  left: 8%; right: 8%; top: 8%; bottom: 26%;
+  background-position: center;
+  background-repeat: no-repeat;
+  background-size: contain;
+  background-image: url("../assets/pointaeway/flank-bear.png");
+  opacity: .8;
+}
+.pw-back.bull .pw-back-art { background-image: url("../assets/pointaeway/flank-bull.png"); }
+.pw-back-word {
+  position: relative;
+  font-size: calc(8px * var(--fs));
+  font-weight: 800; letter-spacing: .2em; text-transform: uppercase;
+  color: #C7D9EF;
 }
 
-/* ---- a wild turned over ----
-   Its effect will not fit on the face, so the card turns to show it. */
-.pw-card.back {
-  justify-content: center;
-  gap: 4px;
-  text-align: center;
-  border-color: var(--pw-wild);
-  background: linear-gradient(160deg, var(--pw-wild-dim), rgba(7,10,24,.94));
+.pw-opphand {
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  padding: 8px 9px;
+  border: 1px solid var(--pw-line);
+  border-radius: 12px;
+  background: rgba(4,7,18,.66);
 }
-.pw-back-name {
-  font-size: calc(9.5px * var(--fs));
-  font-weight: 800; line-height: 1.1;
-  color: var(--pw-wild);
-}
-.pw-back-desc {
-  font-size: calc(7.5px * var(--fs));
-  line-height: 1.28; color: #C9DDF2;
-}
-.pw-back-hint {
-  font-size: calc(6.5px * var(--fs));
-  letter-spacing: .06em; text-transform: uppercase;
+.pw-opphand-cap {
+  font-size: calc(8px * var(--fs));
+  font-weight: 700; letter-spacing: .13em; text-transform: uppercase;
   color: var(--pw-muted);
 }
-/* the mark that turns a wild while it is still playable in one tap */
-.pw-card-flip {
-  position: absolute;
-  top: 3px; right: 4px;
-  width: 15px; height: 15px;
-  border-radius: 999px;
-  border: 1px solid var(--pw-wild);
-  background: rgba(4,7,18,.85);
-  color: var(--pw-wild);
+.pw-opphand-stack { display: flex; gap: 2px; min-height: 34px; align-items: center; }
+.pw-opphand-stack i {
+  display: block;
+  width: 9px; height: 32px;
+  border: 1px solid rgba(255,90,120,.5);
+  border-radius: 3px;
+  background: linear-gradient(160deg, rgba(255,60,90,.2), rgba(6,8,20,.9));
+}
+.pw-opphand-stack i.bull {
+  border-color: rgba(47,230,194,.5);
+  background: linear-gradient(160deg, rgba(47,230,194,.2), rgba(6,8,20,.9));
+}
+.pw-opphand-n {
   font-size: calc(9px * var(--fs));
-  font-weight: 800; line-height: 13px;
+  font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--text);
+}
+
+/* ---- the meter, upright ----
+   +25 at the top, −25 at the bottom, the print itself in the middle, and each
+   side's target flanking it. The fill still grows from the midline and still
+   arrives as one percentage, the same number the game-over meter spends. */
+.pw-print {
+  display: grid;
+  grid-template-columns: 1fr auto 1fr;
+  align-items: center;
+  gap: 6px;
+  padding: 4px 0 4px;
+}
+.pw-print-side {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 8px 6px;
+  border: 1px solid var(--pw-line);
+  border-radius: 12px;
+  background: rgba(4,7,18,.6);
   text-align: center;
 }
-/* one turn per tap: the animation is on the render that follows it */
-.pw-card.flipping { animation: pw-turn .26s ease; }
+.pw-print-side-name {
+  font-size: calc(12px * var(--fs));
+  font-weight: 800; letter-spacing: .16em; text-transform: uppercase;
+}
+.pw-print-side.bull .pw-print-side-name { color: var(--pw-bull); }
+.pw-print-side.bear .pw-print-side-name { color: var(--pw-bear); }
+.pw-print-side-goal {
+  font-size: calc(8.5px * var(--fs));
+  font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  line-height: 1.35;
+  color: var(--pw-muted);
+}
+.pw-print-side.mine { border-color: rgba(120,170,255,.45); }
+.pw-print-col { display: flex; flex-direction: column; align-items: center; }
+.pw-print-end {
+  position: absolute;
+  left: 0; right: 0;
+  z-index: 1;
+  font-size: calc(10px * var(--fs));
+  font-weight: 800; letter-spacing: .04em; text-align: center;
+  color: var(--text);
+}
+.pw-print-end.top { top: 3px; }
+.pw-print-end.bot { bottom: 3px; }
+.pw-print-gauge {
+  position: relative;
+  width: clamp(72px, 20vw, 88px);
+  height: clamp(96px, 13.5vh, 124px);
+  border: 1.5px solid rgba(120,200,255,.4);
+  border-radius: 14px;
+  background: linear-gradient(180deg, rgba(255,60,90,.07), rgba(4,7,18,.85) 46%, rgba(4,7,18,.85) 54%, rgba(47,230,194,.07));
+  overflow: hidden;
+}
+.pw-print-fill {
+  position: absolute;
+  left: 0; right: 0;
+  height: var(--pw-fill, 0%);
+  opacity: .3;
+}
+.pw-print-fill.up   { bottom: 50%; }
+.pw-print-fill.down { top: 50%; }
+.pw-print-fill.bull { background: linear-gradient(0deg, transparent, var(--pw-bull)); }
+.pw-print-fill.bear { background: linear-gradient(180deg, transparent, var(--pw-bear)); }
+.pw-print-fill.flat { background: transparent; }
+.pw-print-read {
+  position: absolute; inset: 0;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 1px;
+}
+.pw-print-val {
+  font-size: calc(30px * var(--fs));
+  font-weight: 800; line-height: 1;
+  color: var(--text);
+}
+.pw-print-val.bull { color: var(--pw-bull); }
+.pw-print-val.bear { color: var(--pw-bear); }
+.pw-print-cap {
+  font-size: calc(8.5px * var(--fs));
+  font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--pw-muted);
+}
+
+/* ---- your side: the slot a card is dropped on ---- */
+.pw-turn { display: flex; flex-direction: column; align-items: center; gap: 2px; }
+.pw-turn-cap {
+  font-size: calc(14px * var(--fs));
+  font-weight: 800; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--text);
+}
+.pw-turn-sub {
+  font-size: calc(8.5px * var(--fs));
+  font-weight: 700; letter-spacing: .12em; text-transform: uppercase;
+  color: var(--pw-muted);
+  margin-bottom: 3px;
+  text-align: center;
+}
+.pw-turn-slot {
+  --pw-card-h: clamp(92px, 13vh, 118px);
+  display: flex; align-items: center; justify-content: center;
+  height: var(--pw-card-h);
+  aspect-ratio: 249 / 334;
+  border: 1.5px dashed rgba(120,200,255,.42);
+  border-radius: 12px;
+  background:
+    url("../assets/pointaeway/flank-bull.png") center / 74% no-repeat,
+    rgba(4,7,18,.5);
+  background-blend-mode: luminosity;
+  transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
+}
+/* a card landed: the slot is only the frame around it now */
+.pw-turn-slot.filled {
+  border-style: solid;
+  border-color: transparent;
+  background: none;
+  aspect-ratio: auto;
+  width: auto;
+}
+.pw-turn-slot.over {
+  border-color: var(--pw-bull);
+  box-shadow: 0 0 0 2px rgba(47,230,194,.25), 0 0 22px rgba(47,230,194,.35);
+  transform: scale(1.04);
+}
+
+/* ---- the two things in the corners under the table ---- */
+.pw-foot {
+  display: grid;
+  grid-template-columns: 1fr auto;
+  align-items: center;
+  gap: 9px;
+  padding: 6px 0 0;
+}
+.pw-tip {
+  padding: 7px 10px;
+  border: 1px solid var(--pw-line);
+  border-radius: 12px;
+  background: rgba(4,7,18,.66);
+}
+.pw-tip-cap {
+  display: block;
+  font-size: calc(8px * var(--fs));
+  font-weight: 800; letter-spacing: .16em; text-transform: uppercase;
+  color: var(--pw-wild);
+  margin-bottom: 2px;
+}
+.pw-tip-text {
+  margin: 0;
+  font-size: calc(11px * var(--fs));
+  line-height: 1.35;
+  color: var(--pw-muted);
+}
+.pw-specials-btn {
+  display: flex; align-items: center; gap: 8px;
+  padding: 9px 13px;
+  border: 1px solid rgba(120,200,255,.4);
+  border-radius: 12px;
+  background: rgba(4,7,18,.7);
+  font-size: calc(10px * var(--fs));
+  font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
+  line-height: 1.25;
+  color: #C7D9EF;
+  text-align: left;
+}
+.pw-specials-btn.on { border-color: var(--pw-wild); color: var(--pw-wild); }
+.pw-specials-btn:active { filter: brightness(1.4); }
+.pw-specials-ico {
+  position: relative;
+  flex: 0 0 auto;
+  width: 15px; height: 20px;
+  border: 1.5px solid currentColor;
+  border-radius: 3px;
+}
+.pw-specials-ico::before {
+  content: "";
+  position: absolute; left: 3px; top: -4px;
+  width: 15px; height: 20px;
+  border: 1.5px solid currentColor;
+  border-radius: 3px;
+  opacity: .5;
+}
+
+/* ---- the ten wilds, expanded in place ---- */
+.pw-sheet {
+  margin-top: 10px;
+  border: 1px solid var(--pw-wild);
+  border-radius: 14px;
+  background: rgba(7,10,24,.9);
+  overflow: hidden;
+}
+.pw-sheet-cap {
+  display: flex; align-items: center; justify-content: space-between;
+  padding: 9px 12px;
+  border-bottom: 1px solid var(--pw-line);
+  font-size: calc(10px * var(--fs));
+  font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
+  color: var(--pw-wild);
+}
+.pw-sheet-x {
+  padding: 3px 9px;
+  border: 1px solid var(--pw-line);
+  border-radius: 999px;
+  background: none;
+  font-size: calc(9px * var(--fs));
+  font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  color: var(--pw-muted);
+}
+.pw-sheet-rows { display: flex; flex-direction: column; }
+.pw-sheet-row {
+  display: grid;
+  grid-template-columns: 44px 1fr;
+  align-items: center;
+  gap: 11px;
+  padding: 9px 12px;
+  border-top: 1px solid rgba(255,255,255,.05);
+}
+.pw-sheet-row:first-child { border-top: 0; }
+.pw-sheet-art { width: 44px; height: auto; display: block; border-radius: 4px; }
+.pw-sheet-text { display: flex; flex-direction: column; gap: 2px; }
+.pw-sheet-name {
+  font-size: calc(11px * var(--fs));
+  font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+  color: var(--pw-wild);
+}
+.pw-sheet-desc { font-size: calc(11px * var(--fs)); line-height: 1.4; color: var(--pw-muted); }
+
+/* ---- cards ----
+   The face is the artwork. These rules set how tall the picture is, and what
+   may happen to it — nothing draws one. */
+.pw-card {
+  position: relative;
+  display: inline-flex;
+  flex: 0 0 auto;
+  height: var(--pw-card-h, 118px);
+  margin: 0; padding: 0;
+  border: 0;
+  border-radius: 11px;
+  background: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .14s ease, filter .14s ease, opacity .14s ease;
+}
+.pw-card-art {
+  display: block;
+  height: 100%;
+  width: auto;
+  border-radius: 10px;
+  -webkit-user-drag: none;
+  user-select: none;
+}
+/* a name for the card if its picture will not load */
+.pw-card-alt {
+  display: flex; align-items: center; justify-content: center;
+  width: 84px; height: 100%;
+  padding: 6px;
+  border: 1px solid var(--pw-line);
+  border-radius: 10px;
+  font-size: calc(10px * var(--fs));
+  font-weight: 700; text-align: center;
+  color: var(--pw-muted);
+}
+.pw-card[data-pw-play]:active,
+.pw-card[data-pw-answer]:active { transform: translateY(-5px) scale(1.04); }
+.pw-card.dim { opacity: .34; filter: grayscale(.65); }
+.pw-card.dragging { opacity: .25; }
+/* the clone that follows the finger */
+.pw-card.pw-ghost {
+  position: fixed; left: 0; top: 0;
+  z-index: 90;
+  pointer-events: none;
+  filter: drop-shadow(0 12px 24px rgba(0,0,0,.75));
+}
+/* How many of this candle are still in your own deck. It cannot go near the
+   foot of the card: the art prints STRENGTH there, and a second number beside
+   that one reads as part of it. Top-right, opposite the art's own badge, and
+   written as a count so it cannot be mistaken for a value. */
+.pw-card-left {
+  position: absolute;
+  right: 4px; top: 4px;
+  min-width: 17px;
+  padding: 1px 4px;
+  border: 1px solid var(--pw-line);
+  border-radius: 999px;
+  background: rgba(3,5,14,.9);
+  font-size: calc(9px * var(--fs));
+  font-weight: 800; line-height: 1.5; text-align: center;
+  color: var(--pw-muted);
+}
+/* their card turns over as it arrives */
+.pw-card.flipping { animation: pw-turn .3s ease; }
 @keyframes pw-turn {
   from { transform: rotateY(84deg); }
   to   { transform: rotateY(0); }
 }
 
-/* ---- the one bar: what is left in each pile ---- */
-.pw-bar {
-  display: flex; align-items: center; gap: 10px;
-  padding: 7px 12px;
-  border: 1px solid var(--pw-line);
-  border-radius: 999px;
-  background: rgba(4,7,18,.72);
+/* ---- your hand: one row, scrolled sideways ---- */
+/* The hand stays on screen while the table scrolls behind it. Sticky rather
+   than fixed so it still sits in the flow when the whole thing does fit, and
+   so the panels that stand in for it — the draw choice, Seen — behave the way
+   they always did. */
+.pw-handbar {
+  position: sticky;
+  bottom: 0;
+  z-index: 3;
+  margin: 6px -2px 0;
+  padding-top: 5px;
+  /* it rides over the table, so it has to become opaque quickly — a long fade
+     lets whatever is behind it smudge through the caption */
+  background: linear-gradient(180deg, rgba(4,7,18,0), rgba(4,7,18,.97) 34%, rgba(4,7,18,.99));
+  backdrop-filter: blur(3px);
+  -webkit-backdrop-filter: blur(3px);
 }
-.pw-bar-stat {
-  font-size: calc(9.5px * var(--fs));
-  font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+.pw-hand-cap {
+  padding: 2px 2px 3px;
+  font-size: calc(10px * var(--fs));
+  font-weight: 700; letter-spacing: .16em; text-transform: uppercase;
+  text-align: center;
   color: var(--pw-muted);
 }
-.pw-bar-stat b { font-size: calc(13px * var(--fs)); font-weight: 800; color: var(--text); }
-.pw-bar-stat.wild b { color: var(--pw-wild); }
-.pw-bar-sep { width: 1px; height: 14px; background: var(--pw-line); }
-.pw-bar-seen {
-  margin-left: auto;
-  padding: 3px 9px;
-  border: 1px solid var(--pw-line);
-  border-radius: 999px;
-  font-size: calc(9px * var(--fs));
-  font-weight: 700; letter-spacing: .08em; text-transform: uppercase;
+.pw-hand-cap b { color: var(--text); font-weight: 800; }
+.pw-hand {
+  --pw-card-h: clamp(94px, 13.5vh, 122px);
+  display: flex;
+  align-items: flex-end;
+  gap: 8px;
+  padding: 2px 10px 6px;
+  overflow-x: auto;
+  overflow-y: hidden;
+  scroll-snap-type: x proximity;
+  -webkit-overflow-scrolling: touch;
+  scrollbar-width: none;
+  /* the drag reads vertical movement, so the row may only take the other axis */
+  touch-action: pan-x;
+}
+.pw-hand::-webkit-scrollbar { display: none; }
+.pw-hand .pw-card { scroll-snap-align: center; }
+.pw-hand-empty {
+  width: 100%;
+  padding: 22px 0;
+  font-size: calc(11px * var(--fs));
+  text-align: center;
   color: var(--pw-muted);
 }
-.pw-bar-seen.on { border-color: var(--pw-wild); color: var(--pw-wild); }
-.pw-bar-restart {
-  margin-left: 8px;
-  font-size: calc(9.5px * var(--fs));
-  font-weight: 700; letter-spacing: .08em;
-  color: var(--pw-muted);
-}
-.pw-bar-restart:active { filter: brightness(1.5); }
 
 /* ---- draw choice: stands where the hand would be ---- */
 .pw-choice {
@@ -5110,24 +5444,6 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
 .pw-choice-btn.bear { border-color: var(--pw-bear); background: linear-gradient(160deg, var(--pw-bear-dim), var(--pw-panel)); }
 .pw-choice-btn.wild { border-color: var(--pw-wild); background: linear-gradient(160deg, var(--pw-wild-dim), var(--pw-panel)); }
 .pw-choice-btn:disabled { opacity: .4; }
-
-/* ---- Discipline's peek ---- */
-/* One compact line: the peek adds a row the other phases do not have, and the
-   match still has to sit inside one screen. */
-.pw-peek-cap {
-  margin-top: 8px;
-  padding: 5px 10px;
-  border: 1px solid var(--pw-wild);
-  border-radius: 999px;
-  background: rgba(7,10,24,.8);
-  text-align: center;
-  font-size: calc(10px * var(--fs));
-  line-height: 1.3;
-  color: var(--text);
-}
-.pw-hand.peeking { margin-top: 6px; }
-/* a wild cannot answer a peek, so it reads as unavailable */
-.pw-card.dim { opacity: .32; }
 
 /* ---- what the opponent has shown ----
    Stands where the hand does, like the draw choice: it is a thing to read, and
@@ -5157,18 +5473,6 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
 .pw-seen-row.on .pw-seen-n.bear { color: var(--pw-bear); }
 .pw-seen .pw-ghost { margin-top: 8px; }
 
-/* ---- hand ----
-   A fixed four across rather than wrapping by width, so a hand of six sits in
-   two even rows and FOMO's two extra cards land in the same two rows instead
-   of pushing a third off the screen. */
-.pw-hand {
-  margin-top: 10px;
-  display: grid;
-  grid-template-columns: repeat(var(--pw-cols, 4), 1fr);
-  gap: 7px;
-}
-.pw-hand-empty { grid-column: 1 / -1; font-size: calc(11px * var(--fs)); color: #5B6E85; }
-
 /* ---- game over ---- */
 /* The result screen carries the meter now, so the padding it used to spend on
    empty space goes to the meter instead — the whole thing still has to land
@@ -5184,36 +5488,34 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
 .pw-over-title.bull { color: var(--pw-bull); }
 .pw-over-title.bear { color: var(--pw-bear); }
 
-/* Short screens. The header takes a fixed share of the height whatever the
-   phone, so on a shorter one everything below it has to give a little for the
-   match to stay inside one screen. Two steps rather than fluid sizing, so the
-   card faces land on whole pixels and stay legible. */
+/* Short screens. The app's own chrome takes a fixed share of the height
+   whatever the phone, so on a shorter one the table has to give. Steps rather
+   than fluid sizing, so the card art lands on whole pixels and the strength
+   numbers printed on it stay legible — which is the thing that breaks first. */
 @media (max-height: 800px) {
-  .pw-empty, .pw-arena .pw-card { width: 74px; height: 100px; }
-  .pw-track { width: 40px; height: 108px; }
-  .pw-track-val { font-size: calc(21px * var(--fs)); }
-  .pw-card.sm { height: 88px; }
-  .pw-arena { padding: 4px 2px 8px; }
+  .pw-opp-slot, .pw-turn-slot { --pw-card-h: clamp(84px, 12vh, 108px); }
+  .pw-hand { --pw-card-h: clamp(86px, 12.5vh, 110px); }
+  .pw-print-gauge { width: clamp(66px, 19vw, 82px); height: clamp(88px, 12.5vh, 112px); }
+  .pw-print-val { font-size: calc(25px * var(--fs)); }
+  .pw-print { padding: 5px 0 4px; }
+  .pw-turn-cap { font-size: calc(13px * var(--fs)); }
+  .pw-tip-text { font-size: calc(10px * var(--fs)); }
+  .pw-foot { padding: 6px 0 2px; }
 }
 @media (max-height: 710px) {
-  .pw-empty, .pw-arena .pw-card { width: 64px; height: 88px; }
-  .pw-track { width: 34px; height: 78px; }
-  .pw-track-val { font-size: calc(18px * var(--fs)); }
-  .pw-card.sm { height: 76px; }
-  .pw-card-name { font-size: calc(7.5px * var(--fs)); }
-  .pw-card-pts { font-size: calc(10.5px * var(--fs)); }
-  .pw-arena { padding: 2px 2px 6px; gap: 6px; }
-  .pw-hand { margin-top: 7px; gap: 5px; }
-  .pw-bar { padding: 5px 10px; }
-  /* the panels that stand where the hand does have to stay inside it, and the
-     peek's caption is an extra row on top of the hand rather than instead of it */
-  .pw-peek-cap { margin-top: 6px; padding: 4px 8px; font-size: calc(9px * var(--fs)); }
-  /* The peek is the one phase with a row the others do not have. On the
-     shortest screens the caption alone is not enough to pay for it, so the
-     hand gives back the rest of the height while the peek is up. */
-  .pw-hand.peeking { margin-top: 5px; }
-  .pw-hand.peeking .pw-card.sm { height: 62px; }
-  .pw-hand.peeking .pw-card-icon { display: none; }
+  .pw-opp-slot, .pw-turn-slot { --pw-card-h: clamp(74px, 11vh, 92px); }
+  .pw-hand { --pw-card-h: clamp(76px, 11.5vh, 94px); padding: 2px 8px 4px; }
+  .pw-print-gauge { width: clamp(58px, 17vw, 72px); height: clamp(74px, 11vh, 92px); }
+  .pw-print-val { font-size: calc(21px * var(--fs)); }
+  .pw-print-side { padding: 5px 4px; }
+  .pw-print-side-name { font-size: calc(10.5px * var(--fs)); }
+  .pw-counts { padding: 0 2px 5px; }
+  .pw-count { padding: 2px 7px; min-width: 46px; }
+  .pw-opp-cap { font-size: calc(10px * var(--fs)); }
+  .pw-turn-cap { font-size: calc(12px * var(--fs)); }
+  /* the tip is the one thing here that is not part of playing the round */
+  .pw-tip { display: none; }
+  .pw-foot { grid-template-columns: 1fr; justify-items: center; padding: 5px 0 2px; }
   .pw-choice { margin-top: 7px; padding: 8px 10px; }
   .pw-choice-cap { font-size: calc(10.5px * var(--fs)); margin-bottom: 7px; }
   .pw-choice-btn { padding: 8px 6px; font-size: calc(11px * var(--fs)); }
@@ -5222,17 +5524,10 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
   .pw-seen .pw-ghost { margin-top: 5px; padding: 5px 14px; }
 }
 
-/* Very narrow phones: the arena stops being three columns. The two card slots stay
-   side by side and the meter takes the full width beneath them, on its side —
-   three full-width rows would push the hand off the screen, which is the one
-   thing this layout exists to prevent. */
+/* Very narrow phones. The match screen's own meter stays upright — it is the
+   spine of that layout — but the game-over meter lies on its side, where a
+   tall track would push the result off the bottom. */
 @media (max-width: 335px) {
-  .pw-arena { grid-template-columns: 1fr 1fr; gap: 8px; }
-  /* placed explicitly: auto-flow would push the second slot past the
-     full-width meter onto a third row */
-  .pw-arena > .pw-slot:first-of-type { grid-row: 1; grid-column: 1; }
-  .pw-arena > .pw-slot:last-of-type  { grid-row: 1; grid-column: 2; }
-  .pw-track-panel { grid-row: 2; grid-column: 1 / -1; }
   /* Laid on its side. Reversed so the ends match the direction the fill grows:
      -25 on the left, +25 on the right, bull filling rightward. */
   .pw-track-row { flex-direction: row-reverse; gap: 8px; width: 100%; }
@@ -5246,7 +5541,8 @@ button.pw-card:active { transform: translateY(-3px); filter: brightness(1.3); }
   .pw-track-fill.up { left: 50%; right: auto; }
   .pw-track-fill.down { right: 50%; left: auto; }
   .pw-track-mid { display: none; }
-  .pw-empty, .pw-arena .pw-card { width: 74px; height: 102px; }
+  .pw-print { gap: 4px; }
+  .pw-print-side-goal { font-size: calc(7.5px * var(--fs)); }
 }
 
 /* ===================== VIEWPORT READOUT =====================
