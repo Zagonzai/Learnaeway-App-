@@ -278,18 +278,24 @@
         <div class="login-media">
           <video id="loginVideo" class="login-video" loop playsinline
                  webkit-playsinline preload="auto" aria-hidden="true"></video>
+          <!-- the fields ride on the clip itself. This box is the clip's own
+               letterboxed frame — not the media area around it — so they land
+               at the same point in the composition whatever shape the column
+               is, below the tagline and above the globe. -->
+          <div class="login-frame">
+            <div id="loginForm" class="login-form hidden">
+              <form id="authForm" autocomplete="off" novalidate>
+                <!-- fields, the submit, and the switch to the other mode are
+                     all injected by app.js — which mode is showing decides all
+                     three, so one place owns them -->
+              </form>
+            </div>
+          </div>
         </div>
-        <!-- and the way in sits under the clip in its own pill dock, the same
-             bar the app's five icons ride in — never over the video -->
+        <!-- idle, the way in is one pill in a dock under the clip. The dock
+             carries no frame of its own: the pill is the shape. -->
         <div class="login-dock">
           <button type="button" id="loginOpenBtn" class="g-pill login-open">Login / Sign Up</button>
-          <div id="loginForm" class="login-form hidden">
-            <form id="authForm" autocomplete="off" novalidate>
-              <!-- fields, the submit, and the switch to the other mode are
-                   all injected by app.js — which mode is showing decides all
-                   three, so one place owns them -->
-            </form>
-          </div>
         </div>
       </div>
 
