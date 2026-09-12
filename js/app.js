@@ -3270,14 +3270,6 @@
   const PW_TIER_COPIES = 5;      // per tier, per side
   const PW_TARGET = 25;
   const PW_REVEAL_MS = 700;
-  /* One full turn of the random side picker. Two faces per turn, so a face is
-     up for 160ms — well inside the spread of a human reaction, which is why
-     stopping on the side you want is not something you can do on purpose. */
-  const PW_SPIN_MS = 320;
-  /* And how long the frozen card stays up before the match starts. Short
-     enough to read as immediate, long enough to actually see what you drew —
-     with no beat at all you would land in the match not knowing why. */
-  const PW_SPIN_SETTLE_MS = 700;
 
   let pwUid = 0;
   const pwId = () => `pw${pwUid++}`;
@@ -3285,7 +3277,8 @@
   /* the whole game, in one place, so leaving the screen can drop it cleanly */
   let pw = null;
   let pwTimer = null;
-  let pwSpinRaf = null;
+  let pwRollTimer = null;   // the side randomiser's flicker
+  let pwRolling = false;
 
   function pwBuildTierDeck(side) {
     const cards = [];
@@ -3506,7 +3499,6 @@
       flipAnim: null,       // their card, on the render that reveals it
       showSeen: false,      // the opponent's per-tier breakdown, on demand
       showSpecials: false,  // the ten wilds and what they do, on demand
-      spin: null,           // the random side picker, while it is turning
     };
   }
 
@@ -3531,59 +3523,66 @@
 
   /* ---- picking a side at random ----
 
-     One card turning on its Y axis, Bull on one face and Bear on the other, so
-     the side that is up is a fact about the rotation rather than a thing we
-     decide separately and then animate. That matters: STOP is specified to
-     take whichever side is showing at that instant, and the only way to keep
-     that promise is for the two to be the same number. So the angle is a pure
-     function of elapsed time, the frame loop spends it on `transform`, and
-     STOP reads it back from the same function — never from the DOM, which
-     could be a frame behind, and never from a fresh coin toss, which would be
-     a different answer than the one on screen.
+     The two cards are already on the screen, so the randomiser flickers
+     between them rather than standing a third object in front of them: it
+     lights one, then the other, faster than a decision, slowing as it goes,
+     and lands on the side it picked before the first flash. The side is
+     chosen up front — this is a randomiser being shown, not a race being run,
+     and there is no STOP to keep a promise to any more.
 
-     Deliberately not a CSS animation: reading an in-flight animation's angle
-     back out means parsing a computed matrix, and a paused or reduced-motion
-     animation would leave STOP freezing on a card that was never turning. */
+     The lighting is done on the nodes rather than through a re-render: the
+     screen would otherwise be rebuilt fifteen times in a second, and the two
+     card images would be replaced under the animation each time. */
 
-  const pwSpinFace = (deg) => (Math.cos((deg * Math.PI) / 180) >= 0 ? "bull" : "bear");
+  const PW_ROLL_STEPS = 15;
+  const PW_ROLL_FAST_MS = 55;
+  const PW_ROLL_EASE_MS = 165;    // how much slower the last flash is
+  const PW_ROLL_SETTLE_MS = 620;  // the beat on the winner before the match
 
-  function pwSpinAngle() {
-    const s = pw.spin;
-    if (!s) return 0;
-    return s.a0 + ((performance.now() - s.t0) / PW_SPIN_MS) * 360;
+  function pwRollCancel() {
+    if (pwRollTimer) { clearTimeout(pwRollTimer); pwRollTimer = null; }
+    pwRolling = false;
+    document.querySelectorAll(".pw-pick.lit, .pw-pick.won")
+      .forEach((e) => e.classList.remove("lit", "won"));
   }
 
-  function pwSpinCancel() {
-    if (pwSpinRaf != null) { cancelAnimationFrame(pwSpinRaf); pwSpinRaf = null; }
-  }
+  function pwRollStart() {
+    if (!pw || pw.phase !== "setup" || pwRolling) return;
+    const side = Math.random() < 0.5 ? "bull" : "bear";
+    const pick = (sd) => document.querySelector(`.pw-pick[data-pw-side="${sd}"]`);
+    const bull = pick("bull"), bear = pick("bear");
+    if (!bull || !bear) { pwStart(side); return; }        // nothing to flicker
 
-  function pwSpinTick() {
-    pwSpinRaf = requestAnimationFrame(pwSpinTick);
-    /* looked up every frame rather than held: any re-render of the setup screen
-       (opening the wild card legend, say) replaces the node, and a held
-       reference would go on turning a card that is no longer on the page */
-    const el = document.getElementById("pwFlipper");
-    if (!el || !pw || !pw.spin || pw.spin.stopped) { pwSpinCancel(); return; }
-    el.style.transform = `rotateY(${pwSpinAngle().toFixed(2)}deg)`;
-  }
+    const light = (sd) => {
+      bull.classList.toggle("lit", sd === "bull");
+      bear.classList.toggle("lit", sd === "bear");
+    };
+    const land = () => {
+      pwRollTimer = null;
+      pwRolling = false;
+      const w = pick(side);
+      if (w) { w.classList.remove("lit"); w.classList.add("won"); }
+      pwTimer = setTimeout(() => { pwTimer = null; pwStart(side); }, PW_ROLL_SETTLE_MS);
+    };
 
-  function pwSpinStart() {
-    if (!pw || pw.phase !== "setup" || pw.spin) return;
-    // a random starting angle so the first face up is not always Bull
-    pw.spin = { t0: performance.now(), a0: Math.random() * 360, stopped: false, side: null };
-    renderPointaeway();
-    pwSpinTick();
-  }
+    /* someone who has asked for less movement gets the answer, not the show */
+    const still = window.matchMedia && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    if (still) { pwRolling = true; light(side); land(); return; }
 
-  function pwSpinStop() {
-    if (!pw || !pw.spin || pw.spin.stopped) return;
-    const side = pwSpinFace(pwSpinAngle());
-    pwSpinCancel();
-    pw.spin.stopped = true;
-    pw.spin.side = side;
-    renderPointaeway();
-    // through pwTimer so that leaving the screen mid-settle cancels it
-    pwTimer = setTimeout(() => { pwTimer = null; pwStart(side); }, PW_SPIN_SETTLE_MS);
+    pwRolling = true;
+    const other = side === "bull" ? "bear" : "bull";
+    const last = PW_ROLL_STEPS - 1;
+    let i = 0;
+    const step = () => {
+      /* the parity is worked backwards from the end so the final flash is the
+         side that was drawn, however many steps there are */
+      light((last - i) % 2 === 0 ? side : other);
+      if (i === last) return land();
+      const t = i / last;
+      pwRollTimer = setTimeout(step, PW_ROLL_FAST_MS + PW_ROLL_EASE_MS * Math.pow(t, 2.4));
+      i++;
+    };
+    step();
   }
 
   const pwOwnDeck = (side) => (side === "bull" ? pw.bull : pw.bear);
@@ -3868,11 +3867,10 @@
      find the match stuck in "resolving" with nothing on it to click. */
   function pwAbort() {
     if (pwTimer) { clearTimeout(pwTimer); pwTimer = null; }
-    /* a side picker left turning is dropped, not settled: nothing has been
-       chosen yet, and a frame loop repainting a screen nobody is on is exactly
-       what this function exists to stop */
-    pwSpinCancel();
-    if (pw && pw.spin) pw.spin = null;
+    /* a randomiser left flickering is dropped, not landed: nothing has been
+       chosen yet, and a timer repainting a screen nobody is on is exactly what
+       this function exists to stop */
+    pwRollCancel();
     pwCommitPending(true);
   }
 
@@ -4011,44 +4009,6 @@
           <div class="pw-track-end bot">−${PW_TARGET}</div>
         </div>
       </div>`;
-  }
-
-  /* the two faces of the picker. Same classes as a real card face, so the teal
-     and red are the deck's own, not a second set that could drift from it */
-  function pwSpinFaceHTML(side) {
-    return `<div class="pw-flip-face pw-card ${side}">
-      <span class="pw-card-side">${side.toUpperCase()}</span>
-      <span class="pw-card-icon">${pwCandleSvg(pwTiers(side)[0], side, 32)}</span>
-      <span class="pw-card-foot"><span class="pw-card-name">Trade as
-        ${side === "bull" ? "Bull" : "Bear"}</span></span>
-    </div>`;
-  }
-
-  function pwSpinHTML() {
-    const s = pw.spin;
-    if (!s) {
-      return `<div class="pw-random">
-        <button class="pw-ghost pw-random-go" data-pw-random>Pick my side for me</button>
-      </div>`;
-    }
-    /* frozen face-on rather than at whatever angle it stopped at — the card is
-       the answer now, and it should be square to the reader. The side it lands
-       square on is the one pwSpinStop already read off the live angle. */
-    const style = s.stopped
-      ? ` style="transform: rotateY(${s.side === "bull" ? 0 : 180}deg)"` : "";
-    return `<div class="pw-random spinning">
-      <div class="pw-flip-wrap">
-        <div class="pw-flipper${s.stopped ? " locked" : ""}" id="pwFlipper"${style}>
-          ${pwSpinFaceHTML("bull")}
-          ${pwSpinFaceHTML("bear")}
-        </div>
-      </div>
-      ${s.stopped
-        ? `<div class="pw-random-lock ${s.side}" role="status">You trade as
-             ${s.side === "bull" ? "Bull" : "Bear"}</div>`
-        : `<button class="pw-stop" data-pw-stop
-             aria-label="Stop on the side showing now"><span>STOP</span></button>`}
-    </div>`;
   }
 
   function pwLegendHTML() {
@@ -4217,7 +4177,6 @@
           <span>${pw.showLegend ? "Hide wild cards" : "How wild cards work"}</span>
         </button>
         ${pw.showLegend ? pwLegendHTML() : ""}
-        ${pwSpinHTML()}
       </div>`;
   }
 
@@ -4227,19 +4186,13 @@
     if (pickName) pickName.textContent = "Cool Down Game";
     cardFooter.style.display = "none";
 
-    cardScroll.classList.remove("pw-playing");
+    cardScroll.classList.remove("pw-playing", "pw-introing");
     if (pw.phase === "setup") {
+      /* the whole way in has to sit in one view, so the scroller becomes a
+         fixed-height column here too and the two cards take up the slack */
+      cardScroll.classList.add("pw-introing");
       cardScroll.innerHTML = pwIntroHTML();
-      /* The picker sits below the legend button, which on a 667pt screen puts
-         it under the fold — and STOP is a timing button, so it has to be on
-         screen the moment it exists, not something to go looking for. Setting
-         innerHTML above has already dropped the scroll to 0, so this is a
-         restore as much as a scroll: it runs on the freeze re-render too, and
-         the card stays exactly where the player was watching it. */
-      cardScroll.scrollTop = pw.spin ? cardScroll.scrollHeight : 0;
-      /* the turn survives a re-render — the node it was driving has just been
-         replaced, so pick the new one up */
-      if (pw.spin && !pw.spin.stopped && pwSpinRaf == null) pwSpinTick();
+      cardScroll.scrollTop = 0;
       return;
     }
 
@@ -4280,6 +4233,7 @@
     /* the same bargain Placeæway strikes: the scroller becomes a fixed-height
        flex column, the arena takes what the rows above and below leave, and
        nothing scrolls vertically */
+    cardScroll.classList.remove("pw-introing");
     cardScroll.classList.add("pw-playing");
     cardScroll.innerHTML = `
       <div class="pw-counts">
@@ -4927,7 +4881,7 @@
        leaving mid-round by the dock would carry it out of the game and leave
        the journal — the whole app — unable to scroll. Taken off here, which
        runs on every render that is not this view. */
-    cardScroll.classList.remove("pa-playing", "pw-playing");
+    cardScroll.classList.remove("pa-playing", "pw-playing", "pw-introing");
     /* An abandoned round is not a result — it never reaches times[], so the
        match is simply dropped. Coming back lands on setup. */
     if (pa && pa.screen === "game" && !pa.ended) {
@@ -7184,7 +7138,7 @@
     if (state.panel) {
       stopAudio();
       cardFooter.style.display = "none";
-      cardScroll.classList.remove("pa-playing", "pw-playing", "ci-resulting");
+      cardScroll.classList.remove("pa-playing", "pw-playing", "pw-introing", "ci-resulting");
       cardScroll.innerHTML = `<div class="ip-panel">
         <div class="ip-head">
           <span class="ip-title">${state.panel === "settings" ? "Settings" : "Tools"}</span>
@@ -9615,7 +9569,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-stop],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -9940,9 +9894,10 @@
       Object.assign(pa, { mode, count, diff });   // same mode and settings, fresh match
       renderPlaceaway();
     }
-    else if (t.hasAttribute("data-pw-side")) pwStart(t.getAttribute("data-pw-side"));
-    else if (t.hasAttribute("data-pw-random")) pwSpinStart();
-    else if (t.hasAttribute("data-pw-stop")) pwSpinStop();
+    /* mid-flicker the randomiser owns the choice; a tap on a card it happens
+       to be lighting would otherwise start a match on it */
+    else if (t.hasAttribute("data-pw-side")) { if (!pwRolling) pwStart(t.getAttribute("data-pw-side")); }
+    else if (t.hasAttribute("data-pw-random")) pwRollStart();
     else if (t.hasAttribute("data-pw-play")) pwPlay(t.getAttribute("data-pw-play"));
     else if (t.hasAttribute("data-pw-answer")) pwDisciplineAnswer(t.getAttribute("data-pw-answer"));
     else if (t.hasAttribute("data-pw-tp")) pwTakeProfitChoose(t.getAttribute("data-pw-tp") === "double");
