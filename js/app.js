@@ -10226,10 +10226,30 @@
         `<input class="g-pill auth-input" name="${f.name}" type="${f.type}" placeholder="${f.placeholder}" autocomplete="off">`
       ).join("") +
       `<div id="authError" class="gate-error hidden"></div>` +
-      `<button type="submit" class="g-pill auth-submit">${login ? "Login" : "Sign Up"}</button>` +
-      `<button type="button" class="auth-switch" data-auth-mode="${login ? "signup" : "login"}">${
+      /* the way across is a pill of its own now, not a line of underlined
+         text — and the submit is not here at all: it is the dock */
+      `<button type="button" class="g-pill auth-switch" data-auth-mode="${login ? "signup" : "login"}">${
         login ? "Sign Up" : "Back to Login"}</button>`;
+    syncAuthDocks();
   }
+
+  /* The one fixed zone at the foot of the screen, in whichever layout is up.
+     Closed it offers the way in; open it is the form's submit, relabelled for
+     the mode. Nothing here moves — only what is inside it changes. */
+  function syncAuthDocks() {
+    const label = authMode === "login" ? "Login" : "Sign Up";
+    [["loginOpenBtn", "loginSubmit"], ["introLoginBtn", "introSubmit"]].forEach(([o, u]) => {
+      const open = $(o), sub = $(u);
+      if (open) open.classList.toggle("hidden", loginOpen);
+      if (sub) { sub.classList.toggle("hidden", !loginOpen); sub.textContent = label; }
+    });
+  }
+
+  /* whichever dock is on screen holds it; the form no longer does */
+  const authSubmitBtn = () =>
+    [...document.querySelectorAll(".auth-submit-dock")]
+      .find((e) => !e.classList.contains("hidden") && e.offsetParent !== null) ||
+    $("loginSubmit");
 
   function setAuthMode(mode) {
     authMode = mode;
@@ -10258,7 +10278,7 @@
     const f = new FormData(authForm);
     const email = (f.get("email") || "").trim();
     const password = f.get("password") || "";
-    const btn = authForm.querySelector(".auth-submit");
+    const btn = authSubmitBtn();
     const err = $("authError");
     err.classList.add("hidden");
     btn.disabled = true;
@@ -10762,13 +10782,10 @@
   let loginOpen = false;
   function setLoginOpen(open) {
     loginOpen = open;
-    const btn = $("loginOpenBtn"), form = $("loginForm"), step = $("loginStep");
-    if (btn) btn.classList.toggle("hidden", open);
+    const form = $("loginForm"), step = $("loginStep");
     if (form) form.classList.toggle("hidden", !open);
-    /* open, the dock folds away and the clip takes the whole column: the
-       fields are laid on the frame itself, so an empty bar under it would
-       only be a band of black */
     if (step) step.classList.toggle("form-open", open);
+    syncAuthDocks();
     if (open) {
       renderAuthForm();
       const first = authForm.querySelector("input");
@@ -10895,6 +10912,15 @@
      the password field scrolled the whole centre column, header video and all.
      Measured 0 -> 38 -> 108px of .app scrollTop before this guard. */
   const isTouchLayout = () => !window.matchMedia(DESKTOP_MQ).matches;
+  /* The login step is exempt. This handling exists for the gate and the
+     questionnaire, whose forms are long enough that a field can end up behind
+     the keyboard — it shrinks the screen to the visual viewport and scrolls
+     the field to the middle of what is left. On the login step that is the
+     bug: the fields already sit above the keyboard, and the shrink-and-scroll
+     drags the whole composition up, taking the dock out of its fixed place
+     and into the middle of the panel. Here the keyboard simply covers what it
+     covers, and nothing above it moves. */
+  const onLoginStep = () => authScreen.classList.contains("on-login");
   function applyKbHeight() {
     if (!kbFocused || !vv) return;
     authScreen.style.setProperty("--kbvh", Math.round(vv.height) + "px");
@@ -10903,7 +10929,7 @@
     if (kbFocused) kbFocused.scrollIntoView({ block: "center", behavior: "smooth" });
   }
   authScreen.addEventListener("focusin", (e) => {
-    if (!isTouchLayout()) return;
+    if (!isTouchLayout() || onLoginStep()) return;
     if (!e.target.classList || !e.target.classList.contains("auth-input")) return;
     kbFocused = e.target;
     authScreen.classList.add("kb-open");
@@ -10912,7 +10938,7 @@
     setTimeout(() => { applyKbHeight(); scrollFocusedIntoView(); }, 320);
   });
   authScreen.addEventListener("focusout", (e) => {
-    if (!isTouchLayout()) return;
+    if (!isTouchLayout() || onLoginStep()) return;
     if (!e.target.classList || !e.target.classList.contains("auth-input")) return;
     setTimeout(() => {
       if (authScreen.contains(document.activeElement) &&
@@ -10922,7 +10948,7 @@
     }, 60);
   });
   if (vv) vv.addEventListener("resize", () => {
-    if (!isTouchLayout()) return;
+    if (!isTouchLayout() || onLoginStep()) return;
     applyKbHeight(); scrollFocusedIntoView();
   });
 

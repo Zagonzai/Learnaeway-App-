@@ -1110,6 +1110,9 @@ img { user-select: none; -webkit-user-drag: none; }
    not match. contain keeps the whole frame and pays for it in bars, which is
    the right way round here. */
 .auth-screen.on-login .auth-wave { display: none; }
+/* and nothing on this step scrolls — a focused field must not be able to
+   drag the composition up behind the keyboard */
+.auth-screen.on-login { overflow: hidden; }
 .login-step {
   position: relative;
   isolation: isolate;
@@ -1162,6 +1165,10 @@ img { user-select: none; -webkit-user-drag: none; }
 /* the dock under the clip. It is a place to stand, not a second shape: the
    pill inside it is the only frame, which is why it paints no bar of its
    own — two nine-slices here read as a pill inside a pill. */
+/* One zone at the foot of the screen, the same box the bottom nav takes once
+   someone is signed in, and the same one the desktop shell's pill takes. It
+   holds a different control in each state and moves in none of them —
+   including with the keyboard up, which covers it rather than shifting it. */
 .login-dock {
   position: relative;
   flex: 0 0 auto;
@@ -1171,10 +1178,16 @@ img { user-select: none; -webkit-user-drag: none; }
   margin: 10px 3.5% var(--gap-bottom);
   min-height: clamp(48px, 6.2vh, 58px);
 }
-/* open, the fields are on the clip and the dock has nothing left to hold */
-.login-step.form-open .login-dock { display: none; }
 
 .login-open { width: 100%; max-width: 320px; height: 54px; }
+.auth-submit-dock {
+  font-size: calc(15px * var(--fs));
+  font-weight: 800; letter-spacing: .22em; text-transform: uppercase;
+  color: #EAF6FF;
+}
+.auth-submit-dock:active { filter: brightness(1.25); transform: scale(.98); }
+.auth-submit-dock.pending { color: var(--teal); filter: brightness(1.3); }
+.auth-submit-dock:disabled { opacity: .75; }
 .login-open.hidden { display: none; }
 
 /* The fields, on the clip and at the weight of the one pill they replace:
@@ -1184,11 +1197,16 @@ img { user-select: none; -webkit-user-drag: none; }
    and the constraint it imposes is a floor, so this line is the lowest the
    group may reach; sign-up, which carries four fields to login's two, grows
    upward from it rather than down onto the globe. One number moves the whole
-   group against the composition. */
+   group against the composition.
+
+   The foot is the FIELDS' foot, not the whole group's: the way-across pill
+   hangs below it out of flow, so how tall that pill is cannot move the
+   fields. It could before — taking the submit out of this group and into the
+   dock shifted every field down by the submit's own height. */
 .login-form {
   position: absolute;
   left: 50%;
-  bottom: calc(100% - var(--login-fields-foot, 78%));
+  bottom: calc(100% - var(--login-fields-foot, 68.5%));
   transform: translateX(-50%);
   width: min(84%, 320px);
   pointer-events: auto;             /* but the fields themselves do */
@@ -1196,23 +1214,25 @@ img { user-select: none; -webkit-user-drag: none; }
 .login-form.hidden { display: none; }
 .login-form #authForm { gap: 12px; }
 .login-form .auth-input { width: 100%; }
-.login-form .auth-submit { width: 100%; margin-top: 2px; }
-.login-form .auth-switch { margin-top: 2px; }
-/* the way across to the other mode: under the submit, and quieter than it */
+/* the way across to the other mode: the same pill component either way,
+   smaller than the dock's so it reads as the second thing on the screen, and
+   out of flow so the fields above are anchored on their own */
 .auth-switch {
+  position: absolute;
+  top: 100%;
+  left: 50%;
+  transform: translateX(-50%);
   display: block;
-  width: 100%;
-  margin-top: 9px;
-  padding: 4px;
-  border: 0;
-  background: none;
-  font-size: calc(12.5px * var(--fs)); font-weight: 700;
-  letter-spacing: .06em;
-  color: #9FC0E0;
-  text-decoration: underline;
-  text-underline-offset: 3px;
+  width: 62%;
+  height: 40px;
+  margin: 10px 0 0;
+  padding: 0 14px;
+  font-size: calc(11.5px * var(--fs));
+  font-weight: 700;
+  letter-spacing: .1em;
+  color: #C7D9EF;
 }
-.auth-switch:active { color: var(--cyan); }
+.auth-switch:active { filter: brightness(1.35); transform: translateX(-50%) scale(.97); }
 
 .gate-title {
   font-size: calc(17px * var(--fs));
