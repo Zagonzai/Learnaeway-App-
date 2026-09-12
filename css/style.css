@@ -5187,31 +5187,33 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 }
 .pw-seat-tag.you { color: var(--pw-bull); }
 .pw-seat-tag.opp { color: var(--pw-bear); }
+/* The seat is a place, not a frame: whatever stands in it — a card back or a
+   played card — is finished artwork carrying its own border, and a second one
+   drawn around it only doubles up. So the seat paints nothing and takes its
+   width from whatever it holds. */
 .pw-seat-slot {
   display: flex; align-items: center; justify-content: center;
   height: var(--pw-card-h);
-  aspect-ratio: 249 / 334;
-  border: 1.5px dashed rgba(120,200,255,.42);
-  border-radius: 12px;
-  background:
-    url("../assets/pointaeway/flank-bull.png") center / 74% no-repeat,
-    rgba(4,7,18,.5);
-  background-blend-mode: luminosity;
-  transition: border-color .15s ease, box-shadow .15s ease, transform .15s ease;
-}
-/* a card is in the seat: the seat is only the frame around it now */
-.pw-seat-slot.filled {
-  border-style: solid;
-  border-color: transparent;
-  background: none;
-  aspect-ratio: auto;
   width: auto;
+  border: 0;
+  background: none;
+  border-radius: 12px;
+  transition: box-shadow .15s ease, transform .15s ease;
 }
-/* the opponent's empty seat holds a back, which is its own shape */
-.pw-seat.opp .pw-seat-slot { border: 0; background: none; aspect-ratio: auto; }
+/* the back fits the seat's height and keeps its own proportions — the art is
+   a different shape from a played card, and neither is stretched to the other */
+.pw-back {
+  display: block;
+  height: 100%;
+  width: auto;
+  max-width: 100%;
+  object-fit: contain;
+  user-select: none;
+  -webkit-user-drag: none;
+}
+/* a card is being dragged onto your seat */
 .pw-seat-slot.over {
-  border-color: var(--pw-bull);
-  box-shadow: 0 0 0 2px rgba(47,230,194,.25), 0 0 22px rgba(47,230,194,.35);
+  box-shadow: 0 0 0 2px rgba(47,230,194,.3), 0 0 26px rgba(47,230,194,.45);
   transform: scale(1.04);
 }
 .pw-seat-cap {
@@ -5223,40 +5225,7 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   overflow: hidden; text-overflow: ellipsis; white-space: nowrap;
 }
 
-.pw-back {
-  position: relative;
-  display: flex; flex-direction: column;
-  align-items: center; justify-content: flex-end;
-  height: var(--pw-card-h, 118px);
-  aspect-ratio: 249 / 334;
-  padding-bottom: 12%;
-  border: 1.5px solid var(--pw-bear);
-  border-radius: 10px;
-  background:
-    radial-gradient(120% 80% at 50% 30%, rgba(255,60,90,.14), transparent 70%),
-    linear-gradient(165deg, rgba(20,6,14,.96), rgba(6,8,20,.96));
-  overflow: hidden;
-}
-.pw-back.bull { border-color: var(--pw-bull);
-  background:
-    radial-gradient(120% 80% at 50% 30%, rgba(47,230,194,.14), transparent 70%),
-    linear-gradient(165deg, rgba(5,20,18,.96), rgba(6,8,20,.96)); }
-.pw-back-art {
-  position: absolute;
-  left: 8%; right: 8%; top: 8%; bottom: 26%;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: contain;
-  background-image: url("../assets/pointaeway/flank-bear.png");
-  opacity: .8;
-}
-.pw-back.bull .pw-back-art { background-image: url("../assets/pointaeway/flank-bull.png"); }
-.pw-back-word {
-  position: relative;
-  font-size: calc(8px * var(--fs));
-  font-weight: 800; letter-spacing: .2em; text-transform: uppercase;
-  color: #C7D9EF;
-}
+
 
 
 /* ---- the meter, upright ----

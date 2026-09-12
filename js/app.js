@@ -4024,11 +4024,13 @@
      across it. Same for the flanks and the empty slot's watermark, all three
      cut from the card illustrations so nothing on this screen is in a
      different hand from the deck. */
-  function pwBackHTML(side, cls) {
-    return `<div class="pw-back ${side}${cls ? " " + cls : ""}" aria-hidden="true">
-      <span class="pw-back-art"></span>
-      <span class="pw-back-word">Pointæway</span>
-    </div>`;
+  /* The card back is finished artwork now — frame, character and ground all
+     in the picture — so nothing is drawn around it or over it. Each side has
+     its own, and a seat shows the back of whoever sits in it. */
+  function pwBackHTML(side) {
+    const sd = side === "bear" ? "bear" : "bull";
+    return `<img class="pw-back ${sd}" src="assets/pointaeway/back-${sd}.png"
+                 alt="" draggable="false">`;
   }
 
   /* The meter, upright: +25 at the top, −25 at the bottom, the print in the
@@ -4069,7 +4071,7 @@
       <div class="pw-seat you">
         <span class="pw-seat-tag you">You</span>
         <div class="pw-seat-slot${pw.playerPlayed ? " filled" : ""}" data-pw-drop>
-          ${pw.playerPlayed ? pwCardHTML(pw.playerPlayed, {}) : ""}
+          ${pw.playerPlayed ? pwCardHTML(pw.playerPlayed, {}) : pwBackHTML(pw.playerSide)}
         </div>
         <span class="pw-seat-cap">${esc(youHint)}</span>
       </div>
