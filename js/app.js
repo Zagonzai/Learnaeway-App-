@@ -4148,6 +4148,79 @@
     </div>`;
   }
 
+  /* ---- the way in ----
+     The four things worth knowing before a first match. Three of the icons
+     came with the art; the fourth did not — the file named for it holds the
+     wordmark instead — so the stacked deck is drawn here in the same weight
+     and colour as its neighbours rather than left out.
+
+     The deck's count is the deck's own: five copies of each of five candles a
+     side is fifty, and the wild pile is ten. */
+  const PW_DECK_SVG =
+    `<svg class="pw-feat-svg" viewBox="0 0 34 34" fill="none" aria-hidden="true">
+       <rect x="4.5" y="8.5" width="17" height="22" rx="3.2" stroke="currentColor"
+             stroke-width="2.1" opacity=".55"/>
+       <rect x="11.5" y="4.5" width="17" height="22" rx="3.2" stroke="currentColor"
+             stroke-width="2.1"/>
+     </svg>`;
+  const PW_INTRO = "assets/pointaeway/intro/";
+  const PW_FEATS = [
+    { art: null,       title: "Build Your Deck",     sub: "50 Candle Cards · 10 Effect Cards" },
+    { art: "ico-wild", title: "Play Wild Cards",     sub: "Turn the tide with strategy" },
+    { art: "ico-25",   title: "First to 25 Wins",    sub: "Every card makes a move" },
+    { art: "ico-learn",title: "Learn While You Play",sub: "Master candles through action" },
+  ];
+
+  function pwIntroHTML() {
+    return `
+      <div class="pw-intro">
+        <img class="pw-wordmark" src="${PW_INTRO}wordmark.png" alt="Pointæway">
+        <img class="pw-subtitle" src="${PW_INTRO}subtitle.png" alt="Candle card battle">
+        <p class="pw-tagline">Draw, choose, reveal. Every round the candle moves —
+          first side to push it ${PW_TARGET} points their way wins the day.</p>
+
+        <div class="pw-rule"><span>Pick your side</span></div>
+
+        ${/* each card is one finished picture — art, name, target and its own
+              button are all in it, so the picture is the button */""}
+        <div class="pw-picks">
+          <button type="button" class="pw-pick" data-pw-side="bull">
+            <img src="${PW_INTRO}card-bull.png" alt="Trade as Bull — push up to +${PW_TARGET}">
+          </button>
+          <button type="button" class="pw-pick" data-pw-side="bear">
+            <img src="${PW_INTRO}card-bear.png" alt="Trade as Bear — push down to −${PW_TARGET}">
+          </button>
+        </div>
+
+        <div class="pw-feats">
+          ${PW_FEATS.map((f) => `<div class="pw-feat">
+            <span class="pw-feat-ico">${f.art
+              ? `<img src="${PW_INTRO}${f.art}.png" alt="">` : PW_DECK_SVG}</span>
+            <b class="pw-feat-title">${esc(f.title)}</b>
+            <span class="pw-feat-sub">${esc(f.sub)}</span>
+          </div>`).join("")}
+        </div>
+
+        ${/* the app's own pill, not a one-off: this is the same control the
+              rest of Æway uses, with the set's dice on it */""}
+        <button type="button" class="g-pill pw-random-btn" data-pw-random>
+          <img src="${PW_INTRO}ico-dice.png" alt="">
+          <span>Pick My Side for Me</span>
+        </button>
+
+        ${/* built live rather than dropped in as the finished pill: it says two
+              different things depending on whether the list is open, and a
+              picture of one of them cannot say the other */""}
+        <button type="button" class="pw-wilds-btn" data-pw-legend
+                aria-expanded="${pw.showLegend}">
+          <img src="${PW_INTRO}ico-info.png" alt="">
+          <span>${pw.showLegend ? "Hide wild cards" : "How wild cards work"}</span>
+        </button>
+        ${pw.showLegend ? pwLegendHTML() : ""}
+        ${pwSpinHTML()}
+      </div>`;
+  }
+
   function renderPointaeway() {
     barTitle.textContent = "Pointæway";
     const pickName = document.querySelector("#pickBar .pick-name");
@@ -4156,22 +4229,7 @@
 
     cardScroll.classList.remove("pw-playing");
     if (pw.phase === "setup") {
-      cardScroll.innerHTML = `
-        <div class="pw-setup">
-          <div class="pw-kicker">Pointæway</div>
-          <div class="pw-lede">Draw, choose, reveal. Every round the candle moves —
-            first side to push it ${PW_TARGET} points their way wins the day.
-            Pick your side to shuffle in.</div>
-          <div class="pw-sides">
-            <button class="pw-side bull" data-pw-side="bull">
-              ${pwCandleSvg(pwTiers("bull")[0], "bull", 42)}<span>Trade as Bull</span></button>
-            <button class="pw-side bear" data-pw-side="bear">
-              ${pwCandleSvg(pwTiers("bear")[0], "bear", 42)}<span>Trade as Bear</span></button>
-          </div>
-          <button class="pw-ghost" data-pw-legend>${pw.showLegend ? "Hide wild cards" : "How wild cards work"}</button>
-          ${pw.showLegend ? pwLegendHTML() : ""}
-          ${pwSpinHTML()}
-        </div>`;
+      cardScroll.innerHTML = pwIntroHTML();
       /* The picker sits below the legend button, which on a 667pt screen puts
          it under the fold — and STOP is a timing button, so it has to be on
          screen the moment it exists, not something to go looking for. Setting
