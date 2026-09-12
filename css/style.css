@@ -4844,6 +4844,149 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 .pw-c-wild { color: var(--pw-wild); }
 
 /* ---- setup ---- */
+/* ---- the way in ----
+   Wordmark, tagline, the two side cards, what the game is, and the two ways
+   past it. The side cards are finished pictures — art, name, target and their
+   own button baked in — so each picture is the button and nothing is drawn
+   over it. The two were exported at slightly different proportions (the
+   bull's frame is 0.85 to the bear's 0.88), so they are matched on HEIGHT:
+   their own buttons then sit on one line, which is what the eye checks. */
+.pw-intro { text-align: center; padding: 6px 4px 4px; }
+.pw-wordmark {
+  display: block;
+  width: min(82%, 300px);
+  height: auto;
+  margin: 2px auto 0;
+}
+.pw-subtitle {
+  display: block;
+  width: min(66%, 232px);
+  height: auto;
+  margin: 3px auto 0;
+}
+.pw-tagline {
+  margin: 9px auto 0;
+  max-width: 34em;
+  font-size: calc(12px * var(--fs));
+  line-height: 1.5;
+  color: var(--pw-muted);
+}
+/* the label with a rule running out of it either side */
+.pw-rule {
+  display: flex; align-items: center; gap: 10px;
+  margin: 12px 2px 10px;
+}
+.pw-rule::before, .pw-rule::after {
+  content: "";
+  flex: 1 1 auto;
+  height: 1px;
+}
+.pw-rule::before { background: linear-gradient(90deg, transparent, var(--pw-bull)); }
+.pw-rule::after  { background: linear-gradient(90deg, var(--pw-bear), transparent); }
+.pw-rule span {
+  flex: 0 0 auto;
+  font-size: calc(11px * var(--fs));
+  font-weight: 800; letter-spacing: .26em; text-transform: uppercase;
+  color: #9FD9FF;
+}
+
+.pw-picks {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  align-items: end;
+  gap: 10px;
+}
+.pw-pick {
+  display: block;
+  padding: 0; border: 0; background: none;
+  -webkit-tap-highlight-color: transparent;
+  transition: transform .14s ease, filter .14s ease;
+  container-type: inline-size;
+}
+.pw-pick img {
+  display: block;
+  /* Height, not width, so the pair matches and their buttons land on one
+     line — but bounded by the column as well, or the taller of the two runs
+     straight out of it. 1.1327 is the wider card's height per unit width, so
+     sizing both to it keeps the wider one exactly inside its column and the
+     narrower one a few pixels in from its own. */
+  height: min(clamp(168px, 27vh, 250px), calc(100cqw * 1.1327));
+  width: auto;
+  margin: 0 auto;
+}
+@supports not (width: 1cqw) {
+  .pw-pick img { height: auto; width: 100%; }
+}
+.pw-pick:active { transform: translateY(-3px) scale(1.03); filter: brightness(1.12); }
+
+/* what the game is, four at a time. Two across on a phone column and four on
+   the desktop one — four across a 366px column leaves 91px a box, which is
+   not enough for "Learn While You Play" and a line of subtext under it. */
+/* Two across, not the reference's four. The centre column is a phone's width
+   on every screen this app runs on — four boxes across it leaves about 90px
+   each, which is not enough for "Learn While You Play" and a line under it.
+   All four boxes, two at a time. */
+.pw-feats {
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 8px;
+  margin: 14px 0 4px;
+}
+.pw-feat {
+  display: flex; flex-direction: column; align-items: center; gap: 3px;
+  padding: 10px 8px;
+  border: 1px solid rgba(90,170,255,.3);
+  border-radius: 12px;
+  background: rgba(6,14,34,.5);
+}
+.pw-feat-ico { display: block; height: 30px; line-height: 0; color: #35BFFF; }
+.pw-feat-ico img { height: 100%; width: auto; display: block; }
+.pw-feat-svg {
+  height: 100%; width: auto; display: block;
+  filter: drop-shadow(0 0 5px rgba(53,191,255,.65));
+}
+.pw-feat-title {
+  margin-top: 3px;
+  font-size: calc(11px * var(--fs));
+  font-weight: 800;
+  color: var(--text);
+}
+.pw-feat-sub {
+  font-size: calc(10px * var(--fs));
+  line-height: 1.35;
+  color: var(--pw-muted);
+  /* the deck's two counts run to two lines; balanced they break between the
+     counts rather than leaving "Cards" on a line by itself */
+  text-wrap: balance;
+}
+
+.pw-random-btn {
+  display: flex; align-items: center; justify-content: center; gap: 11px;
+  width: min(86%, 320px);
+  height: 54px;
+  margin: 14px auto 0;
+  font-size: calc(12.5px * var(--fs));
+  font-weight: 800; letter-spacing: .14em; text-transform: uppercase;
+  color: #EAF6FF;
+}
+.pw-random-btn img { height: 22px; width: auto; display: block; }
+.pw-random-btn:active { transform: scale(.97); filter: brightness(1.25); }
+
+.pw-wilds-btn {
+  display: flex; align-items: center; justify-content: center; gap: 9px;
+  width: min(70%, 260px);
+  margin: 10px auto 0;
+  padding: 8px 14px;
+  border: 1px solid rgba(90,170,255,.45);
+  border-radius: 999px;
+  background: rgba(6,14,34,.5);
+  font-size: calc(11.5px * var(--fs));
+  font-weight: 700;
+  color: #C7D9EF;
+}
+.pw-wilds-btn img { height: 17px; width: auto; display: block; }
+.pw-wilds-btn:active { filter: brightness(1.4); }
+
 .pw-setup { text-align: center; padding: 8px 4px 4px; }
 .pw-kicker {
   font-size: calc(10.5px * var(--fs));
