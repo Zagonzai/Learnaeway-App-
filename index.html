@@ -301,19 +301,29 @@
         </div>
         <!-- idle, the way in is one pill in a dock under the clip. The dock
              carries no frame of its own: the pill is the shape. -->
+        <!-- the same dock, in the same place, whatever state the screen is
+             in: the way in, then the way through. Its box never moves. -->
         <div class="login-dock">
           <button type="button" id="loginOpenBtn" class="g-pill login-open">Login / Sign Up</button>
+          <button type="submit" form="authForm" id="loginSubmit"
+                  class="g-pill login-open auth-submit-dock hidden"></button>
         </div>
       </div>
 
       <!-- desktop pre-login dock: the five app icons are post-login only, so
            while logged out the centre column's dock carries one Log In
            shortcut instead, available in every pre-login state. -->
+      <!-- One dock, two states. Closed it opens the form; open it IS the
+           form's submit — the button is outside the <form>, so it names its
+           owner and the browser treats it as that form's submit button,
+           implicit Enter included. -->
       <div id="introDock" class="intro-dock hidden">
-        <button type="button" class="intro-dock-btn" data-intro="login">
+        <button type="button" id="introLoginBtn" class="intro-dock-btn" data-intro="login">
           <img src="assets/nav-icons/icon-user@2x.png" alt="">
           <span>Log In</span>
         </button>
+        <button type="submit" form="authForm" id="introSubmit"
+                class="intro-dock-btn auth-submit-dock hidden"></button>
       </div>
     </div>
   </div>
