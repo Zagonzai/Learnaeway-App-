@@ -3199,35 +3199,38 @@
          own classification overwrite the engine's `kind`, which silently broke
          every special in the deck; the card's own is `effect`. */
 
-  /* The two decks are not recolours of each other. The same candle means
-     different things depending on which way the market is read, so each side
-     has its own names — and two shapes appear on both sides at opposite
-     values: small body high with a long lower wick is the bull's 4-point
-     Hammer and the bear's 4-point Hanging Man; small body low with a long
-     upper wick is the bull's 1-point Inverted Hammer and the bear's 1-point
-     Shooting Star. Name, shape and points therefore have to be looked up
-     together, per side — there is no shared shape-to-points mapping.
+  /* Six ranks a side, five down to nought, and the two sides mirror each
+     other rank for rank — the names on the faces are these names, so what the
+     round log and the Seen panel say is what the card says.
 
-     The bear's two ranks read the other way round before the illustrated deck
-     landed: Shooting Star was the 4 and Hanging Man the 1. The card faces
-     carry their strength in the artwork — bear-4-hanging-man prints a 4 —
-     so the art is what these follow now. The deck is unchanged by it: still
-     five copies each of 5, 4, 3, 2 and 1 a side, with the same shapes; only
-     which of the two names carries which number has moved. */
+     A Null scores nothing. It is a card like any other, not a discard: it can
+     only ever tie the other side's Null, because any rank above it wins, and
+     an equal score is already a wash that spends both cards. Nothing else in
+     the engine needed a word changing for it.
+
+     The bear's 4 and 1 read the other way round for a while — the previous
+     art printed Hanging Man on the 4 — and this set settles it: Shooting Star
+     is the 4 again and the 1 is Weak Rejection, matching the bull's. There is
+     no Hanging Man in the deck now.
+
+     Shapes are not carried here any more. They drove a drawn candle icon that
+     the illustrated faces replaced; the faces are the shapes. */
   const PW_TIERS_BY_SIDE = {
     bull: [
-      { type: "Bullish Marubozu",     pts: 5, body: 0.92, up: 0.02, down: 0.02 },
-      { type: "Hammer",               pts: 4, body: 0.28, up: 0.06, down: 0.58 },
-      { type: "Standard",             pts: 3, body: 0.46, up: 0.22, down: 0.22 },
-      { type: "Bullish Spinning Top", pts: 2, body: 0.18, up: 0.36, down: 0.36 },
-      { type: "Inverted Hammer",      pts: 1, body: 0.28, up: 0.58, down: 0.06 },
+      { type: "Bullish Marubozu",       pts: 5 },
+      { type: "Bullish Hammer",         pts: 4 },
+      { type: "Bullish Standard",       pts: 3 },
+      { type: "Bullish Spinning Top",   pts: 2 },
+      { type: "Bullish Weak Rejection", pts: 1 },
+      { type: "Bullish Null",           pts: 0 },
     ],
     bear: [
-      { type: "Bearish Marubozu",     pts: 5, body: 0.92, up: 0.02, down: 0.02 },
-      { type: "Hanging Man",          pts: 4, body: 0.28, up: 0.06, down: 0.58 },
-      { type: "Standard",             pts: 3, body: 0.46, up: 0.22, down: 0.22 },
-      { type: "Bearish Spinning Top", pts: 2, body: 0.18, up: 0.36, down: 0.36 },
-      { type: "Shooting Star",        pts: 1, body: 0.28, up: 0.58, down: 0.06 },
+      { type: "Bearish Marubozu",       pts: 5 },
+      { type: "Bearish Shooting Star",  pts: 4 },
+      { type: "Bearish Standard",       pts: 3 },
+      { type: "Bearish Spinning Top",   pts: 2 },
+      { type: "Bearish Weak Rejection", pts: 1 },
+      { type: "Bearish Null",           pts: 0 },
     ],
   };
   const pwTiers = (side) => PW_TIERS_BY_SIDE[side] || PW_TIERS_BY_SIDE.bull;
@@ -3284,7 +3287,7 @@
     const cards = [];
     pwTiers(side).forEach((t) => {
       for (let i = 0; i < PW_TIER_COPIES; i++) {
-        cards.push({ id: pwId(), side, kind: "tier", type: t.type, pts: t.pts, visual: t });
+        cards.push({ id: pwId(), side, kind: "tier", type: t.type, pts: t.pts });
       }
     });
     return cards;
@@ -3876,30 +3879,6 @@
 
   /* ---- drawing ---- */
 
-  /* The icon is the tier's real shape: body and wick lengths come straight
-     from the tier data, so a Hammer reads as a hammer at 30px. */
-  function pwCandleSvg(visual, side, size) {
-    const cls = side === "bull" ? "pw-c-bull" : side === "bear" ? "pw-c-bear" : "pw-c-wild";
-    if (!visual) {
-      return `<svg class="${cls}" width="${size}" height="${size}" viewBox="0 0 40 40" aria-hidden="true">
-        <polyline points="4,24 12,10 18,28 24,6 30,22 36,14" fill="none"
-          stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"/></svg>`;
-    }
-    const h = size, w = size * 0.42, cx = size / 2;
-    const bodyH = Math.max(2, visual.body * h * 0.9);
-    const upH = visual.up * h * 0.9;
-    const downH = visual.down * h * 0.9;
-    const top = (h - bodyH) / 2;
-    return `<svg class="${cls}" width="${size}" height="${h}" aria-hidden="true">
-      <line x1="${cx}" y1="${top - upH}" x2="${cx}" y2="${top}" stroke="currentColor" stroke-width="2"/>
-      <line x1="${cx}" y1="${top + bodyH}" x2="${cx}" y2="${top + bodyH + downH}" stroke="currentColor" stroke-width="2"/>
-      <rect x="${cx - w / 2}" y="${top}" width="${w}" height="${bodyH}" fill="currentColor" rx="1.5"/></svg>`;
-  }
-
-  /* How many of that tier the player still holds anywhere they can reach it —
-     deck plus hand, the card itself included. Five exist; play two and never
-     get them back and this reads 3. Counting both places rather than tracking
-     "played" keeps it right through a tie, which puts a card back. */
   function pwTierLeft(type) {
     let n = 0;
     const count = (c) => { if (c.kind === "tier" && c.type === type) n++; };
@@ -3916,18 +3895,20 @@
   const PW_ART = "assets/pointaeway/cards/";
   const PW_TIER_ART = {
     bull: {
-      "Bullish Marubozu": "bull-5-bullish-marubozu",
-      "Hammer": "bull-4-hammer",
-      "Standard": "bull-3-standard",
-      "Bullish Spinning Top": "bull-2-bullish-spinning-top",
-      "Inverted Hammer": "bull-1-inverted-hammer",
+      "Bullish Marubozu": "bull-marubozu-str5",
+      "Bullish Hammer": "bull-hammer-str4",
+      "Bullish Standard": "bull-standard-str3",
+      "Bullish Spinning Top": "bull-spinning-top-str2",
+      "Bullish Weak Rejection": "bull-weak-rejection-str1",
+      "Bullish Null": "bull-null-str0",
     },
     bear: {
-      "Bearish Marubozu": "bear-5-bearish-marubozu",
-      "Hanging Man": "bear-4-hanging-man",
-      "Standard": "bear-3-standard",
-      "Bearish Spinning Top": "bear-2-bearish-spinning-top",
-      "Shooting Star": "bear-1-shooting-star",
+      "Bearish Marubozu": "bear-marubozu-str5",
+      "Bearish Shooting Star": "bear-shooting-star-str4",
+      "Bearish Standard": "bear-standard-str3",
+      "Bearish Spinning Top": "bear-spinning-top-str2",
+      "Bearish Weak Rejection": "bear-weak-rejection-str1",
+      "Bearish Null": "bear-null-str0",
     },
   };
   const PW_SPECIAL_ART = {
@@ -4127,7 +4108,7 @@
      </svg>`;
   const PW_INTRO = "assets/pointaeway/intro/";
   const PW_FEATS = [
-    { art: null,       title: "Build Your Deck",     sub: "50 Candle Cards · 10 Effect Cards" },
+    { art: null,       title: "Build Your Deck",     sub: "60 Candle Cards · 10 Effect Cards" },
     { art: "ico-wild", title: "Play Wild Cards",     sub: "Turn the tide with strategy" },
     { art: "ico-25",   title: "First to 25 Wins",    sub: "Every card makes a move" },
     { art: "ico-learn",title: "Learn While You Play",sub: "Master candles through action" },
