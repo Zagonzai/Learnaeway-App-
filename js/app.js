@@ -3516,6 +3516,7 @@
          pw.log is prose, and the track only ever holds the latest figure. */
       chart: [],
       showMatch: false,     // the chart, in the result screen's own slot
+      showRound: null,      // which round's reveal is open under the row
       discipline: null,     // a peek in progress: the Discipline card and theirs
       tp: null,             // a Take Profit waiting on the double-up answer
       aiDoubledUp: null,    // the card the AI spent doubling its own Take Profit
@@ -3759,7 +3760,14 @@
        question and come back (the draw choice and the Take Profit double-up).
        A wash opens and closes at the same figure, which is a doji, and that is
        the right thing for the chart to show. */
-    pw.chart.push({ round: pw.round, open: pw.candle, close: newCandle });
+    pw.chart.push({
+      round: pw.round, open: pw.candle, close: newCandle,
+      /* Copied, not referenced: a Class-A wash hands the untouched card back
+         to its owner to be played again, so the same object can turn up in a
+         later round. The replay has to show what was on the table in THIS
+         one. */
+      you: Object.assign({}, pCard), opp: Object.assign({}, aCard),
+    });
     pw.log = result.log.concat(pw.log);
 
     /* An opponent tier card, once seen, is known for the rest of the match —
@@ -4073,7 +4081,21 @@
      began and closes where it stood when the round ended, so a round won is a
      body in that side's colour and a wash is a doji. Drawn as plain elements
      rather than SVG — a body and a wick each, positioned as percentages of the
-     same -25..+25 scale the track uses, so the chart and the meter agree. */
+     same -25..+25 scale the track uses, so the chart and the meter agree.
+
+     Under it, one chip per round in the same order and the same colour, and
+     both are the same control: tapping either the candle or its chip opens
+     that round's reveal, and tapping it again closes it. They line up because
+     they are two flex rows inside one scroller with the same per-column basis
+     — column n of the chart is column n of the row, at every round count. */
+
+  /* what a round's colour says: a wild on the table is the thing that happened
+     that round, whichever way the print then moved */
+  function pwRoundTone(r) {
+    if (r.you.side === "special" || r.opp.side === "special") return "wild";
+    return r.close === r.open ? "flat" : r.close > r.open ? "bull" : "bear";
+  }
+
   function pwMatchChartHTML() {
     const rows = pw.chart;
     if (!rows.length) {
@@ -4081,28 +4103,98 @@
     }
     const span = PW_TARGET * 2;                 // -25 .. +25
     const pct = (v) => ((PW_TARGET - v) / span) * 100;   // 0% is the top
+    const open = pw.showRound;
+
     const bars = rows.map((r) => {
-      const up = r.close > r.open, flat = r.close === r.open;
       const hi = Math.max(r.open, r.close), lo = Math.min(r.open, r.close);
       const top = pct(hi), bot = pct(lo);
-      const cls = flat ? "flat" : up ? "bull" : "bear";
       /* a doji still needs to be visible, so it keeps a hairline body */
       const h = Math.max(bot - top, 0.9);
-      return `<span class="pw-cndl ${cls}" style="--t:${top.toFixed(2)}%;--h:${h.toFixed(2)}%"
-                    title="Round ${r.round}: ${pwSigned(r.open)} → ${pwSigned(r.close)}"></span>`;
+      const tone = r.close === r.open ? "flat" : r.close > r.open ? "bull" : "bear";
+      return `<button type="button" class="pw-cndl ${tone}${open === r.round ? " on" : ""}"
+                      style="--t:${top.toFixed(2)}%;--h:${h.toFixed(2)}%"
+                      data-pw-round="${r.round}" aria-pressed="${open === r.round}"
+                      aria-label="Round ${r.round}, ${pwSigned(r.open)} to ${pwSigned(r.close)}"
+                      title="Round ${r.round}: ${pwSigned(r.open)} → ${pwSigned(r.close)}"></button>`;
     }).join("");
+
+    /* Past twenty rounds a column is too narrow to carry its own number, so
+       the numbers thin to every fifth (plus the first and the last, which are
+       the two anyone looks for). The chip itself stays: it is the tap target
+       and it still carries the round's colour. */
+    const dense = rows.length <= 20;
+    const chips = rows.map((r, i) => {
+      const tone = pwRoundTone(r);
+      const label = dense || r.round % 5 === 0 || i === 0 || i === rows.length - 1;
+      return `<button type="button" class="pw-chip ${tone}${open === r.round ? " on" : ""}"
+                      data-pw-round="${r.round}" aria-pressed="${open === r.round}"
+                      aria-label="Round ${r.round} cards">
+        <span class="pw-chip-face">${tone === "wild"
+          ? `<i class="pw-chip-wild"></i>`
+          : `<i class="pw-chip-candle"></i>`}</span>
+        <span class="pw-chip-n">${label ? r.round : ""}</span>
+      </button>`;
+    }).join("");
+
+    const sel = open != null ? rows.find((r) => r.round === open) : null;
     return `
       <div class="pw-chart">
         <div class="pw-chart-head">
           <span>Match Replay</span>
           <span class="pw-chart-n">${rows.length} round${rows.length === 1 ? "" : "s"}</span>
         </div>
-        <div class="pw-chart-plot">
-          <span class="pw-chart-grid top">+${PW_TARGET}</span>
-          <span class="pw-chart-grid mid">OPEN</span>
-          <span class="pw-chart-grid bot">−${PW_TARGET}</span>
-          <div class="pw-chart-bars">${bars}</div>
+        ${/* the axis and the row's caption stay put; only the columns scroll,
+              and they scroll as one so a candle never drifts off its chip */""}
+        <div class="pw-chart-body">
+          <div class="pw-chart-axis">
+            <div class="pw-chart-ends">
+              <span>+${PW_TARGET}</span><span>OPEN</span><span>−${PW_TARGET}</span>
+            </div>
+            <div class="pw-chart-rowcap">Cards<br>Played</div>
+          </div>
+          <div class="pw-chart-track" style="--pw-cols:${rows.length}">
+            <div class="pw-chart-plot"><div class="pw-chart-bars">${bars}</div></div>
+            <div class="pw-chip-row${dense ? "" : " sparse"}">${chips}</div>
+          </div>
         </div>
+        ${sel ? pwRevealHTML(sel) : ""}
+      </div>`;
+  }
+
+  /* ---- one round, opened up ----
+     The pair that made that round's print, in the same order and the same
+     component the table itself uses — the seats on the match screen are YOU on
+     the left and OPP on the right, and this keeps that so the replay reads as
+     the round being played again rather than as a different object. */
+  function pwRevealHTML(r) {
+    const delta = r.close - r.open;
+    const tone = delta === 0 ? "flat" : delta > 0 ? "bull" : "bear";
+    /* the tags sit BESIDE the cards, not above them: this panel has to share a
+       phone screen with the chart it belongs to, and a line of its own for
+       YOU and OPP is a line the chart loses */
+    const side = (card) => `
+      <div class="pw-reveal-side">
+        <div class="pw-reveal-card">${pwCardHTML(card, { small: true })}</div>
+        <span class="pw-reveal-name">${esc(card.type)}</span>
+      </div>`;
+    return `
+      <div class="pw-reveal">
+        <div class="pw-reveal-head">
+          <span class="pw-reveal-title">Round ${r.round} Reveal</span>
+          ${/* item 5 asks for the round's net print; the mockup does not show
+                it, so it rides here as a small chip rather than a line */""}
+          <span class="pw-reveal-delta ${tone}">${pwSigned(delta)}</span>
+          <button type="button" class="pw-reveal-x" data-pw-round-close
+                  aria-label="Close the reveal">×</button>
+        </div>
+        <div class="pw-reveal-row">
+          <span class="pw-reveal-tag you">You</span>
+          ${side(r.you)}
+          <span class="pw-reveal-vs" aria-hidden="true">VS</span>
+          ${side(r.opp)}
+          <span class="pw-reveal-tag opp">Opp</span>
+        </div>
+        <div class="pw-reveal-cap">These cards created this print</div>
       </div>`;
   }
 
@@ -4306,7 +4398,7 @@
     if (pickName) pickName.textContent = "Cool Down Game";
     cardFooter.style.display = "none";
 
-    cardScroll.classList.remove("pw-playing", "pw-introing", "pw-overing");
+    cardScroll.classList.remove("pw-playing", "pw-introing", "pw-overing", "pw-revealing");
     if (pw.phase === "setup") {
       /* the whole way in has to sit in one view, so the scroller becomes a
          fixed-height column here too and the two cards take up the slack */
@@ -4321,6 +4413,8 @@
          a fixed-height column and the scene takes what the rows above and
          below leave, so the whole result sits in one view */
       cardScroll.classList.add("pw-overing");
+      /* the one state that may need more than a view: see .pw-revealing */
+      cardScroll.classList.toggle("pw-revealing", pw.showRound != null);
       cardScroll.innerHTML = pwOverHTML();
       cardScroll.scrollTop = 0;
       return;
@@ -9690,7 +9784,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -10031,7 +10125,20 @@
     }
     /* the chart takes the art's slot rather than opening over it — nothing in
        this app arrives as a panel on a dimmed screen */
-    else if (t.hasAttribute("data-pw-match")) { pw.showMatch = !pw.showMatch; renderPointaeway(); }
+    else if (t.hasAttribute("data-pw-match")) {
+      pw.showMatch = !pw.showMatch;
+      pw.showRound = null;      // a reveal belongs to the chart it was opened from
+      renderPointaeway();
+    }
+    /* the candle and its chip are one control: tapping either opens that
+       round, tapping the open one closes it, and opening another closes the
+       first because only the selected round is ever rendered */
+    else if (t.hasAttribute("data-pw-round")) {
+      const n = Number(t.getAttribute("data-pw-round"));
+      pw.showRound = pw.showRound === n ? null : n;
+      renderPointaeway();
+    }
+    else if (t.hasAttribute("data-pw-round-close")) { pw.showRound = null; renderPointaeway(); }
     else if (t.hasAttribute("data-pw-home")) { pwAbort(); openGames(); }
     else if (t.hasAttribute("data-pk-build")) openBuildMatch();
     else if (t.hasAttribute("data-pk-replay")) {

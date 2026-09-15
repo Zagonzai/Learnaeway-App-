@@ -5905,11 +5905,16 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 /* ---- the match as a chart ----
    Takes the scene's slot when View Match is on. One candle per round on the
    same −25..+25 scale the track uses, so a body's height is the ground that
-   round took. */
+   round took — and one chip per round underneath it, in the same order and
+   the same colour. */
 .pw-chart {
   display: flex;
   flex-direction: column;
-  min-height: 0;
+  flex: 1 1 auto;
+  /* deliberately NOT min-height:0. The chart may shrink as far as its own
+     content allows — plot floor, a whole chip row, and the reveal if one is
+     open — and no further. Past that the screen scrolls (.pw-revealing)
+     rather than the buttons being slid under the panel. */
   margin: 2px 0 6px;
 }
 .pw-chart-head {
@@ -5920,61 +5925,305 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   margin-bottom: 6px;
 }
 .pw-chart-n { color: #6E86A6; letter-spacing: .1em; }
+
+/* The scale and the row's caption sit outside the scroller so they hold their
+   place; everything that is per-round sits inside it.
+
+   What flexes is the plot. The chart has to fit between the round line and the
+   buttons whether or not a reveal is open below it, and when one opens the
+   room has to come from somewhere — so the plot gives it up and the chip row,
+   which is the thing being pointed at, keeps its height. The axis column is
+   split the same way, ends against plot and caption against row, which is what
+   keeps the labels on their lines as the plot changes height. */
+.pw-chart-body {
+  --pw-row-h: 44px;
+  --pw-plot-min: 90px;
+  flex: 1 1 auto;
+  /* the floor, stated: plot at its smallest plus a whole chip row. A scroll
+     container contributes nothing to its parent's automatic minimum, so
+     without this the body shrinks under its own content and the row lands on
+     top of the reveal. */
+  min-height: calc(var(--pw-plot-min) + var(--pw-row-h));
+  display: flex;
+  align-items: stretch;
+  gap: 6px;
+}
+.pw-chart-axis {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  font-size: calc(7.5px * var(--fs));
+  font-weight: 700; letter-spacing: .06em;
+  color: var(--pw-muted);
+}
+.pw-chart-ends {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex; flex-direction: column; justify-content: space-between;
+  padding: 5px 0;
+  text-align: right;
+}
+.pw-chart-rowcap {
+  flex: 0 0 var(--pw-row-h);
+  display: flex; align-items: center; justify-content: flex-end;
+  text-align: right;
+  line-height: 1.25;
+  text-transform: uppercase;
+}
+/* One scroller, two rows. Both use the same per-column basis, so column n of
+   the chart is column n of the row however many rounds there are — and when a
+   long match outruns the width they slide together rather than apart. */
+.pw-chart-track {
+  flex: 1 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  overflow-x: auto;
+  overflow-y: hidden;
+  min-height: calc(var(--pw-plot-min) + var(--pw-row-h));
+  scrollbar-width: none;
+}
+.pw-chart-track::-webkit-scrollbar { display: none; }
 .pw-chart-plot {
   position: relative;
-  height: clamp(150px, 30vh, 260px);
+  /* no preferred height of its own: the plot is whatever the chart has left
+     after the chip row, and the floor below is how far it may give when a
+     reveal opens underneath */
+  flex: 1 1 auto;
+  min-height: var(--pw-plot-min);
+  min-width: 0;
   border-radius: 12px;
   border: 1px solid var(--pw-line);
   background: rgba(4,7,18,.9);
   background-image: radial-gradient(circle, rgba(143,169,196,.26) 0.5px, transparent 1px);
   background-size: 13px 13px;
-  padding: 8px 8px 8px 34px;
+  padding: 8px;
   overflow: hidden;
 }
-.pw-chart-grid {
-  position: absolute;
-  left: 4px;
-  font-size: calc(7.5px * var(--fs));
-  font-weight: 700; letter-spacing: .06em;
-  color: var(--pw-muted);
-  pointer-events: none;
-}
-.pw-chart-grid.top { top: 5px; }
-.pw-chart-grid.bot { bottom: 5px; }
-.pw-chart-grid.mid { top: 50%; transform: translateY(-50%); }
 /* the zero line the candles are read against */
 .pw-chart-plot::after {
   content: "";
   position: absolute;
-  left: 34px; right: 8px; top: 50%;
+  left: 8px; right: 8px; top: 50%;
   border-top: 1px dashed rgba(143,169,196,.3);
   pointer-events: none;
 }
-.pw-chart-bars {
-  position: relative;
-  height: 100%;
+.pw-chart-bars,
+.pw-chip-row {
   display: flex;
   align-items: stretch;
-  gap: 1px;
+  gap: 2px;
+  width: 100%;
 }
+.pw-chart-bars { position: relative; height: 100%; }
+.pw-chip-row { flex: 0 0 var(--pw-row-h); padding: 6px 8px 0; align-items: stretch; }
+/* The one number both rows are laid out on. They compress rather than scroll:
+   the whole point of the chart is the whole match at a glance, and a long one
+   pushed half of itself off the edge. The columns get thin instead, and the
+   row's numbers thin out with them — see .pw-chip-row.sparse. */
+.pw-cndl,
+.pw-chip { flex: 1 1 0; min-width: 4px; }
+
 .pw-cndl {
   position: relative;
-  flex: 1 1 0;
-  min-width: 1px;
+  background: none;
+  border: 0;
+  padding: 0;
 }
 /* the body: placed by percentage of the plot, which is the same scale end to
    end, so every candle in the run is directly comparable */
 .pw-cndl::before {
   content: "";
   position: absolute;
-  left: 0; right: 0;
+  left: 2px; right: 2px;
   top: var(--t); height: var(--h);
   min-height: 1.5px;
   border-radius: 1px;
 }
+/* the leader down to this round's chip. It stops at the plot's floor — the
+   box clips — but the chip sits directly under it, so the eye carries it. */
+.pw-cndl::after {
+  content: "";
+  position: absolute;
+  left: 50%;
+  top: calc(var(--t) + var(--h));
+  bottom: 0;
+  border-left: 1px dashed rgba(143,169,196,.2);
+  pointer-events: none;
+}
 .pw-cndl.bull::before { background: var(--pw-bull); }
 .pw-cndl.bear::before { background: var(--pw-bear); }
 .pw-cndl.flat::before { background: #6E86A6; }
+.pw-cndl.on::before { box-shadow: 0 0 0 1.5px #EAF6FF, 0 0 10px rgba(234,246,255,.6); }
+.pw-cndl.on::after { border-left-color: rgba(234,246,255,.75); }
+.pw-cndl:active::before { filter: brightness(1.4); }
+
+/* ---- the cards played ----
+   One chip a round, carrying that round's colour and its number. A wild on
+   the table is the thing that happened that round, so it takes the wild
+   colour whichever way the print then moved. */
+.pw-chip {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 3px;
+  background: none;
+  border: 0;
+  padding: 0;
+}
+/* a fixed height, not an aspect: a long match makes the columns narrow, and a
+   chip that kept its proportions there turned into a bead */
+.pw-chip-face {
+  position: relative;
+  width: 100%;
+  min-width: 0;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  border-radius: 3px;
+  border: 1px solid currentColor;
+  background: color-mix(in srgb, currentColor 16%, rgba(4,7,18,.92));
+  box-shadow: 0 0 6px color-mix(in srgb, currentColor 30%, transparent);
+}
+/* a candle, drawn: a wick the height of the face and a body across it */
+.pw-chip-candle {
+  position: relative;
+  width: min(3px, 40%);
+  height: 58%;
+  border-radius: 1px;
+  background: currentColor;
+}
+.pw-chip-candle::before {
+  content: "";
+  position: absolute;
+  left: 50%; top: -22%;
+  width: 1px; height: 144%;
+  transform: translateX(-50%);
+  background: currentColor;
+}
+/* a wild reads as a different kind of thing, not a bigger candle */
+.pw-chip-wild {
+  width: min(9px, 62%);
+  aspect-ratio: 1;
+  background: currentColor;
+  clip-path: polygon(50% 0, 100% 50%, 50% 100%, 0 50%);
+}
+.pw-chip-n {
+  font-size: calc(8px * var(--fs));
+  font-weight: 700;
+  line-height: 1;
+  height: calc(9px * var(--fs));
+  color: var(--pw-muted);
+  font-variant-numeric: tabular-nums;
+  /* a number wider than its column must not stretch the column */
+  overflow: visible;
+  white-space: nowrap;
+}
+.pw-chip.bull { color: var(--pw-bull); }
+.pw-chip.bear { color: var(--pw-bear); }
+.pw-chip.wild { color: var(--pw-wild); }
+.pw-chip.flat { color: #6E86A6; }
+.pw-chip.on .pw-chip-face {
+  border-color: #EAF6FF;
+  box-shadow: 0 0 0 1px #EAF6FF, 0 0 12px color-mix(in srgb, currentColor 60%, transparent);
+}
+.pw-chip.on .pw-chip-n { color: #EAF6FF; }
+.pw-chip:active .pw-chip-face { filter: brightness(1.35); transform: scale(.94); }
+
+/* ---- the round, opened up ----
+   Inline under the row, never over it: this app opens nothing on a dimmed
+   screen. The two cards are the same component the table deals. It is kept
+   deliberately short — it shares the screen with the chart it was opened
+   from, and every line it takes is a line the plot gives up. */
+.pw-reveal {
+  flex: 0 0 auto;
+  margin-top: 6px;
+  padding: 5px 9px 7px;
+  border-radius: 13px;
+  border: 1px solid var(--pw-line);
+  background: rgba(7,11,26,.92);
+}
+.pw-reveal-head {
+  display: flex; align-items: center; gap: 8px;
+  margin-bottom: 3px;
+}
+.pw-reveal-title {
+  flex: 1 1 auto;
+  font-size: calc(9.5px * var(--fs));
+  font-weight: 800; letter-spacing: .16em; text-transform: uppercase;
+  color: #C9DDF2;
+}
+.pw-reveal-delta {
+  flex: 0 0 auto;
+  font-size: calc(11px * var(--fs));
+  font-weight: 800;
+  font-variant-numeric: tabular-nums;
+}
+.pw-reveal-delta.bull { color: var(--pw-bull); }
+.pw-reveal-delta.bear { color: var(--pw-bear); }
+.pw-reveal-delta.flat { color: var(--pw-muted); }
+.pw-reveal-x {
+  flex: 0 0 auto;
+  width: 22px; height: 22px;
+  display: grid; place-items: center;
+  border-radius: 50%;
+  font-size: calc(15px * var(--fs));
+  line-height: 1;
+  color: #9FC0E0;
+  background: none;
+}
+.pw-reveal-x:active { color: #EAF6FF; transform: scale(.9); }
+.pw-reveal-row {
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 5px;
+}
+.pw-reveal-side {
+  flex: 0 1 auto;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 2px;
+}
+.pw-reveal-tag {
+  flex: 0 0 auto;
+  font-size: calc(8.5px * var(--fs));
+  font-weight: 800; letter-spacing: .12em; text-transform: uppercase;
+}
+.pw-reveal-tag.you { color: var(--pw-bull); }
+.pw-reveal-tag.opp { color: var(--pw-bear); }
+/* the card component is sized by its height — its width follows the face's
+   own proportions — so this sets that rather than fighting it with a width */
+.pw-reveal-card { --pw-card-h: clamp(62px, 21vw, 88px); display: flex; }
+.pw-reveal-name {
+  max-width: clamp(58px, 20vw, 82px);
+  font-size: calc(8px * var(--fs));
+  font-weight: 700;
+  line-height: 1.2;
+  text-align: center;
+  color: #9FC0E0;
+}
+.pw-reveal-vs {
+  flex: 0 0 auto;
+  font-size: calc(11px * var(--fs));
+  font-weight: 900; letter-spacing: .06em;
+  color: #EAF6FF;
+  text-shadow: 0 0 10px rgba(61,223,255,.6);
+}
+.pw-reveal-cap {
+  margin-top: 4px;
+  text-align: center;
+  font-size: calc(8.5px * var(--fs));
+  font-weight: 600; letter-spacing: .03em;
+  color: #7FA8CC;
+}
+/* The safety valve. On a tall phone the whole result still sits in one view
+   with a reveal open; on a short one it cannot, and the reveal must not be
+   the thing that gets cut off. Only this state scrolls — the screen without
+   a reveal open is unchanged. */
+.card-scroll.pw-overing.pw-revealing { overflow-y: auto; }
 .pw-chart-empty {
   text-align: center;
   font-size: calc(12px * var(--fs));
