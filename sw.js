@@ -3,7 +3,7 @@
  * deploys show up immediately; only falls back to cache when offline.
  * Heavy binary assets (images) are cache-first since they rarely change.
  */
-const CACHE = "learnaeway-v155";
+const CACHE = "learnaeway-v157";
 
 const SHELL = [
   "./",
@@ -119,7 +119,12 @@ const SHELL = [
    assets/pointaeway/cards/ is absent on the same grounds: twenty-two card
    faces come to 2.3MB, and they are wanted on one screen of one of three games.
    Cache-first keeps each one from the first time it is dealt, so a player who
-   opens Pointæway pays once and nobody else pays at all. */
+   opens Pointæway pays once and nobody else pays at all.
+
+   assets/landing/ is absent for the sharpest version of the same reason: the
+   four pictures are the desktop landing page, and the CSS that names them
+   lives inside the >=1200px query, so a phone never asks for one. Precaching
+   would hand every phone install 860KB it can never display. */
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

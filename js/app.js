@@ -8424,22 +8424,33 @@
      the phone's chart and the desktop panel together. */
   function renderBothCharts() { render(); renderDesktopTools(); }
 
+  /* The landing art. Three of the desktop panels stand empty until someone
+     signs in, and this is what they hold instead: one picture each, filling
+     the panel inside its lit rim. They are written as bare divs and dressed
+     by CSS, and that CSS lives inside the desktop query — so a phone, which
+     runs this function too and gets the same divs, never fetches a single
+     one of the images. */
+  const dtStill = (name) => `<div class="dt-still dt-still-${name}" aria-hidden="true"></div>`;
+
   function renderDesktopTools() {
     const chart = document.querySelector(".dt-panel-chart");
     const wide = document.querySelector(".dt-panel-wide");
+    const square = document.querySelector(".dt-panel-square");
     const head = document.getElementById("dtChartBar");
     if (!chart || !wide) return;
     const on = dcSignedIn() && window.matchMedia(DESKTOP_MQ).matches;
     /* all three are built before any is written: assigning as we go once left
        the chart rendered and the watchlist blank when the second threw */
     const h = on && head ? dcHeadToolsHTML() : "";
-    const a = on ? dcChartHTML() : "";
-    const c = on ? dcWatchHTML() : "";
+    const a = on ? dcChartHTML() : dtStill("portal");
+    const c = on ? dcWatchHTML() : dtStill("discipline");
     chart.classList.toggle("dt-live", on);
     wide.classList.toggle("dt-live", on);
     if (head) { head.classList.toggle("dt-live", on); head.innerHTML = h; }
     chart.innerHTML = a;
     wide.innerHTML = c;
+    /* the left panel has no signed-in counterpart — it simply empties */
+    if (square) square.innerHTML = on ? "" : dtStill("journey");
   }
 
   /* the bars and the drawings only; the toolbar and the watchlist stay put
@@ -10293,6 +10304,7 @@
       authScreen.classList.add("hidden");
       syncSessionClock();       // signing in is what puts the clock on screen
       stopAuthVideo();          // nothing left to watch behind a hidden screen
+      startHeroAfterLogin();    // the header clip, with sound, on the way in
       render();
       renderDesktopTools();     // signing in is what unlocks the desktop panels
     } catch (ex) {
@@ -10732,6 +10744,11 @@
   function startAuthVideo() {
     const v = $("authVideo");
     if (!v || v.querySelector("source")) return;
+    /* The wave behind the gate and the questionnaire. Desktop hides that band
+       outright (.auth-wave is display:none past the breakpoint), so attaching
+       a source here only ever fetched 1.6MB for an element nobody on this
+       layout can see — the same bargain the header clip already makes. */
+    if (window.matchMedia(DESKTOP_MQ).matches) return;
     v.addEventListener("error", () => v.classList.add("hidden"));  // still shows through
     const src = document.createElement("source");
     src.src = "assets/video/header-loop.mp4";
@@ -10756,6 +10773,10 @@
   function startLoginVideo() {
     const v = $("loginVideo");
     if (!v || v.querySelector("source")) return;
+    /* Desktop's centre panel carries the landing picture instead of the clip,
+       so there is nothing to start and 3.1MB not to fetch. Checked here rather
+       than at the call site because every pre-login state calls this. */
+    if (window.matchMedia(DESKTOP_MQ).matches) return;
     /* if it cannot play at all the still behind it is what shows */
     v.addEventListener("error", () => v.classList.add("hidden"));
     const src = document.createElement("source");
@@ -11071,6 +11092,19 @@
     if (!v) return;
     ["volumechange", "play", "pause", "loadedmetadata"].forEach((e) =>
       v.addEventListener(e, syncMuteButton));
+  }
+
+  /* The header clip, running with its sound, the moment someone is through.
+     A browser will refuse an unmuted autoplay without a prior gesture, which
+     is why the attempt at boot nearly always lands on muted — but submitting
+     the login form IS that gesture, and this runs inside the handler it fired,
+     so the second attempt is the one that gets to keep its audio. Desktop has
+     no header clip to start, so there is nothing here for it to do. */
+  function startHeroAfterLogin() {
+    if (window.matchMedia(DESKTOP_MQ).matches) return;
+    attachHeaderSource();       // a no-op if the source is already on
+    const v = $("waveVideo");
+    if (v) tryUnmuted(v);
   }
 
   function attachHeaderSource() {

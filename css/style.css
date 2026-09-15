@@ -4360,7 +4360,15 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 
   /* the phone sizes this header to the clip it plays; here the banner behind
      is what shows, and row 1's height is the rhythm everything else follows */
-  .header-zone { aspect-ratio: auto; height: var(--dt-head); }
+  .header-zone { aspect-ratio: auto; height: var(--dt-head); background: #000; }
+  /* Row 1 is one flat black plane until the art for it arrives. There was
+     never a clip playing up here — the source is only ever attached below the
+     breakpoint — but the empty <video> still painted its own #050614 ground,
+     a 479px navy block sitting in the middle of an otherwise black strip. It
+     and the static wave behind it both go, and with no hero left on this
+     layout the speaker has nothing to switch. */
+  .header-zone .wave-bg,
+  .header-zone .hdr-mute { display: none; }
   .header-zone + .bar { margin-top: 5px; }
 
   /* ---- header banner ----
@@ -4540,6 +4548,30 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
     flex: 1 1 0;
     border-image: url("../assets/desktop/wide@2x.png") 152 fill / 26px stretch;
   }
+
+  /* ---- the landing art, while nobody is signed in ----
+     One picture per panel, filling everything inside the panel's lit rim.
+     The rim is the 26px border the 9-slice paints; the picture takes the box
+     within it, corner to corner, cropped rather than squashed — so the frame
+     the three panels share stays the frame, and the art sits in it.
+
+     The moment someone signs in, renderDesktopTools() writes the live chart
+     and watchlist over the two on the right and empties the one on the left,
+     and all three of these go with them. */
+  .dt-still {
+    position: absolute;
+    inset: 0;
+    background-position: center;
+    background-size: cover;               /* crop to the box, never stretch */
+    background-repeat: no-repeat;
+    /* the rendered rim's inner curve, near enough that no corner of the
+       picture shows outside the lit stroke */
+    border-radius: 6px;
+  }
+  .dt-panel { position: relative; }
+  .dt-still-journey    { background-image: url("../assets/landing/left-journey.jpg"); }
+  .dt-still-portal     { background-image: url("../assets/landing/right-portal.jpg"); }
+  .dt-still-discipline { background-image: url("../assets/landing/right-discipline.jpg"); }
 
   /* ---- the two right panels once a signed-in visitor fills them ----
      The 9-slice frame stays exactly as it is; the content lives inside the
@@ -4751,12 +4783,17 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
     border-radius: var(--radius-card);
   }
   .login-step::before { content: ""; }
+  /* The picture stands where the clip stood — same box, same crop, same
+     radius. Declared as a background inside this query on purpose: a phone
+     never matches the rule, so it never fetches the file, and the clip it
+     does play is attached by JS and skipped past this breakpoint. Neither
+     layout pays for the other's hero. */
   .login-media {
-    background: none;
+    background: url("../assets/landing/centre-globe.jpg") center / cover no-repeat;
     border-radius: var(--radius-card);
     overflow: hidden;
   }
-  .login-video { object-fit: cover; }
+  .login-video { display: none; }
   /* Cropping leaves no letterbox, so the composition has no frame of its own
      to hang the fields on any more: what is visible is the media box. Its
      height is what the fields are anchored against and that has not changed,
