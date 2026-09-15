@@ -4689,14 +4689,46 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 
   /* The panel's slot, exactly: it starts where the side panels start — one
      gap below the band — and stops one gap above the dock pill, so all three
-     columns run panel-then-pill on the same two lines. */
+     columns run panel-then-pill on the same two lines.
+
+     The clearance is the pill, the space under the pill, and the 8px gap
+     above it — all three read from the variables rather than added up into
+     one number. --gap-bottom is not the same on every build of this app, and
+     a literal here landed the centre panel four pixels shy of the two beside
+     it on the build where it is zero. */
   .auth-card-outer {
-    margin: 8px var(--dt-centre-inset) calc(var(--dt-dock) + 12px);
+    margin: 8px var(--dt-centre-inset)
+            calc(var(--dt-dock) + var(--gap-bottom) + 8px);
   }
   /* and the signed-in card takes the same slot, so the panel band does not
      move under someone as they log in. The dock is flex: 0 0 auto at the end
      of the column, so the card giving back these pixels cannot shift it. */
   .card-outer { margin-top: 14px; margin-bottom: 8px; }
+
+  /* ---- the dock stands still here ----
+     The phone shrinks its dock as the card scrolls and walks the card's
+     bottom margin down after it. That is worth having on a phone, where the
+     dock is a fifth of what you can see. Here it is one of three pills on a
+     row that runs the whole window, and a centre one that changed size as the
+     middle column scrolled took the row with it — the panel's bottom edge
+     breathing up and down against two that did not move.
+
+     The minimised state is neutralised rather than removed, so the phone
+     keeps every bit of it. */
+  .app.dock-min .bottom-nav { transform: none; opacity: 1; }
+  .card-outer,
+  .app.dock-min .card-outer { margin-bottom: 8px; transition: none; }
+  /* and the pill sits in the column rather than over it. Lifted out of flow
+     it was drawn on top of the card, which is why the panel had no bottom
+     edge of its own down here — it ran on underneath the pill and stopped
+     wherever the column did. Back in flow it ends where the two beside it
+     end, and the pill follows it. */
+  .bottom-nav {
+    position: relative;
+    z-index: auto;
+    margin: 0 3.5% var(--gap-bottom);
+    height: var(--dt-dock);
+  }
 
   /* One way in, not two. The pill in the dock below is the control now; the
      form it opens still rides on the clip, so nothing else moves. */
@@ -4706,10 +4738,14 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
      card carries and fills the slot exactly as the two beside it do.
 
      The clip inside it is 9:16 and this slot is not — on a 1920x950 window it
-     is nearer 7:10 — so the clip is drawn as large as it can be without
-     losing an edge, and what is left over is the panel's own ground rather
-     than a black void. Cropping would fill the last of it, at the cost of the
-     type the composition runs into all four corners. */
+     is nearer 7:10 — so one of the two has to give. It used to be the clip:
+     drawn as large as it would go without losing an edge, which left a band
+     of the panel's own ground down each side. That band is what read as a
+     black-blue border around the video, and it is the only thing on the
+     desktop page that was not flat black. The panel wins now — the clip is
+     cropped to fill it, top and bottom, and the type the composition runs
+     into those two edges is the price. Rounded to the panel's own radius, so
+     its four corners are the same curve as the two panels beside it. */
   .login-step {
     background: none;
     border-radius: var(--radius-card);
@@ -4717,8 +4753,15 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   .login-step::before { content: ""; }
   .login-media {
     background: none;
-    border-radius: calc(var(--radius-card) - 4px);
+    border-radius: var(--radius-card);
+    overflow: hidden;
   }
+  .login-video { object-fit: cover; }
+  /* Cropping leaves no letterbox, so the composition has no frame of its own
+     to hang the fields on any more: what is visible is the media box. Its
+     height is what the fields are anchored against and that has not changed,
+     so they stay on the same line — only the width they may use grows. */
+  .login-frame { width: 100%; height: 100%; aspect-ratio: auto; }
 }
 
 /* ---- desktop pre-login: intro video, CTA, and the Log In dock ----
@@ -4789,6 +4832,12 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
     border-image: url("../assets/bars/background-bar-pill@2x.png") 54 60 fill / 24px 27px stretch;
   }
   .intro-dock.hidden { display: none; }
+  /* The dock holds two controls in the same place — the way in, then the way
+     through — and shows one at a time. Nothing was hiding the other: there is
+     no blanket .hidden rule in this sheet, every one of them is scoped to the
+     thing it hides, and this pair had none. So both painted, and the pill read
+     "LOG IN  LOGIN". */
+  .intro-dock-btn.hidden { display: none; }
   .intro-dock-btn {
     display: flex;
     align-items: center;

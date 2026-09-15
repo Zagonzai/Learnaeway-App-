@@ -10165,6 +10165,7 @@
       setLoginOpen(false);      // back to the one pill, not a form already open
       showAuthStep();
       $("authScreen").classList.remove("hidden");
+      syncSessionClock();
     }
     else if (t.hasAttribute("data-reset-progress")) {
       if (confirm("Reset all course progress? Likes, saves and notes are kept.")) {
@@ -10219,6 +10220,16 @@
   /* The one fixed zone at the foot of the screen, in whichever layout is up.
      Closed it offers the way in; open it is the form's submit, relabelled for
      the mode. Nothing here moves — only what is inside it changes. */
+  /* The session clock belongs to the app, not to the way in. On a phone this
+     is invisible either way — the auth screen covers the header it sits on —
+     but on desktop the screen starts below the header strip, so before anyone
+     has signed in the clock was the one piece of the app on show. It follows
+     the auth screen exactly: up while that is up, back the moment it goes. */
+  function syncSessionClock() {
+    const clock = $("waveClock");
+    if (clock) clock.classList.toggle("hidden", !authScreen.classList.contains("hidden"));
+  }
+
   function syncAuthDocks() {
     const label = authMode === "login" ? "Login" : "Sign Up";
     [["loginOpenBtn", "loginSubmit"], ["introLoginBtn", "introSubmit"]].forEach(([o, u]) => {
@@ -10280,6 +10291,7 @@
       save();
       await pullCloudAndMerge();   // resume progress/notes from other devices
       authScreen.classList.add("hidden");
+      syncSessionClock();       // signing in is what puts the clock on screen
       stopAuthVideo();          // nothing left to watch behind a hidden screen
       render();
       renderDesktopTools();     // signing in is what unlocks the desktop panels
@@ -10781,6 +10793,7 @@
     setLoginOpen(false);
     showAuthStep();
     authScreen.classList.remove("hidden");
+    syncSessionClock();
     startAuthVideo();
   }
 
