@@ -180,6 +180,12 @@
       notes: {},             // screenId -> text
       lastScreen: null,
       settings: { sound: true, textSize: "M", name: "" },
+      /* Pointæway's record. The counters are kept apart from the list on
+         purpose: the list is capped so a long-running store cannot grow
+         without end, and totals taken from a capped list would start going
+         down. These only ever go up. */
+      pwStats: { played: 0, won: 0, lost: 0, drawn: 0, bull: 0, bear: 0 },
+      pwHistory: [],
     };
   }
   function save() {
@@ -3504,7 +3510,7 @@
   /* ---- state ---- */
   function pwNewGame() {
     return {
-      phase: "setup", playerSide: null, aiSide: null, candle: 0,
+      phase: "hub", playerSide: null, aiSide: null, candle: 0,
       bull: [], bear: [], special: [],
       playerHand: [], aiHand: [], playerPlayed: null, aiPlayed: null,
       round: 1, log: [], winner: null, pendingCandle: 0, pending: null,
@@ -3517,6 +3523,8 @@
       chart: [],
       showMatch: false,     // the chart, in the result screen's own slot
       showRound: null,      // which round's reveal is open under the row
+      hubAll: false,        // the whole match history rather than the last five
+      hubNote: false,       // the line saying friend matches are not live yet
       discipline: null,     // a peek in progress: the Discipline card and theirs
       tp: null,             // a Take Profit waiting on the double-up answer
       aiDoubledUp: null,    // the card the AI spent doubling its own Take Profit
@@ -3881,7 +3889,12 @@
      never play or draw again and there is no game left to play against them.
      An exact 0 at depletion is a Doji, and a draw. */
   function pwFinishRound(finalCandle, silent) {
-    const done = (w) => { pw.winner = w; pw.phase = "gameover"; if (!silent) renderPointaeway(); };
+    const done = (w) => {
+      if (pw.phase === "gameover") return;   // a match ends once
+      pw.winner = w; pw.phase = "gameover";
+      pwRecordMatch(w);
+      if (!silent) renderPointaeway();
+    };
     if (finalCandle >= PW_TARGET) return done("bull");
     if (finalCandle <= -PW_TARGET) return done("bear");
     // draw before judging: a hand that can be refilled is not a depleted one
@@ -4002,6 +4015,137 @@
                  aria-label="${left} left in your deck">×${left}</span>`
         : ""}
     </${tag}>`;
+  }
+
+  /* ---- the record ----
+     What the hub is built on. Written once, the moment a match ends, from the
+     only two things that decide it: which side the player took and who won.
+     The list is capped; the counters are not — see the note in load(). */
+  const PW_HISTORY_MAX = 60;
+
+  function pwRecord() {
+    if (!store.pwStats) store.pwStats = { played: 0, won: 0, lost: 0, drawn: 0, bull: 0, bear: 0 };
+    if (!Array.isArray(store.pwHistory)) store.pwHistory = [];
+    return store.pwStats;
+  }
+
+  function pwRecordMatch(winner) {
+    const st = pwRecord();
+    const side = pw.playerSide;
+    const result = winner === "draw" ? "draw" : winner === side ? "win" : "loss";
+    st.played++;
+    if (result === "win") st.won++;
+    else if (result === "loss") st.lost++;
+    else st.drawn++;
+    if (side === "bull") st.bull++; else if (side === "bear") st.bear++;
+    /* the print as the player reads it: their own side's direction is the
+       positive one, so a bear winning by ten shows as +10 and not as −10 */
+    const pts = side === "bear" ? -pw.candle : pw.candle;
+    store.pwHistory.unshift({
+      t: Date.now(), side, opp: "computer", result, pts, rounds: pw.round,
+    });
+    if (store.pwHistory.length > PW_HISTORY_MAX) store.pwHistory.length = PW_HISTORY_MAX;
+    save();
+  }
+
+  /* ---- the hub ----
+     Pointæway's front door: the record, the recent matches, and the two ways
+     into a game. Start Match hands over to the side picker, which is the
+     screen that was the front door before this one.
+
+     Every frame on it — the tiles, the history rows, the two pills — is a
+     delivered picture nine-sliced rather than stretched, so a tile that is
+     taller than it is wide and a row that is six times wider than the file
+     both keep the corner radius and the lit stroke they were drawn with. */
+  const PW_HUB = "assets/pointaeway/hub/";
+
+  const PW_HUB_STATS = [
+    { k: "played", ico: "ico-played", cap: "Total Matches Played", tile: 1, tone: "" },
+    { k: "won",    ico: "ico-won",    cap: "Total Matches Won",    tile: 2, tone: "win" },
+    { k: "lost",   ico: "ico-lost",   cap: "Total Matches Lost",   tile: 3, tone: "loss" },
+    { k: "bull",   ico: "ico-bull",   cap: "Times as Bull",        tile: 4, tone: "bull" },
+    { k: "bear",   ico: "ico-bear",   cap: "Times as Bear",        tile: 5, tone: "bear" },
+  ];
+
+  /* "Sep 15, 1:02 AM" — the same shape the reference prints */
+  function pwHubWhen(t) {
+    const d = new Date(t);
+    const date = d.toLocaleDateString("en-US", { month: "short", day: "numeric" });
+    const time = d.toLocaleTimeString("en-US", { hour: "numeric", minute: "2-digit" });
+    return `${date}, ${time}`;
+  }
+
+  function pwHubRowHTML(m) {
+    const win = m.result === "win";
+    const tone = m.result === "draw" ? "flat" : win ? "win" : "loss";
+    const label = m.result === "draw" ? "Draw" : win ? "Win" : "Loss";
+    return `
+      <div class="pw-hrow">
+        <span class="pw-hrow-ico">
+          <img src="${PW_HUB}ico-${m.side === "bull" ? "bull" : "bear"}.png" alt="">
+        </span>
+        <span class="pw-hrow-opp">vs ${m.opp === "friend" ? "Friend" : "Computer"}</span>
+        <span class="pw-hrow-side">${m.side === "bull" ? "Bull" : "Bear"}</span>
+        <span class="pw-hrow-res ${tone}">${label}</span>
+        <span class="pw-hrow-pts ${tone}">${pwSigned(m.pts)}</span>
+        <span class="pw-hrow-when">${esc(pwHubWhen(m.t))}</span>
+      </div>`;
+  }
+
+  function pwHubHTML() {
+    const st = pwRecord();
+    const all = store.pwHistory;
+    const shown = pw.hubAll ? all : all.slice(0, 5);
+    return `
+      <div class="pw-hub">
+        <div class="pw-hub-head">
+          <div class="pw-hub-titles">
+            <div class="pw-hub-title">Your Match Hub</div>
+            <div class="pw-hub-sub">Play. Compete. Read the candles.<br>Own the next move.</div>
+          </div>
+          <img class="pw-hub-banner" src="${PW_HUB}banner.png" alt="" draggable="false">
+        </div>
+
+        <div class="pw-hub-stats">
+          ${PW_HUB_STATS.map((s) => `
+            <div class="pw-stat t${s.tile}">
+              <img class="pw-stat-ico" src="${PW_HUB}${s.ico}.png" alt="">
+              <span class="pw-stat-cap">${esc(s.cap)}</span>
+              <span class="pw-stat-n ${s.tone}">${st[s.k] || 0}</span>
+            </div>`).join("")}
+        </div>
+
+        <div class="pw-hist">
+          <div class="pw-hist-head">
+            <span class="pw-hist-title">Match History</span>
+            ${all.length > 5 ? `
+            <button type="button" class="pw-hist-all" data-pw-hub-all>
+              <span>${pw.hubAll ? "Show Less" : "View All"}</span>
+              <img src="${PW_HUB}ico-chevron.png" alt="">
+            </button>` : ""}
+          </div>
+          ${shown.length
+            ? `<div class="pw-hist-list">${shown.map(pwHubRowHTML).join("")}</div>`
+            : `<div class="pw-hist-none">No matches yet — your first one lands here.</div>`}
+        </div>
+
+        <div class="pw-hub-acts">
+          <button type="button" class="pw-hub-pill start" data-pw-hub-start>
+            <span class="pw-hub-pill-t">Start Match</span>
+            <span class="pw-hub-pill-s">Play against computer</span>
+          </button>
+          <button type="button" class="pw-hub-pill find" data-pw-hub-find
+                  aria-describedby="pwHubNote">
+            <span class="pw-hub-pill-t">Find Match</span>
+            <span class="pw-hub-pill-s">Play against your friend</span>
+          </button>
+        </div>
+        ${/* said in place rather than in a panel over the screen, and only
+              once asked: there is no friend to find yet */""}
+        <div class="pw-hub-note${pw.hubNote ? "" : " hidden"}" id="pwHubNote" role="status">
+          Friend matches are not live yet. Start Match plays the computer.
+        </div>
+      </div>`;
   }
 
   /* ---- the result screen ----
@@ -4399,6 +4543,11 @@
     cardFooter.style.display = "none";
 
     cardScroll.classList.remove("pw-playing", "pw-introing", "pw-overing", "pw-revealing");
+    if (pw.phase === "hub") {
+      cardScroll.innerHTML = pwHubHTML();
+      cardScroll.scrollTop = 0;
+      return;
+    }
     if (pw.phase === "setup") {
       /* the whole way in has to sit in one view, so the scroller becomes a
          fixed-height column here too and the two cards take up the slack */
@@ -9784,7 +9933,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-pw-hub-start],[data-pw-hub-find],[data-pw-hub-all],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -10121,8 +10270,13 @@
     else if (t.hasAttribute("data-pw-seen")) { pw.showSeen = !pw.showSeen; renderPointaeway(); }
     else if (t.hasAttribute("data-pw-legend")) { pw.showLegend = !pw.showLegend; renderPointaeway(); }
     else if (t.hasAttribute("data-pw-restart") || t.hasAttribute("data-pw-again")) {
-      pwAbort(); pw = pwNewGame(); renderPointaeway();
+      /* straight back to the side picker: these two mean play again, not go
+         and look at the record */
+      pwAbort(); pw = pwNewGame(); pw.phase = "setup"; renderPointaeway();
     }
+    else if (t.hasAttribute("data-pw-hub-start")) { pw.phase = "setup"; renderPointaeway(); }
+    else if (t.hasAttribute("data-pw-hub-find")) { pw.hubNote = !pw.hubNote; renderPointaeway(); }
+    else if (t.hasAttribute("data-pw-hub-all")) { pw.hubAll = !pw.hubAll; renderPointaeway(); }
     /* the chart takes the art's slot rather than opening over it — nothing in
        this app arrives as a panel on a dimmed screen */
     else if (t.hasAttribute("data-pw-match")) {
