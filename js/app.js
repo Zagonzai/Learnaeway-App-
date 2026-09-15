@@ -3137,9 +3137,13 @@
     { id: "pickaeway", name: "Pickæway", tag: "You vs. You",
       blurb: "Read the candles as they print and call the next move before the print dies.",
       icon: "assets/nav-icons/icon-game-pickaeway@2x.png" },
+    /* The one entry with a scene behind it. Its art carries the two animals
+       and the VS between them, which is the game — so it stands in for the
+       icon rather than sitting beside one, and the other two stay plain. */
     { id: "pointaeway", name: "Pointæway", tag: "1v1 Card Game",
       blurb: "Bull against Bear. Play a candle, reveal together, and push the print 25 points your way.",
-      icon: "assets/nav-icons/icon-game-pointaeway@2x.png" },
+      icon: "assets/nav-icons/icon-game-pointaeway@2x.png",
+      art: "assets/pointaeway/selection-banner.jpg" },
     { id: "placeaway", name: "Placæway", tag: "Solo Speed Run",
       blurb: "The whole pattern prints at once. Place every candle in order against the clock.",
       icon: "assets/nav-icons/icon-dock-match-replay@2x.png" },
@@ -3152,7 +3156,15 @@
     cardScroll.innerHTML = `
       <div class="gs-head">Pick your game</div>
       <div class="gs-list">
-        ${GAMES.map((g) => `
+        ${GAMES.map((g) => g.art ? `
+          <button class="gs-card gs-card-art" data-game="${g.id}">
+            <span class="gs-scene" style="background-image:url('${esc(g.art)}')">
+              <span class="gs-name">${esc(g.name)}</span>
+              <span class="gs-tag">${esc(g.tag)}</span>
+            </span>
+            <span class="gs-blurb">${esc(g.blurb)}</span>
+            <span class="gs-chev" aria-hidden="true">›</span>
+          </button>` : `
           <button class="gs-card" data-game="${g.id}">
             <span class="gs-icon"><img src="${esc(g.icon)}" alt=""></span>
             <span class="gs-text">
@@ -3160,6 +3172,7 @@
               <span class="gs-tag">${esc(g.tag)}</span>
               <span class="gs-blurb">${esc(g.blurb)}</span>
             </span>
+            <span class="gs-chev" aria-hidden="true">›</span>
           </button>`).join("")}
       </div>`;
     cardScroll.scrollTop = 0;
@@ -3496,6 +3509,13 @@
       playerHand: [], aiHand: [], playerPlayed: null, aiPlayed: null,
       round: 1, log: [], winner: null, pendingCandle: 0, pending: null,
       showLegend: false, seen: {},
+      /* one entry per resolved round: where the print stood when the round
+         opened and where it stood when the round closed. That is a candle,
+         and the run of them is the match as a chart — which is what View
+         Match draws. Recorded as it happens because nothing else keeps it:
+         pw.log is prose, and the track only ever holds the latest figure. */
+      chart: [],
+      showMatch: false,     // the chart, in the result screen's own slot
       discipline: null,     // a peek in progress: the Discipline card and theirs
       tp: null,             // a Take Profit waiting on the double-up answer
       aiDoubledUp: null,    // the card the AI spent doubling its own Take Profit
@@ -3734,6 +3754,12 @@
      copies; pw's own decks are only replaced once, at the end. */
   function pwApplyResult(result, pCard, aCard, silent) {
     const newCandle = pwClamp(pw.candle + result.candleDelta);
+    /* The round's candle, recorded once, here — this function runs exactly
+       once per round on every path, including the two that stop to ask a
+       question and come back (the draw choice and the Take Profit double-up).
+       A wash opens and closes at the same figure, which is a doji, and that is
+       the right thing for the chart to show. */
+    pw.chart.push({ round: pw.round, open: pw.candle, close: newCandle });
     pw.log = result.log.concat(pw.log);
 
     /* An opponent tier card, once seen, is known for the rest of the match —
@@ -3893,6 +3919,7 @@
      which is why the bear's two look-alike ranks had to be settled against the
      art first: the number on the face is not something markup can override. */
   const PW_ART = "assets/pointaeway/cards/";
+  const PW_RESULT_ART = "assets/pointaeway/result/";
   const PW_TIER_ART = {
     bull: {
       "Bullish Marubozu": "bull-marubozu-str5",
@@ -3967,6 +3994,110 @@
                  aria-label="${left} left in your deck">×${left}</span>`
         : ""}
     </${tag}>`;
+  }
+
+  /* ---- the result screen ----
+     One view: who won and by how much, the character that won it, and the
+     three ways out. The character art is the finished piece with its baked-in
+     headline, badge and caption erased — every one of those is a line this
+     screen renders itself, because the round number and the figure change
+     every match and a picture cannot. What is left on the art is the scene
+     and the BULL MODE / BEAR MODE wordmark, which nothing here repeats. */
+
+  const PW_OVER_ART = { bull: "bull-wins", bear: "bear-wins" };
+
+  /* A match ends two ways, and the caption has to tell the truth about which.
+     Reaching the target IS pushing the print to the top or the bottom; running
+     the decks out while ahead is holding it there, which is a different thing
+     and reads as a lie if it claims the first. */
+  function pwOverCaption() {
+    const c = pw.candle;
+    if (pw.winner === "draw") return "Neither side moved the print";
+    const pushed = Math.abs(c) >= PW_TARGET;
+    if (pw.winner === "bull") return pushed ? "Bulls pushed to the top" : "Bulls held the print up";
+    return pushed ? "Bears pushed to the bottom" : "Bears held the print down";
+  }
+
+  function pwOverHTML() {
+    const draw = pw.winner === "draw";
+    const tone = draw ? "flat" : pw.winner;
+    const label = draw ? "Doji — Draw" : pw.winner === "bull" ? "Bulls Win" : "Bears Win";
+    const art = PW_OVER_ART[pw.winner];
+    return `
+      <div class="pw-over ${tone}">
+        <div class="pw-over-kicker">Round ${pw.round} · Final Print</div>
+        <div class="pw-over-title">${esc(label)}</div>
+        <div class="pw-over-sub">Market moves with you</div>
+
+        ${/* A draw has no winner and so no character to show it with — the
+              print stands where it opened and nobody pushed it. The stage
+              drops to the meter alone rather than holding a blank column
+              where a figure would be. */""}
+        ${pw.showMatch ? pwMatchChartHTML() : `
+        <div class="pw-over-stage${art ? "" : " solo"}">
+          ${art ? `<img class="pw-over-art" src="${PW_RESULT_ART}${art}.png"
+                        alt="" draggable="false">` : ""}
+          <div class="pw-over-stat">
+            <div class="pw-over-stat-cap">Final Print</div>
+            ${pwTrackHTML()}
+            <div class="pw-over-caption">${esc(pwOverCaption())}</div>
+          </div>
+        </div>`}
+
+        <button type="button" class="pw-over-again" data-pw-again>
+          Play Again <span aria-hidden="true">›</span>
+        </button>
+        <div class="pw-over-row">
+          <button type="button" class="pw-over-pill${pw.showMatch ? " on" : ""}" data-pw-match
+                  aria-pressed="${pw.showMatch}">
+            <img src="assets/nav-icons/icon-dock-match-replay@2x.png" alt="">
+            <span>${pw.showMatch ? "Hide Match" : "View Match"}</span>
+          </button>
+          <button type="button" class="pw-over-pill" data-pw-home>
+            <img src="assets/nav-icons/icon-home@2x.png" alt="">
+            <span>Back to Home</span>
+          </button>
+        </div>
+        <div class="pw-over-foot">Same game. A brighter tomorrow.</div>
+      </div>`;
+  }
+
+  /* ---- the match, as a chart ----
+     Every round is one candle: it opens where the print stood when the round
+     began and closes where it stood when the round ended, so a round won is a
+     body in that side's colour and a wash is a doji. Drawn as plain elements
+     rather than SVG — a body and a wick each, positioned as percentages of the
+     same -25..+25 scale the track uses, so the chart and the meter agree. */
+  function pwMatchChartHTML() {
+    const rows = pw.chart;
+    if (!rows.length) {
+      return `<div class="pw-chart-empty">No rounds to replay.</div>`;
+    }
+    const span = PW_TARGET * 2;                 // -25 .. +25
+    const pct = (v) => ((PW_TARGET - v) / span) * 100;   // 0% is the top
+    const bars = rows.map((r) => {
+      const up = r.close > r.open, flat = r.close === r.open;
+      const hi = Math.max(r.open, r.close), lo = Math.min(r.open, r.close);
+      const top = pct(hi), bot = pct(lo);
+      const cls = flat ? "flat" : up ? "bull" : "bear";
+      /* a doji still needs to be visible, so it keeps a hairline body */
+      const h = Math.max(bot - top, 0.9);
+      return `<span class="pw-cndl ${cls}" style="--t:${top.toFixed(2)}%;--h:${h.toFixed(2)}%"
+                    title="Round ${r.round}: ${pwSigned(r.open)} → ${pwSigned(r.close)}"></span>`;
+    }).join("");
+    return `
+      <div class="pw-chart">
+        <div class="pw-chart-head">
+          <span>Match Replay</span>
+          <span class="pw-chart-n">${rows.length} round${rows.length === 1 ? "" : "s"}</span>
+        </div>
+        <div class="pw-chart-plot">
+          <span class="pw-chart-grid top">+${PW_TARGET}</span>
+          <span class="pw-chart-grid mid">OPEN</span>
+          <span class="pw-chart-grid bot">−${PW_TARGET}</span>
+          <div class="pw-chart-bars">${bars}</div>
+        </div>
+      </div>`;
   }
 
   function pwTrackHTML() {
@@ -4169,7 +4300,7 @@
     if (pickName) pickName.textContent = "Cool Down Game";
     cardFooter.style.display = "none";
 
-    cardScroll.classList.remove("pw-playing", "pw-introing");
+    cardScroll.classList.remove("pw-playing", "pw-introing", "pw-overing");
     if (pw.phase === "setup") {
       /* the whole way in has to sit in one view, so the scroller becomes a
          fixed-height column here too and the two cards take up the slack */
@@ -4180,21 +4311,11 @@
     }
 
     if (pw.phase === "gameover") {
-      const label = pw.winner === "draw" ? "Doji — Draw"
-        : pw.winner === "bull" ? "Bulls Win" : "Bears Win";
-      const tone = pw.winner === "draw" ? "flat" : pw.winner;
-      cardScroll.innerHTML = `
-        <div class="pw-over">
-          <div class="pw-kicker">Round ${pw.round} · Final print</div>
-          ${/* The same meter the match was played on, holding where the candle
-                stopped. The number that used to sit in the kicker is gone from
-                there: the track carries it at three times the size, and the
-                same figure twice within a few lines of itself reads as a
-                mistake rather than emphasis. */""}
-          ${pwTrackHTML()}
-          <div class="pw-over-title ${tone}">${label}</div>
-          <button class="btn-primary" data-pw-again>Play again</button>
-        </div>`;
+      /* the same bargain the intro and the table strike: the scroller becomes
+         a fixed-height column and the scene takes what the rows above and
+         below leave, so the whole result sits in one view */
+      cardScroll.classList.add("pw-overing");
+      cardScroll.innerHTML = pwOverHTML();
       cardScroll.scrollTop = 0;
       return;
     }
@@ -9563,7 +9684,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -9902,6 +10023,10 @@
     else if (t.hasAttribute("data-pw-restart") || t.hasAttribute("data-pw-again")) {
       pwAbort(); pw = pwNewGame(); renderPointaeway();
     }
+    /* the chart takes the art's slot rather than opening over it — nothing in
+       this app arrives as a panel on a dimmed screen */
+    else if (t.hasAttribute("data-pw-match")) { pw.showMatch = !pw.showMatch; renderPointaeway(); }
+    else if (t.hasAttribute("data-pw-home")) { pwAbort(); openGames(); }
     else if (t.hasAttribute("data-pk-build")) openBuildMatch();
     else if (t.hasAttribute("data-pk-replay")) {
       if (!openReplay()) {
