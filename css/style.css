@@ -4811,22 +4811,81 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   font-weight: 800;
   letter-spacing: .04em;
   color: var(--cyan);
-  margin: 6px 0 16px;
+  margin: 4px 0 12px;
 }
-.gs-list { display: flex; flex-direction: column; gap: 14px; }
+/* three entries, one view: the heading and the gaps between them are the only
+   places left to find the last few pixels once the scene has its width */
+.gs-list { display: flex; flex-direction: column; gap: 11px; }
 .gs-card {
   display: flex;
   align-items: center;
   gap: 14px;
   width: 100%;
   text-align: left;
-  padding: 16px 14px;
+  /* the three entries share one view on a phone and in the desktop centre
+     column, which is narrower still and wraps the blurbs harder — these few
+     pixels are what keep the last entry on screen there */
+  padding: 12px 14px;
   border-radius: 18px;
   border: 1px solid rgba(61,223,255,.32);
   background: linear-gradient(170deg, rgba(11,18,38,.85), rgba(7,10,24,.85));
   transition: transform .14s ease, filter .14s ease;
 }
 .gs-card:active { transform: scale(.985); filter: brightness(1.25); }
+/* the chevron sits at the right of every entry, vertically centred on the
+   row it belongs to rather than on the whole card */
+.gs-chev {
+  flex: 0 0 auto;
+  align-self: center;
+  font-size: calc(22px * var(--fs));
+  font-weight: 400;
+  line-height: 1;
+  color: #7FA8CC;
+}
+
+/* ---- the one entry with a scene ----
+   Pointæway's art carries both animals and the VS between them, so it stands
+   in for the icon rather than sitting next to one. The picture fills the top
+   of the card edge to edge and takes the card's own corner radius up there;
+   the line underneath sits on the card's ground, as the other two entries do. */
+.gs-card-art {
+  position: relative;
+  display: block;
+  padding: 0;
+  overflow: hidden;
+  border-color: rgba(61,223,255,.55);
+  box-shadow: 0 0 18px rgba(61,223,255,.16), inset 0 0 22px rgba(255,61,154,.08);
+}
+.gs-scene {
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: flex-start;
+  gap: 2px;
+  /* The banner is 3:1 and this band is a little squarer, so it crops rather
+     than letterboxes — the two animals sit at the ends and survive the crop.
+     The band is kept wide on purpose: it is one of three entries that have to
+     share a single view, and every row this picture gains the list loses. */
+  aspect-ratio: 2.35 / 1;
+  background-size: cover;
+  background-position: center;
+  padding: 12px 44px 0;
+  text-align: center;
+  /* the names have to hold against whatever the picture does behind them */
+  text-shadow: 0 2px 10px rgba(0,0,0,.85), 0 0 22px rgba(0,0,0,.7);
+}
+.gs-card-art .gs-name { font-size: calc(19px * var(--fs)); }
+.gs-card-art .gs-blurb {
+  display: block;
+  padding: 10px 16px 14px;
+  text-align: center;
+}
+.gs-card-art .gs-chev {
+  position: absolute;
+  top: 14px; right: 14px;
+  color: #EAF6FF;
+  text-shadow: 0 2px 8px rgba(0,0,0,.9);
+}
 .gs-icon {
   flex: 0 0 auto;
   width: 54px; height: 54px;
@@ -5034,12 +5093,6 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 .pw-wilds-btn:active { filter: brightness(1.4); }
 
 .pw-setup { text-align: center; padding: 8px 4px 4px; }
-.pw-kicker {
-  font-size: calc(10.5px * var(--fs));
-  font-weight: 700; letter-spacing: .18em; text-transform: uppercase;
-  color: var(--pw-muted);
-  margin-bottom: 8px;
-}
 .pw-lede {
   font-size: calc(13px * var(--fs));
   line-height: 1.55; color: #C9DDF2;
@@ -5616,16 +5669,219 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 /* The result screen carries the meter now, so the padding it used to spend on
    empty space goes to the meter instead — the whole thing still has to land
    inside one screenful on a short phone without scrolling. */
-.pw-over { text-align: center; padding: 14px 8px; }
-.pw-over .pw-track-panel { margin: 10px 0 2px; }
-.pw-over-title {
-  font-size: calc(28px * var(--fs));
-  font-weight: 800; letter-spacing: .02em;
-  margin: 10px 0 18px;
+/* ---- the result screen ----
+   Top to bottom: what round it ended on, who won, the line under it, then the
+   scene — the winner on the left, the print they won it on at the right — and
+   the three ways out. Everything is centred on the column except the scene,
+   which is the one row with two things in it. */
+.card-scroll.pw-overing { display: flex; flex-direction: column; overflow: hidden; }
+.pw-over {
+  --pw-over-tone: var(--pw-muted);
+  text-align: center;
+  padding: 10px 6px 4px;
+  display: flex;
+  flex-direction: column;
+  flex: 1 1 auto;
+  min-height: 0;
 }
-.pw-over-title.flat { color: var(--pw-muted); }
-.pw-over-title.bull { color: var(--pw-bull); }
-.pw-over-title.bear { color: var(--pw-bear); }
+.pw-over.bull { --pw-over-tone: var(--pw-bull); }
+.pw-over.bear { --pw-over-tone: var(--pw-bear); }
+.pw-over-kicker {
+  font-size: calc(10.5px * var(--fs));
+  font-weight: 700; letter-spacing: .22em; text-transform: uppercase;
+  color: #8FA9C4;
+}
+.pw-over-title {
+  font-size: calc(38px * var(--fs));
+  font-weight: 900; letter-spacing: .01em; line-height: 1.02;
+  text-transform: uppercase;
+  color: var(--pw-over-tone);
+  text-shadow: 0 0 18px color-mix(in srgb, var(--pw-over-tone) 55%, transparent);
+  margin: 2px 0 0;
+}
+.pw-over-sub {
+  font-size: calc(10.5px * var(--fs));
+  font-weight: 700; letter-spacing: .2em; text-transform: uppercase;
+  color: #7FD4E8;
+  margin-bottom: 6px;
+}
+/* the scene: the character takes what is left after the print's column, and
+   both are bounded on height so the row cannot push the buttons off screen */
+.pw-over-stage {
+  flex: 1 1 auto;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 4px;
+  min-height: 0;
+  margin: 2px 0 4px;
+}
+/* The character takes the room the print's column leaves and fills it on both
+   axes — height alone let the wider of the two pieces push past the column,
+   which is the same trap the cards and the seats fell into. */
+.pw-over-art {
+  flex: 1 1 64%;
+  min-width: 0;
+  width: 100%;
+  height: 100%;
+  object-fit: contain;
+  object-position: center center;
+}
+.pw-over-stat {
+  flex: 0 0 34%;
+  min-width: 0;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  justify-content: center;
+  gap: 2px;
+}
+/* a draw: the meter is the whole stage, so it takes the middle and grows */
+.pw-over-stage.solo .pw-over-stat { flex: 0 0 auto; }
+.pw-over-stage.solo .pw-track { width: 48px; }
+.pw-over-stage.solo .pw-over-caption { max-width: 190px; }
+.pw-over-stat-cap {
+  font-size: calc(9.5px * var(--fs));
+  font-weight: 700; letter-spacing: .16em; text-transform: uppercase;
+  color: #9FC0E0;
+}
+/* the same meter the match was played on, at the size a headline figure wants */
+.pw-over .pw-track-val { font-size: calc(34px * var(--fs)); }
+.pw-over .pw-track { width: 40px; height: clamp(96px, 16vh, 150px); }
+.pw-over-caption {
+  max-width: 108px;
+  font-size: calc(9.5px * var(--fs));
+  font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
+  line-height: 1.35;
+  color: #7FD4E8;
+  margin-top: 4px;
+}
+/* Play Again is the one thing this screen wants you to do, so it carries the
+   wide pill; the two below it share the row and the smaller one. Both are the
+   pill the app already draws everywhere — no new art for this screen. */
+.pw-over-again {
+  display: block;
+  width: 100%;
+  margin-top: auto;
+  padding: 13px;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  border-image: url("../assets/bars/background-bar-pill@2x.png") 54 60 fill / 22px 25px stretch;
+  background: none;
+  font-size: calc(16px * var(--fs));
+  font-weight: 800; letter-spacing: .04em;
+  color: #EAF6FF;
+  text-shadow: 0 0 10px rgba(61,223,255,.5);
+}
+.pw-over-again:active { filter: brightness(1.35); transform: scale(.99); }
+.pw-over-row { display: flex; gap: 8px; margin-top: 8px; }
+.pw-over-pill {
+  flex: 1 1 0;
+  min-width: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  gap: 7px;
+  padding: 10px 6px;
+  border-radius: 999px;
+  border: 2px solid transparent;
+  border-image: url("../assets/bars/background-bar-pill@2x.png") 54 60 fill / 20px 23px stretch;
+  background: none;
+  font-size: calc(12.5px * var(--fs));
+  font-weight: 800; letter-spacing: .03em;
+  color: #DCEBFA;
+}
+.pw-over-pill img { width: 17px; height: 17px; object-fit: contain; }
+.pw-over-pill.on { color: var(--cyan); }
+.pw-over-pill:active { filter: brightness(1.35); transform: scale(.98); }
+.pw-over-foot {
+  font-size: calc(8.5px * var(--fs));
+  font-weight: 700; letter-spacing: .18em; text-transform: uppercase;
+  color: #55708C;
+  margin: 10px 0 2px;
+}
+
+/* ---- the match as a chart ----
+   Takes the scene's slot when View Match is on. One candle per round on the
+   same −25..+25 scale the track uses, so a body's height is the ground that
+   round took. */
+.pw-chart {
+  display: flex;
+  flex-direction: column;
+  min-height: 0;
+  margin: 2px 0 6px;
+}
+.pw-chart-head {
+  display: flex; align-items: baseline; justify-content: space-between;
+  font-size: calc(9.5px * var(--fs));
+  font-weight: 700; letter-spacing: .16em; text-transform: uppercase;
+  color: #9FC0E0;
+  margin-bottom: 6px;
+}
+.pw-chart-n { color: #6E86A6; letter-spacing: .1em; }
+.pw-chart-plot {
+  position: relative;
+  height: clamp(150px, 30vh, 260px);
+  border-radius: 12px;
+  border: 1px solid var(--pw-line);
+  background: rgba(4,7,18,.9);
+  background-image: radial-gradient(circle, rgba(143,169,196,.26) 0.5px, transparent 1px);
+  background-size: 13px 13px;
+  padding: 8px 8px 8px 34px;
+  overflow: hidden;
+}
+.pw-chart-grid {
+  position: absolute;
+  left: 4px;
+  font-size: calc(7.5px * var(--fs));
+  font-weight: 700; letter-spacing: .06em;
+  color: var(--pw-muted);
+  pointer-events: none;
+}
+.pw-chart-grid.top { top: 5px; }
+.pw-chart-grid.bot { bottom: 5px; }
+.pw-chart-grid.mid { top: 50%; transform: translateY(-50%); }
+/* the zero line the candles are read against */
+.pw-chart-plot::after {
+  content: "";
+  position: absolute;
+  left: 34px; right: 8px; top: 50%;
+  border-top: 1px dashed rgba(143,169,196,.3);
+  pointer-events: none;
+}
+.pw-chart-bars {
+  position: relative;
+  height: 100%;
+  display: flex;
+  align-items: stretch;
+  gap: 1px;
+}
+.pw-cndl {
+  position: relative;
+  flex: 1 1 0;
+  min-width: 1px;
+}
+/* the body: placed by percentage of the plot, which is the same scale end to
+   end, so every candle in the run is directly comparable */
+.pw-cndl::before {
+  content: "";
+  position: absolute;
+  left: 0; right: 0;
+  top: var(--t); height: var(--h);
+  min-height: 1.5px;
+  border-radius: 1px;
+}
+.pw-cndl.bull::before { background: var(--pw-bull); }
+.pw-cndl.bear::before { background: var(--pw-bear); }
+.pw-cndl.flat::before { background: #6E86A6; }
+.pw-chart-empty {
+  text-align: center;
+  font-size: calc(12px * var(--fs));
+  color: var(--pw-muted);
+  padding: 30px 0;
+}
+/* the winning side's colour is set once, on .pw-over, and everything on the
+   screen that carries it reads it from there */
 
 /* The shortest phones. The way in has to stay in one view like everywhere
    else, and at 568pt there is not enough of it to keep both the cards' floor
