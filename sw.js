@@ -3,7 +3,7 @@
  * deploys show up immediately; only falls back to cache when offline.
  * Heavy binary assets (images) are cache-first since they rarely change.
  */
-const CACHE = "learnaeway-v158";
+const CACHE = "learnaeway-v160";
 
 const SHELL = [
   "./",
@@ -127,7 +127,7 @@ const SHELL = [
    would hand every phone install 860KB it can never display.
 
    assets/pointaeway/result/ and selection-banner.jpg follow the cards: the
-   two character pieces are on the screen that ends a match, the banner is on
+   three result pieces are on the screen that ends a match, the banner is on
    the screen that starts one, and cache-first keeps each from the first time
    it is shown. Nobody who never opens Gameæway pays for any of them. */
 

@@ -4004,43 +4004,49 @@
      every match and a picture cannot. What is left on the art is the scene
      and the BULL MODE / BEAR MODE wordmark, which nothing here repeats. */
 
-  const PW_OVER_ART = { bull: "bull-wins", bear: "bear-wins" };
+  /* Each finished piece, whole and as delivered: the headline, the tagline,
+     the FINAL PRINT label and the caption are all in the pixels, and the app
+     renders none of them. What it adds is the round line above, and — on a
+     win — the figure and the meter, dropped into the hole the art leaves under
+     its own FINAL PRINT label. `slot` is that hole as percentages of the art,
+     measured off the delivered files; the draw piece paints its own meter at
+     0, so it has no slot and takes no overlay. `w`/`h` are the files' own
+     proportions, which is how the slot stays on the art at any size. */
+  const PW_OVER_ART = {
+    bull: { file: "bull-wins", w: 900, h: 1011, slot: { l: 75.5, t: 30.0, w: 24.5, h: 49.5 } },
+    bear: { file: "bear-wins", w: 900, h: 1049, slot: { l: 75.5, t: 29.5, w: 24.5, h: 48.5 } },
+    draw: { file: "draw",      w: 900, h: 596,  slot: null },
+  };
 
-  /* A match ends two ways, and the caption has to tell the truth about which.
-     Reaching the target IS pushing the print to the top or the bottom; running
-     the decks out while ahead is holding it there, which is a different thing
-     and reads as a lie if it claims the first. */
-  function pwOverCaption() {
-    const c = pw.candle;
-    if (pw.winner === "draw") return "Neither side moved the print";
-    const pushed = Math.abs(c) >= PW_TARGET;
-    if (pw.winner === "bull") return pushed ? "Bulls pushed to the top" : "Bulls held the print up";
-    return pushed ? "Bears pushed to the bottom" : "Bears held the print down";
-  }
+  /* a laurel branch, one side; mirrored for the other with a transform */
+  const PW_LAUREL = `
+    <svg viewBox="0 0 28 90" aria-hidden="true">
+      <path d="M22 4 C6 26 6 64 22 86" fill="none" stroke="currentColor" stroke-width="1.6" stroke-linecap="round"/>
+      ${[12, 26, 40, 54, 68].map((y) => `
+        <ellipse cx="11" cy="${y}" rx="3.2" ry="7" transform="rotate(-38 11 ${y})" fill="currentColor"/>
+        <ellipse cx="20" cy="${y + 7}" rx="3.2" ry="7" transform="rotate(38 20 ${y + 7})" fill="currentColor"/>`).join("")}
+    </svg>`;
 
   function pwOverHTML() {
-    const draw = pw.winner === "draw";
-    const tone = draw ? "flat" : pw.winner;
-    const label = draw ? "Doji — Draw" : pw.winner === "bull" ? "Bulls Win" : "Bears Win";
-    const art = PW_OVER_ART[pw.winner];
+    const tone = pw.winner;                       // bull | bear | draw
+    const art = PW_OVER_ART[tone];
+    const slot = art.slot;
+    const overlay = slot ? `
+          <div class="pw-over-slot"
+               style="left:${slot.l}%;top:${slot.t}%;width:${slot.w}%;height:${slot.h}%">
+            <span class="pw-laurel l">${PW_LAUREL}</span>
+            <span class="pw-laurel r">${PW_LAUREL}</span>
+            ${pwTrackHTML()}
+          </div>` : "";
     return `
       <div class="pw-over ${tone}">
         <div class="pw-over-kicker">Round ${pw.round} · Final Print</div>
-        <div class="pw-over-title">${esc(label)}</div>
-        <div class="pw-over-sub">Market moves with you</div>
 
-        ${/* A draw has no winner and so no character to show it with — the
-              print stands where it opened and nobody pushed it. The stage
-              drops to the meter alone rather than holding a blank column
-              where a figure would be. */""}
         ${pw.showMatch ? pwMatchChartHTML() : `
-        <div class="pw-over-stage${art ? "" : " solo"}">
-          ${art ? `<img class="pw-over-art" src="${PW_RESULT_ART}${art}.png"
-                        alt="" draggable="false">` : ""}
-          <div class="pw-over-stat">
-            <div class="pw-over-stat-cap">Final Print</div>
-            ${pwTrackHTML()}
-            <div class="pw-over-caption">${esc(pwOverCaption())}</div>
+        <div class="pw-over-stage">
+          <div class="pw-over-art" style="--ar:${art.w} / ${art.h}">
+            <img src="${PW_RESULT_ART}${art.file}.png" alt="" draggable="false">
+            ${overlay}
           </div>
         </div>`}
 

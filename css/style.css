@@ -5690,72 +5690,85 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   font-size: calc(10.5px * var(--fs));
   font-weight: 700; letter-spacing: .22em; text-transform: uppercase;
   color: #8FA9C4;
+  margin-bottom: 4px;
 }
-.pw-over-title {
-  font-size: calc(38px * var(--fs));
-  font-weight: 900; letter-spacing: .01em; line-height: 1.02;
-  text-transform: uppercase;
-  color: var(--pw-over-tone);
-  text-shadow: 0 0 18px color-mix(in srgb, var(--pw-over-tone) 55%, transparent);
-  margin: 2px 0 0;
-}
-.pw-over-sub {
-  font-size: calc(10.5px * var(--fs));
-  font-weight: 700; letter-spacing: .2em; text-transform: uppercase;
-  color: #7FD4E8;
-  margin-bottom: 6px;
-}
-/* the scene: the character takes what is left after the print's column, and
-   both are bounded on height so the row cannot push the buttons off screen */
+/* The stage is the room between the round line and the buttons; the art is
+   drawn as large as that room allows without losing an edge. Both axes are
+   bounded through container units — sizing on one alone is the trap every
+   picture in this game has fallen into once. */
 .pw-over-stage {
   flex: 1 1 auto;
+  min-height: 0;
+  container-type: size;
   display: flex;
   align-items: center;
   justify-content: center;
-  gap: 4px;
-  min-height: 0;
-  margin: 2px 0 4px;
 }
-/* The character takes the room the print's column leaves and fills it on both
-   axes — height alone let the wider of the two pieces push past the column,
-   which is the same trap the cards and the seats fell into. */
 .pw-over-art {
-  flex: 1 1 64%;
-  min-width: 0;
-  width: 100%;
-  height: 100%;
-  object-fit: contain;
-  object-position: center center;
+  position: relative;
+  aspect-ratio: var(--ar);
+  width: min(100cqw, 100cqh * var(--ar));
+  max-width: 100%;
+  max-height: 100%;
+  /* the overlay measures itself against this box, so it must be the art's
+     box exactly — which it is, since the image fills it edge to edge */
+  container-type: size;
 }
-.pw-over-stat {
-  flex: 0 0 34%;
-  min-width: 0;
+.pw-over-art > img { display: block; width: 100%; height: 100%; }
+/* The hole the art leaves under its FINAL PRINT label, and what goes in it:
+   the figure at the top, the meter filling the rest, the two branches beside
+   it. Every size in here is a fraction of the art's width, so the whole
+   thing scales with the picture rather than with the screen. */
+.pw-over-slot {
+  position: absolute;
   display: flex;
   flex-direction: column;
   align-items: center;
-  justify-content: center;
-  gap: 2px;
+  justify-content: flex-start;
 }
-/* a draw: the meter is the whole stage, so it takes the middle and grows */
-.pw-over-stage.solo .pw-over-stat { flex: 0 0 auto; }
-.pw-over-stage.solo .pw-track { width: 48px; }
-.pw-over-stage.solo .pw-over-caption { max-width: 190px; }
-.pw-over-stat-cap {
-  font-size: calc(9.5px * var(--fs));
-  font-weight: 700; letter-spacing: .16em; text-transform: uppercase;
-  color: #9FC0E0;
+.pw-over-slot .pw-track-panel {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  gap: 0.6cqw;
 }
-/* the same meter the match was played on, at the size a headline figure wants */
-.pw-over .pw-track-val { font-size: calc(34px * var(--fs)); }
-.pw-over .pw-track { width: 40px; height: clamp(96px, 16vh, 150px); }
-.pw-over-caption {
-  max-width: 108px;
-  font-size: calc(9.5px * var(--fs));
-  font-weight: 700; letter-spacing: .1em; text-transform: uppercase;
-  line-height: 1.35;
-  color: #7FD4E8;
-  margin-top: 4px;
+.pw-over-slot .pw-track-val {
+  font-size: 8.2cqw;
+  font-weight: 900;
+  line-height: 1;
+  text-shadow: 0 0 14px color-mix(in srgb, currentColor 70%, transparent);
 }
+.pw-over-slot .pw-track-row {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  gap: 0.5cqw;
+}
+.pw-over-slot .pw-track-end { font-size: 2.2cqw; letter-spacing: .06em; color: #C9DDF2; }
+.pw-over-slot .pw-track {
+  flex: 1 1 auto;
+  min-height: 0;
+  height: auto;
+  width: 9.5cqw;
+  border-radius: 2.4cqw;
+  background-size: 1.8cqw 2.6cqw;
+  border-color: rgba(143,169,196,.55);
+}
+.pw-over-slot .pw-track-mid { font-size: 1.7cqw; }
+.pw-over-slot .pw-track-fill { left: 0.9cqw; right: 0.9cqw; border-radius: 1cqw; }
+.pw-laurel {
+  position: absolute;
+  top: 40%;
+  width: 6.4cqw;
+  height: 21cqw;
+  color: var(--pw-over-tone);
+  opacity: .85;
+  filter: drop-shadow(0 0 4px color-mix(in srgb, var(--pw-over-tone) 60%, transparent));
+}
+.pw-laurel svg { width: 100%; height: 100%; display: block; }
+.pw-laurel.l { left: 6%; }
+.pw-laurel.r { right: 6%; transform: scaleX(-1); }
+
 /* Play Again is the one thing this screen wants you to do, so it carries the
    wide pill; the two below it share the row and the smaller one. Both are the
    pill the app already draws everywhere — no new art for this screen. */
