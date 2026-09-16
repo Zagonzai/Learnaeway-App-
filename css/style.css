@@ -555,6 +555,13 @@ img { user-select: none; -webkit-user-drag: none; }
 /* eased down a touch now the pill runs the full width of the card; the
    centre profile ring keeps its own size and stays the anchor */
 .dock-btn img { width: 22px; height: 22px; object-fit: contain; }
+/* The controller is the one glyph in the row that is wider than it is tall —
+   1.61 to 1, where its neighbours run between 0.84 and 1.02. Contained in the
+   same square box it can only be 22 by 13.6, which reads as a smaller icon
+   even though it fills the box's width. Given a wider box it lands at 28 by
+   17.4, level with the play triangle's 18.5 by 22. The height stays 22 so it
+   can never push the row taller than the glyphs beside it. */
+.dock-btn.dock-battle img { width: 28px; height: 22px; }
 .dock-btn.glow-cyan { filter: brightness(1.45) drop-shadow(0 0 10px rgba(61,223,255,.65)); }
 
 /* centre slot: the ring asset is the frame, the photo fills it. Sized past the
@@ -7406,6 +7413,8 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   background: rgba(7,10,24,.72);
 }
 .ae-tile img { width: 26px; height: 26px; object-fit: contain; }
+/* the same wide glyph in the same square box — see the note on .dock-battle */
+.ae-tile[data-ae-go="games"] img { width: 33px; height: 26px; }
 .ae-tile span { font-size: calc(11.5px * var(--fs)); font-weight: 700; color: #C9DDF2; text-align: center; }
 .ae-tile:active { filter: brightness(1.3); transform: scale(.97); }
 
