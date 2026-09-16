@@ -3,7 +3,7 @@
  * deploys show up immediately; only falls back to cache when offline.
  * Heavy binary assets (images) are cache-first since they rarely change.
  */
-const CACHE = "learnaeway-v168";
+const CACHE = "learnaeway-v170";
 
 const SHELL = [
   "./",
@@ -127,11 +127,13 @@ const SHELL = [
    lives inside the >=1200px query, so a phone never asks for one. Precaching
    would hand every phone install 860KB it can never display.
 
-   assets/pointaeway/result/, assets/pointaeway/hub/ and selection-banner.jpg
-   follow the cards: the three result pieces are on the screen that ends a
-   match, the hub's frames and icons on the screen in front of one, the banner
-   on the screen that starts one, and cache-first keeps each from the first
-   time it is shown. Nobody who never opens Gameæway pays for any of them. */
+   assets/pointaeway/result/, assets/pointaeway/hub/, assets/pointaeway/library/
+   and selection-banner.jpg follow the cards: the three result pieces are on
+   the screen that ends a match, the hub's frames and icons on the screen in
+   front of one, the library's three tiles on the screen that lists the deck,
+   the banner on the screen that starts a match, and cache-first keeps each
+   from the first time it is shown. Nobody who never opens Gameæway pays for
+   any of them. */
 
 self.addEventListener("install", (e) => {
   e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));

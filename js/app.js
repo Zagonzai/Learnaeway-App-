@@ -3520,7 +3520,11 @@
       bull: [], bear: [], special: [],
       playerHand: [], aiHand: [], playerPlayed: null, aiPlayed: null,
       round: 1, log: [], winner: null, pendingCandle: 0, pending: null,
-      showLegend: false, seen: {},
+      /* Which set the card library is showing, or null for the three tiles on
+         their own. The library is a screen of its own now rather than a list
+         that unrolled under the picker, so the picker's own state went with
+         it. */
+      libSet: "bull", seen: {},
       /* one entry per resolved round: where the print stood when the round
          opened and where it stood when the round closed. That is a candle,
          and the run of them is the match as a chart — which is what View
@@ -4376,12 +4380,6 @@
       </div>`;
   }
 
-  function pwLegendHTML() {
-    return `<div class="pw-legend">
-      ${PW_SPECIALS.map((s) => `<div class="pw-legend-row">
-        <span class="pw-legend-name">${esc(s.type)}</span> ${esc(s.desc)}</div>`).join("")}
-    </div>`;
-  }
 
   /* ---- the match screen's own pieces ----
      There is no card back in the art set, so it is built here rather than
@@ -4501,7 +4499,18 @@
   function pwIntroHTML() {
     return `
       <div class="pw-intro">
-        <img class="pw-wordmark" src="${PW_INTRO}wordmark.png" alt="Pointæway">
+        ${/* The way back to the record. Start Match used to be a one-way door:
+              once a player was here the hub was gone until a match had been
+              played and finished. It is the same arrow the hub itself uses to
+              leave, in the same corner, so the pre-match flow reads as a
+              stack that can be walked back rather than a chute. */""}
+        <div class="pw-intro-head">
+          <button type="button" class="pw-hub-back" data-pw-setup-back
+                  aria-label="Back to Match Hub">
+            <img src="assets/nav-icons/icon-arrow-back@2x.png" alt="">
+          </button>
+          <img class="pw-wordmark" src="${PW_INTRO}wordmark.png" alt="Pointæway">
+        </div>
         <img class="pw-subtitle" src="${PW_INTRO}subtitle.png" alt="Candle card battle">
         <p class="pw-tagline">Draw, choose, reveal. Every round the candle moves —
           first side to push it ${PW_TARGET} points their way wins the day.</p>
@@ -4535,15 +4544,103 @@
           <span>Pick My Side for Me</span>
         </button>
 
-        ${/* built live rather than dropped in as the finished pill: it says two
-              different things depending on whether the list is open, and a
-              picture of one of them cannot say the other */""}
-        <button type="button" class="pw-wilds-btn" data-pw-legend
-                aria-expanded="${pw.showLegend}">
+        ${/* Built live rather than dropped in as the finished pill. The pill
+              that came with the art has "How Wild Cards Work" baked into it,
+              which is neither what this control says nor what it now does —
+              it opens the whole library, wilds and candles both — and a
+              picture of one label cannot say another. The circled i is the
+              only part of that pill worth keeping, so it rides here on its
+              own next to live text. */""}
+        <button type="button" class="pw-wilds-btn" data-pw-library>
           <img src="${PW_INTRO}ico-info.png" alt="">
-          <span>${pw.showLegend ? "Hide wild cards" : "How wild cards work"}</span>
+          <span>View All Cards</span>
         </button>
-        ${pw.showLegend ? pwLegendHTML() : ""}
+      </div>`;
+  }
+
+  /* ---- the card library ----
+     A screen, not a list that unrolls under the picker: the player leaves the
+     side they were choosing, browses, and comes back to it untouched. Which is
+     why the picker's state is not rebuilt on the way back — nothing about it
+     was thrown away.
+
+     The three tiles came with their own buttons baked in ("I'M BULL", "I'M
+     BEAR", "SPECIAL EFFECT") from their first life as side-select cards, and
+     on this screen those words are wrong: nobody is picking a side here. The
+     art is used whole and unaltered anyway — re-lettering it needs new art,
+     not a crop — and the live caption under each tile carries the real label,
+     which is also the button's accessible name. */
+  const PW_LIB = "assets/pointaeway/library/";
+  const PW_LIB_SETS = [
+    { k: "bull",    name: "Bull Cards",    sub: "6 candles · 30 in deck" },
+    { k: "bear",    name: "Bear Cards",    sub: "6 candles · 30 in deck" },
+    { k: "special", name: "Special Cards", sub: "10 effects · 1 each" },
+  ];
+
+  /* one row per face: the face itself, its name, and what it does. A candle
+     says its strength and how many of it a deck holds; a wild says its
+     effect, in the same words the wild sheet uses during a match. */
+  function pwLibRowHTML(set) {
+    if (set === "special") {
+      return PW_SPECIALS.map((s) => {
+        const card = Object.assign({}, s, { id: `lib-${s.type}`, side: "special", kind: "special" });
+        return `<div class="pw-lib-row wild">
+          <div class="pw-lib-face">${pwCardHTML(card, { small: true })}</div>
+          <div class="pw-lib-text">
+            <span class="pw-lib-name">${esc(s.type)}</span>
+            <span class="pw-lib-desc">${esc(s.desc)}</span>
+          </div>
+        </div>`;
+      }).join("");
+    }
+    const sd = set === "bear" ? "bear" : "bull";
+    return pwTiers(sd).map((t) => {
+      const card = { id: `lib-${t.type}`, side: sd, kind: "tier", type: t.type, pts: t.pts };
+      const move = t.pts === 0
+        ? "Moves the print nowhere."
+        : `Moves the print ${t.pts} ${sd === "bull" ? "up" : "down"}, ${sd === "bull" ? "+" : "−"}${t.pts} your way.`;
+      return `<div class="pw-lib-row ${sd}">
+        <div class="pw-lib-face">${pwCardHTML(card, { small: true })}</div>
+        <div class="pw-lib-text">
+          <span class="pw-lib-name">${esc(t.type)}
+            <b class="pw-lib-pts ${sd}">Strength ${t.pts}</b></span>
+          <span class="pw-lib-desc">${esc(move)} ${PW_TIER_COPIES} in a deck.</span>
+        </div>
+      </div>`;
+    }).join("");
+  }
+
+  /* One of the three is always open. A chooser with nothing chosen would leave
+     two thirds of a phone screen empty under it, and there is nothing this
+     screen could put there — so it opens on Bull, the tiles stay the picker,
+     and tapping the open one does nothing rather than emptying the screen. */
+  function pwLibraryHTML() {
+    const open = PW_LIB_SETS.some((s) => s.k === pw.libSet) ? pw.libSet : "bull";
+    const set = PW_LIB_SETS.find((s) => s.k === open);
+    return `
+      <div class="pw-lib">
+        <div class="pw-lib-head">
+          <button type="button" class="pw-hub-back" data-pw-lib-back
+                  aria-label="Back to Pick your side">
+            <img src="assets/nav-icons/icon-arrow-back@2x.png" alt="">
+          </button>
+          <span class="pw-lib-title">Card Library</span>
+        </div>
+
+        <div class="pw-lib-tiles">
+          ${PW_LIB_SETS.map((s) => `
+            <button type="button" class="pw-lib-tile${open === s.k ? " on" : ""}"
+                    data-pw-lib-set="${s.k}" aria-pressed="${open === s.k}">
+              <img src="${PW_LIB}tile-${s.k}.png" alt="" draggable="false">
+              <span class="pw-lib-cap">
+                <b>${esc(s.name)}</b>
+                <i>${esc(s.sub)}</i>
+              </span>
+            </button>`).join("")}
+        </div>
+
+        <div class="pw-rule"><span>${esc(set.name)}</span></div>
+        <div class="pw-lib-list">${pwLibRowHTML(open)}</div>
       </div>`;
   }
 
@@ -4556,6 +4653,14 @@
     cardScroll.classList.remove("pw-playing", "pw-introing", "pw-overing", "pw-revealing");
     if (pw.phase === "hub") {
       cardScroll.innerHTML = pwHubHTML();
+      cardScroll.scrollTop = 0;
+      return;
+    }
+    /* The one screen here that is allowed to be longer than a view: ten wild
+       faces and their effects do not fit one, and a list that is read rather
+       than acted on is the one place scrolling is the right answer. */
+    if (pw.phase === "library") {
+      cardScroll.innerHTML = pwLibraryHTML();
       cardScroll.scrollTop = 0;
       return;
     }
@@ -9971,7 +10076,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-legend],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-pw-hub-start],[data-pw-hub-find],[data-pw-hub-all],[data-pw-hub-back],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-library],[data-pw-lib-back],[data-pw-lib-set],[data-pw-setup-back],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-pw-hub-start],[data-pw-hub-find],[data-pw-hub-all],[data-pw-hub-back],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -10306,7 +10411,18 @@
     else if (t.hasAttribute("data-pw-draw")) pwChooseDraw(t.getAttribute("data-pw-draw"));
     else if (t.hasAttribute("data-pw-specials")) { pw.showSpecials = !pw.showSpecials; renderPointaeway(); }
     else if (t.hasAttribute("data-pw-seen")) { pw.showSeen = !pw.showSeen; renderPointaeway(); }
-    else if (t.hasAttribute("data-pw-legend")) { pw.showLegend = !pw.showLegend; renderPointaeway(); }
+    /* The library is a place, not a panel: going there and coming back leaves
+       the picker exactly as it was, because nothing about the picker is
+       rebuilt — only the phase moves. */
+    else if (t.hasAttribute("data-pw-library")) { pw.phase = "library"; pw.libSet = "bull"; renderPointaeway(); }
+    else if (t.hasAttribute("data-pw-lib-back")) { pw.phase = "setup"; renderPointaeway(); }
+    else if (t.hasAttribute("data-pw-lib-set")) {
+      const k = t.getAttribute("data-pw-lib-set");
+      if (k !== pw.libSet) { pw.libSet = k; renderPointaeway(); }
+    }
+    /* out of the pre-match flow and back to the record. The game object is
+       kept: no match has started, so there is nothing in it to drop. */
+    else if (t.hasAttribute("data-pw-setup-back")) { pw.phase = "hub"; renderPointaeway(); }
     else if (t.hasAttribute("data-pw-restart") || t.hasAttribute("data-pw-again")) {
       /* straight back to the side picker: these two mean play again, not go
          and look at the record */
