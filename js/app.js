@@ -7733,7 +7733,9 @@
     const TILES = [
       { id: "journal", label: "Trade Journal", icon: "assets/nav-icons/icon-trade-journal@2x.png" },
       { id: "checkin", label: "Trade Day Check-In", icon: "assets/nav-icons/icon-trade-day@2x.png" },
-      { id: "games", label: "Gameæway", icon: "assets/nav-icons/icon-dock-match-replay@2x.png" },
+      /* the same controller the dock's fourth slot took, and the same short
+         word: the ascending bars mean chart access now, everywhere */
+      { id: "games", label: "Game", icon: "assets/nav-icons/icon-dock-games@2x.png" },
       { id: "learn", label: "Learn", icon: "assets/nav-icons/icon-learn@2x.png" },
     ];
 
