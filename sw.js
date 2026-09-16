@@ -3,7 +3,7 @@
  * deploys show up immediately; only falls back to cache when offline.
  * Heavy binary assets (images) are cache-first since they rarely change.
  */
-const CACHE = "learnaeway-v175";
+const CACHE = "learnaeway-v177";
 
 const SHELL = [
   "./",
@@ -18,6 +18,11 @@ const SHELL = [
   "./assets/logo/logo-symbol-v2@3x.png",
   "./assets/logo/logo-wordmark@3x.png",
   "./assets/backgrounds/wave-header@2x.png",
+  /* the header's two frames. Chrome, not content: one of them is on every
+     screen from the first paint, and the other is one tap away — 82KB for
+     the pair, which is cheaper than a header that arrives unframed. */
+  "./assets/header/frame-expanded.png",
+  "./assets/header/frame-collapsed.png",
   /* one clip for both layouts now: the phone's header and the desktop banner
      play the same file, so precaching it covers both */
   "./assets/video/header-loop.mp4",

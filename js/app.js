@@ -10038,6 +10038,50 @@
   }
   const hdrMenu = $("hdrMenu");
   if (hdrMenu) hdrMenu.addEventListener("click", () => { barsHidden = !barsHidden; syncBars(); });
+
+  /* ---- the video header, folded to a pill ----
+     The second of the two folds, and independent of the first: the hamburger
+     folds the title bars, the grabber folds the footage, and either can be
+     folded without the other.
+
+     The height has to be a number for the shrink to animate, and the number is
+     the shape the header already had — its own width in the clip's 1080:455 —
+     so measuring it changes nothing on screen and only gives the transition
+     something to run between. Measured from the element rather than computed
+     from the column, because the column's width is one expression on a phone,
+     another past 700px and another again on desktop.
+
+     Held for the session rather than saved, for the same reason the bars are:
+     opening to a pill where the clock used to be, with no memory of having
+     asked for it, is a worse first second than folding it again. */
+  function syncHeadHeight() {
+    const hz = $("headerZone");
+    if (!hz) return;
+    const w = hz.clientWidth;
+    if (w > 0) {
+      document.querySelector(".app").style.setProperty(
+        "--head-h", (w * 455 / 1080).toFixed(1) + "px");
+    }
+  }
+  let headCollapsed = false;
+  function syncHead() {
+    const btn = $("hdrFold");
+    document.querySelector(".app").classList.toggle("head-collapsed", headCollapsed);
+    if (btn) {
+      btn.setAttribute("aria-expanded", String(!headCollapsed));
+      btn.setAttribute("aria-label",
+        headCollapsed ? "Expand the video header" : "Collapse the video header");
+    }
+    /* "hidden" for a <video> has to mean stopped as well as invisible, or the
+       clip is still being decoded behind a pill nobody can see */
+    const v = $("waveVideo");
+    if (v) {
+      if (headCollapsed) { try { v.pause(); } catch (e) {} }
+      else if (v.querySelector("source")) { const p = v.play(); if (p && p.catch) p.catch(() => {}); }
+    }
+  }
+  const hdrFold = $("hdrFold");
+  if (hdrFold) hdrFold.addEventListener("click", () => { headCollapsed = !headCollapsed; syncHead(); });
   $("btnSettings").addEventListener("click", () => togglePanel("settings"));
   $("btnProfile").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
   $("btnHeart").addEventListener("click", toggleLike);
@@ -11401,10 +11445,15 @@
     if (h > 0) document.documentElement.style.setProperty("--vhpx", h + "px");
   }
   syncViewportHeight();
+  syncHeadHeight();
   // the settling ticks: cheap, and the only thing that catches a stale boot value
   [60, 300, 1000].forEach((ms) => setTimeout(syncViewportHeight, ms));
+  [60, 300, 1000].forEach((ms) => setTimeout(syncHeadHeight, ms));
   window.addEventListener("pageshow", syncViewportHeight);
   window.addEventListener("resize", syncViewportHeight);
+  window.addEventListener("pageshow", syncHeadHeight);
+  window.addEventListener("resize", syncHeadHeight);
+  window.addEventListener("orientationchange", syncHeadHeight);
   // the battle chart repaints every animation frame; the replay chart is
   // static, so it needs a nudge when the viewport changes width
   window.addEventListener("resize", () => { if (state.view === "replay") mkPaintReplay(); });
