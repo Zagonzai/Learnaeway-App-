@@ -75,6 +75,15 @@
               aria-label="Turn sound on" aria-pressed="false">
         <img src="assets/buttons-icon/speaker-muted@2x.png" alt="">
       </button>
+      <!-- the speaker's mirror on the other side of the header. It used to sit
+           in the bar below and open the chart tools; its job now is to fold
+           that bar and the one under it away, which is why it cannot live in
+           either of them. -->
+      <button id="hdrMenu" class="hdr-menu" type="button"
+              aria-label="Hide the title bars" aria-expanded="true"
+              aria-controls="barTitle">
+        <img src="assets/nav-icons/icon-menu@2x.png" alt="">
+      </button>
       <div class="wave-clock" id="waveClock">
         <div class="wc-session"><b id="wcSessionName"></b><span>Session</span></div>
         <div class="wc-time" id="wcTime"></div>
@@ -84,8 +93,11 @@
 
     <!-- ============ TOP BARS (two separate pills, per corrected round-3 spec) ============ -->
     <div class="bar">
-      <button id="btnMenu" class="bar-icon" aria-label="Open course menu">
-        <img src="assets/nav-icons/icon-menu@2x.png" alt="">
+      <!-- the ascending bars, which the dock has given up, are the chart's
+           mark now: this is the way into the chart tools the hamburger used
+           to open -->
+      <button id="btnChart" class="bar-icon" aria-label="Open chart tools">
+        <img src="assets/nav-icons/icon-dock-match-replay@2x.png" alt="">
       </button>
       <div id="barTitle" class="bar-title">Learnæway's Path to Trading Course</div>
       <button id="btnSettings" class="bar-icon" aria-label="Open settings">
@@ -193,9 +205,10 @@
       <button id="navProfile" class="dock-btn dock-profile" aria-label="Profile">
         <img id="dockProfileImg" src="assets/nav-icons/icon-user@2x.png" alt="">
       </button>
-      <!-- 4th slot: Match Replay -->
+      <!-- 4th slot: Gameæway. The ascending bars that used to sit here have
+           gone up to the title bar to stand for the chart. -->
       <button id="navBattle" class="dock-btn dock-battle" aria-label="Gameæway — choose a game">
-        <img src="assets/nav-icons/icon-dock-match-replay@2x.png" alt="">
+        <img src="assets/nav-icons/icon-dock-games@2x.png" alt="">
       </button>
       <button id="navPlay" class="dock-btn" aria-label="Video library">
         <img src="assets/nav-icons/icon-video-play@2x.png" alt="">
