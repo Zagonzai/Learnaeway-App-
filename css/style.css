@@ -5282,17 +5282,97 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 }
 .pw-ghost:active { filter: brightness(1.4); }
 
-.pw-legend {
-  margin: 12px 0;
-  padding: 12px;
+/* ===================== POINTÆWAY — CARD LIBRARY =====================
+   Its own screen, reached from the picker and returning to it. Unlike every
+   other Pointæway screen this one is allowed to run past a view: it is read,
+   not played, and ten wild faces with their effects will not fit one.
+
+   The three tiles are the delivered side-select art used whole. Their baked
+   buttons say the wrong thing here, so they are not what anyone reads — the
+   live caption under each is the label, and it is the button's accessible
+   name too. */
+.pw-lib { padding: 0 2px 12px; text-align: left; }
+.pw-lib-head {
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+  min-height: 34px;
+  margin-bottom: 9px;
+}
+.pw-lib-title {
+  font-size: calc(14px * var(--fs));
+  font-weight: 800; letter-spacing: .22em; text-transform: uppercase;
+  color: #9FD9FF;
+}
+.pw-lib-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
+.pw-lib-tile {
+  display: flex; flex-direction: column; align-items: center; gap: 5px;
+  padding: 0; border: 0; background: none;
+  -webkit-tap-highlight-color: transparent;
+  text-align: center;
+  /* the three files are three different shapes (1.12, 1.13 and 1.22 tall per
+     unit wide), so matching them on WIDTH would leave their captions on three
+     different lines. Matched on height instead — the tallest file's own ratio,
+     measured against the tile's width — the captions share a baseline and the
+     narrow one simply sits narrower in its column. */
+  container-type: inline-size;
+}
+.pw-lib-tile img {
+  display: block; width: auto; height: 113cqw; max-width: 100%;
+  object-fit: contain;
+  transition: filter .16s ease, transform .16s ease;
+}
+@supports not (width: 1cqw) {
+  .pw-lib-tile img { width: 100%; height: auto; }
+}
+.pw-lib-tiles:has(.on) .pw-lib-tile:not(.on) img { filter: brightness(.48) saturate(.55); }
+.pw-lib-tile.on img { filter: brightness(1.14) saturate(1.08); }
+.pw-lib-tile:active img { transform: scale(.96); }
+@media (prefers-reduced-motion: reduce) { .pw-lib-tile img { transition: none; } }
+.pw-lib-cap { display: flex; flex-direction: column; gap: 1px; }
+.pw-lib-cap b { font-size: calc(10px * var(--fs)); font-weight: 800; color: var(--text); }
+.pw-lib-cap i {
+  font-style: normal;
+  font-size: calc(8px * var(--fs)); line-height: 1.3;
+  color: var(--pw-muted);
+}
+
+.pw-lib-list { display: grid; gap: 8px; }
+.pw-lib-row {
+  display: flex; align-items: center; gap: 11px;
+  padding: 8px 10px;
   border: 1px solid var(--pw-line);
   border-radius: 12px;
   background: rgba(7,10,24,.7);
-  text-align: left;
-  display: grid; gap: 7px;
 }
-.pw-legend-row { font-size: calc(11.5px * var(--fs)); line-height: 1.45; color: var(--pw-muted); }
-.pw-legend-name { color: var(--pw-wild); font-weight: 700; }
+.pw-lib-row.wild { border-color: rgba(232,178,58,.38); }
+.pw-lib-face { flex: 0 0 auto; display: flex; --pw-card-h: clamp(58px, 19vw, 82px); }
+.pw-lib-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+.pw-lib-name {
+  display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
+  font-size: calc(11.5px * var(--fs)); font-weight: 800; color: var(--text);
+}
+.pw-lib-pts {
+  flex: 0 0 auto;
+  padding: 2px 7px;
+  border-radius: 999px;
+  font-size: calc(8.5px * var(--fs)); font-weight: 800; letter-spacing: .07em;
+}
+.pw-lib-pts.bull { color: #7CF3C8; background: rgba(0,200,150,.14); border: 1px solid rgba(0,220,160,.4); }
+.pw-lib-pts.bear { color: #FF9CA8; background: rgba(255,60,90,.14); border: 1px solid rgba(255,80,110,.4); }
+.pw-lib-desc { font-size: calc(10.5px * var(--fs)); line-height: 1.45; color: var(--pw-muted); }
+
+/* the picker's own header: the wordmark keeps the middle, the way back to the
+   record sits in the corner it leaves free */
+.pw-intro-head {
+  position: relative;
+  display: flex; align-items: center; justify-content: center;
+  /* the arrow's own width kept clear on BOTH sides, so the wordmark stays
+     centred on the header rather than on what is left of it, and cannot run
+     under the arrow on a narrow phone — the wordmark file has no transparent
+     margin to give, so the clearance has to be real */
+  padding: 0 38px;
+}
+.pw-intro-head .pw-wordmark { width: min(100%, 300px); margin-top: 0; }
 
 /* ---- random side picker ----
    One card turning on its Y axis with Bull on one face and Bear on the other,
