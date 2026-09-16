@@ -128,23 +128,49 @@ img { user-select: none; -webkit-user-drag: none; }
    y:0, notch included; the clock inside carries its own safe-area inset.
    Desktop restores a fixed height further down: there the banner covers this
    and row 1's rhythm is set by --dt-head. */
+/* The header is a framed card now, not a full-bleed strip: the same 4% side
+   inset the bars take, a rounded corner of its own, and the delivered neon
+   frame drawn over it. `overflow: hidden` plus the radius is what actually
+   clips the video — the frame is a glow painted on top, and a glow cannot
+   crop anything, so the corner has to be a real clip.
+
+   Height comes from --head-h, which JS measures from the header's own width.
+   The aspect-ratio underneath it is the fallback that holds the shape before
+   that runs, and it is what the measurement reproduces — so nothing moves when
+   the variable arrives. A definite height is the point: it is the only form of
+   this box that can be animated to the collapsed pill. */
 .header-zone {
   position: relative;
   flex: 0 0 auto;
-  width: 100%;
+  /* the notch when there is one, a hairline when there is not — the frame has
+     corners now, and a corner flush against the top of the screen reads as a
+     rendering fault rather than as a design */
+  margin: max(var(--sat), 6px) 4% 0;
   aspect-ratio: 1080 / 455;
-  height: auto;
+  height: var(--head-h);
+  border-radius: 23px;
   overflow: hidden;
 }
-/* flush: the first bar starts exactly where the video ends. The other bar keeps
-   its 5px, which is what separates the two. */
-.header-zone + .bar { margin-top: 0; }
+/* the neon rounded rect, over the footage rather than behind it. No `fill`:
+   the middle of this frame belongs to the video. */
+.header-zone::after {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 2;
+  pointer-events: none;
+  border: 34px solid transparent;
+  border-image: url("../assets/header/frame-expanded.png") 90 / 34px stretch;
+}
+/* the header is its own card now, so it keeps the same gap from the first bar
+   that the two bars keep from each other */
+.header-zone + .bar { margin-top: 5px; }
 
 .wave-bg {
   position: absolute;
   inset: 0;
   opacity: 0.95;
-  transition: filter .4s ease;
+  transition: filter .4s ease, opacity .22s ease;
 }
 .wave-video {
   width: 100%;
@@ -172,8 +198,11 @@ img { user-select: none; -webkit-user-drag: none; }
   position: absolute;
   left: 0;
   right: 0;
-  top: var(--sat);
-  bottom: 0;
+  /* the notch is cleared by the header's own top margin now, so the clock no
+     longer carries the inset itself; the bottom keeps clear of the grabber */
+  top: 0;
+  bottom: 18px;
+  transition: opacity .18s ease;
   display: flex;
   flex-direction: column;
   align-items: center;
@@ -4203,7 +4232,10 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
    delivered assets are bare glyphs, so the element carries no frame. */
 .hdr-mute {
   position: absolute;
-  right: calc(4% + 14px);
+  /* the header carries the 4% itself now that it is an inset card, so the
+     glyph takes the bar's own 14px padding and lands in the same column as
+     the gear in the bar below it */
+  right: 14px;
   bottom: 6px;
   z-index: 3;
   width: 34px;
@@ -4222,7 +4254,7 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
    than as something dropped into the corner. */
 .hdr-menu {
   position: absolute;
-  left: calc(4% + 14px);
+  left: 14px;
   bottom: 6px;
   z-index: 3;
   width: 34px;
@@ -4235,6 +4267,86 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 .hdr-menu:active { opacity: .85; transform: scale(.92); }
 /* folded away, it stays lit so the way back is obvious */
 .hdr-menu.on { opacity: .95; }
+
+/* ---- the grabber ----
+   The third control on the header, between the other two and centred on the
+   header rather than on a corner. Drawn rather than delivered: it is a bar
+   five pixels tall, and a picture of one would be a picture of nothing. The
+   button's box is much larger than the mark so the tap target clears the 44
+   the platform asks for without the mark growing to match. */
+.hdr-fold {
+  position: absolute;
+  left: 50%;
+  bottom: 4px;
+  transform: translateX(-50%);
+  z-index: 4;
+  width: 56px;
+  height: 26px;
+  display: grid;
+  place-items: center;
+  background: none;
+}
+.hdr-fold::before {
+  content: "";
+  width: 36px;
+  height: 5px;
+  border-radius: 999px;
+  background: rgba(233,245,255,.82);
+  box-shadow: 0 0 9px rgba(61,223,255,.55);
+  transition: width .2s ease, background .2s ease;
+}
+.hdr-fold:active::before { background: #FFFFFF; width: 30px; }
+
+/* ---- the header, folded to a pill ----
+   Same bargain the title bars strike: a definite height either side of the
+   toggle, so the shrink is a thing that animates and the card below takes the
+   room back frame by frame. The video is not display:none — it is faded and
+   cropped away by the shrinking box, and JS pauses it, which is what "not
+   playing" has to mean for a <video>.
+
+   Mobile only, and scoped so it cannot survive a widened window: past the
+   breakpoint every control in this header is hidden, and a header folded away
+   with no button to unfold it would be a trap. */
+@media (max-width: 1199px) {
+  .header-zone {
+    transition: height .34s cubic-bezier(.2,.8,.2,1),
+                border-radius .34s cubic-bezier(.2,.8,.2,1);
+  }
+  .app.head-collapsed .header-zone {
+    height: 54px;
+    border-radius: 999px;
+  }
+  /* the pill's own frame, nine-sliced at half its height so the caps keep the
+     radius they were drawn with however wide the column is. `fill` here
+     because this frame has an inside and nothing behind it to show. */
+  .app.head-collapsed .header-zone::after {
+    border-width: 26px 28px;
+    border-image: url("../assets/header/frame-collapsed.png") 76 80 fill / 26px 28px stretch;
+  }
+  .app.head-collapsed .wave-bg { opacity: 0; }
+  .app.head-collapsed .wave-clock { opacity: 0; pointer-events: none; }
+  /* the three that stay come to the middle of the pill */
+  .app.head-collapsed .hdr-menu,
+  .app.head-collapsed .hdr-mute {
+    top: 50%;
+    bottom: auto;
+    transform: translateY(-50%);
+    opacity: .9;
+  }
+  .app.head-collapsed .hdr-fold {
+    top: 50%;
+    bottom: auto;
+    transform: translate(-50%, -50%);
+  }
+  /* the press states have to carry the centring transform too, or a tap on a
+     pill icon would fling it back down to where it sits when expanded */
+  .app.head-collapsed .hdr-menu:active,
+  .app.head-collapsed .hdr-mute:active { transform: translateY(-50%) scale(.92); }
+  .app.head-collapsed .hdr-fold:active { transform: translate(-50%, -50%); }
+}
+@media (prefers-reduced-motion: reduce) {
+  .header-zone, .wave-bg, .wave-clock, .hdr-fold::before { transition: none; }
+}
 
 /* ---- the title bars, folded away ----
    Both bars have a definite height, so height is a thing that can be animated
@@ -4333,7 +4445,17 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 
   /* the phone sizes this header to the clip it plays; here the banner behind
      is what shows, and row 1's height is the rhythm everything else follows */
-  .header-zone { aspect-ratio: auto; height: var(--dt-head); background: #000; }
+  /* the phone's framed card goes back to being a flat full-width strip here:
+     the banner below is what shows, and a rounded neon box around a black
+     plane would be a frame around nothing */
+  .header-zone {
+    aspect-ratio: auto;
+    height: var(--dt-head);
+    background: #000;
+    margin: 0;
+    border-radius: 0;
+  }
+  .header-zone::after { display: none; }
   /* Row 1 is one flat black plane until the art for it arrives. There was
      never a clip playing up here — the source is only ever attached below the
      breakpoint — but the empty <video> still painted its own #050614 ground,
@@ -4342,7 +4464,8 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
      layout the speaker has nothing to switch. */
   .header-zone .wave-bg,
   .header-zone .hdr-mute,
-  .header-zone .hdr-menu { display: none; }
+  .header-zone .hdr-menu,
+  .header-zone .hdr-fold { display: none; }
   .header-zone + .bar { margin-top: 5px; }
 
   /* ---- header banner ----
