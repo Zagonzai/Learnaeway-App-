@@ -7497,7 +7497,7 @@
        it rather than hanging over the new screen. */
     if (state.panel && state.panelView !== state.view) { state.panel = null; state.panelView = null; }
     cardScroll.classList.toggle("has-panel", !!state.panel);
-    $("btnMenu").classList.toggle("on", state.panel === "tools");
+    $("btnChart").classList.toggle("on", state.panel === "tools");
     $("btnSettings").classList.toggle("on", state.panel === "settings");
     if (state.panel) {
       stopAudio();
@@ -9903,7 +9903,34 @@
     }
   });
 
-  $("btnMenu").addEventListener("click", () => togglePanel("tools"));
+  $("btnChart").addEventListener("click", () => togglePanel("tools"));
+
+  /* ---------------- the title bars, folded away ----------------
+     The header's hamburger hides the two bars under it and gives the room to
+     the card. Nothing about what those bars hold changes — the titles, the
+     gear, the home button, the streak, the progress, whatever the screen puts
+     there — they are only taken off the screen and put back.
+
+     Everything below them reflows for free: the card is the flex column's one
+     growing child, so as the bars give up their height it takes it, frame by
+     frame, on every screen at once. The card's own top margin goes with them,
+     which is what leaves it flush against the video.
+
+     Held for the session rather than saved: coming back to an app with no
+     title on it and no obvious reason why is a worse first second than
+     folding it again. */
+  let barsHidden = false;
+  function syncBars() {
+    const btn = $("hdrMenu");
+    document.querySelector(".app").classList.toggle("bars-hidden", barsHidden);
+    if (btn) {
+      btn.setAttribute("aria-expanded", String(!barsHidden));
+      btn.setAttribute("aria-label", barsHidden ? "Show the title bars" : "Hide the title bars");
+      btn.classList.toggle("on", barsHidden);
+    }
+  }
+  const hdrMenu = $("hdrMenu");
+  if (hdrMenu) hdrMenu.addEventListener("click", () => { barsHidden = !barsHidden; syncBars(); });
   $("btnSettings").addEventListener("click", () => togglePanel("settings"));
   $("btnProfile").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
   $("btnHeart").addEventListener("click", toggleLike);

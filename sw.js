@@ -3,7 +3,7 @@
  * deploys show up immediately; only falls back to cache when offline.
  * Heavy binary assets (images) are cache-first since they rarely change.
  */
-const CACHE = "learnaeway-v166";
+const CACHE = "learnaeway-v168";
 
 const SHELL = [
   "./",
@@ -72,6 +72,7 @@ const SHELL = [
   "./assets/nav-icons/cat-discipline-streak@2x.png",
   "./assets/nav-icons/icon-match-replay@2x.png",
   "./assets/nav-icons/icon-dock-match-replay@2x.png",
+  "./assets/nav-icons/icon-dock-games@2x.png",
   "./assets/nav-icons/icon-game-pickaeway@2x.png",
   "./assets/nav-icons/icon-game-pointaeway@2x.png",
   /* the two animals that stand behind Pointæway's table. Small, and the match

@@ -4210,6 +4210,60 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
    — stays where it was. Opacity is untouched. */
 .hdr-mute img { width: 24px; height: 24px; object-fit: contain; display: block; }
 .hdr-mute:active { opacity: .85; transform: scale(.92); }
+/* The hamburger, mirrored across the header from the speaker: the same box,
+   the same inset, the same weight. It reads as the pair's other half rather
+   than as something dropped into the corner. */
+.hdr-menu {
+  position: absolute;
+  left: calc(4% + 14px);
+  bottom: 6px;
+  z-index: 3;
+  width: 34px;
+  height: 34px;
+  display: grid;
+  place-items: center;
+  opacity: .5;
+}
+.hdr-menu img { width: 24px; height: 24px; object-fit: contain; display: block; }
+.hdr-menu:active { opacity: .85; transform: scale(.92); }
+/* folded away, it stays lit so the way back is obvious */
+.hdr-menu.on { opacity: .95; }
+
+/* ---- the title bars, folded away ----
+   Both bars have a definite height, so height is a thing that can be animated
+   — no measuring, no max-height guess. The card below is the column's one
+   growing child and takes the room back frame by frame as they give it up,
+   which is what makes the two read as a single motion rather than as a panel
+   leaving and a panel jumping. */
+@media (max-width: 1199px) {
+  .bar,
+  .card-outer {
+    transition: height .34s cubic-bezier(.2,.8,.2,1),
+                margin-top .34s cubic-bezier(.2,.8,.2,1),
+                opacity .2s ease,
+                transform .34s cubic-bezier(.2,.8,.2,1);
+  }
+}
+/* Mobile only, and scoped so it cannot survive a widened window: past the
+   breakpoint the hamburger is hidden with the rest of the header's controls,
+   and a layout folded away with no button to unfold it would be a trap. */
+@media (max-width: 1199px) {
+  .app.bars-hidden .bar {
+    height: 0;
+    margin-top: 0;
+    opacity: 0;
+    transform: translateY(-10px);
+    overflow: hidden;
+    pointer-events: none;
+  }
+  /* and the card comes up to meet the video */
+  .app.bars-hidden .card-outer { margin-top: 0; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .bar, .card-outer { transition: none; }
+}
+
 /* nothing to toggle if the video can't play at all */
 .header-zone.video-broken .hdr-mute { display: none; }
 
@@ -4280,7 +4334,8 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
      and the static wave behind it both go, and with no hero left on this
      layout the speaker has nothing to switch. */
   .header-zone .wave-bg,
-  .header-zone .hdr-mute { display: none; }
+  .header-zone .hdr-mute,
+  .header-zone .hdr-menu { display: none; }
   .header-zone + .bar { margin-top: 5px; }
 
   /* ---- header banner ----
