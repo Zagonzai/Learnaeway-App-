@@ -4760,7 +4760,8 @@
     if (pickName) pickName.textContent = "Cool Down Game";
     cardFooter.style.display = "none";
 
-    cardScroll.classList.remove("pw-playing", "pw-introing", "pw-overing", "pw-revealing");
+    cardScroll.classList.remove("pw-playing", "pw-introing", "pw-overing",
+                                "pw-revealing", "pw-savedscreen");
     if (pw.phase === "hub") {
       cardScroll.innerHTML = pwHubHTML();
       cardScroll.scrollTop = 0;
@@ -4774,10 +4775,13 @@
       cardScroll.scrollTop = 0;
       return;
     }
-    /* a finished match read back off the record. Same reason as the library:
-       the chart plus an opened round runs past a view on a short phone, and
-       this screen is read rather than played. */
+    /* A finished match read back off the record. Unlike the library this one
+       is a fixed-height column: the chart and the round under it are the whole
+       screen, and they split what the two header lines leave between them
+       rather than stacking at their natural height and leaving the bottom half
+       of the card empty. */
     if (pw.phase === "saved") {
+      cardScroll.classList.add("pw-savedscreen");
       cardScroll.innerHTML = pwSavedHTML();
       cardScroll.scrollTop = 0;
       return;
@@ -4838,9 +4842,10 @@
                 aria-label="Restart match">Restart <span aria-hidden="true">⟳</span></button>
       </div>
 
+      ${/* The two animals that used to stand behind the table are gone. They
+            were decoration under the seats and the meter, and the board reads
+            cleaner without them — the cards on the table are the picture. */""}
       <div class="pw-field">
-        <span class="pw-flank bull" aria-hidden="true"></span>
-        <span class="pw-flank bear" aria-hidden="true"></span>
         ${pwArenaHTML(canPlay, peeking)}
       </div>
 
@@ -5468,7 +5473,7 @@
        leaving mid-round by the dock would carry it out of the game and leave
        the journal — the whole app — unable to scroll. Taken off here, which
        runs on every render that is not this view. */
-    cardScroll.classList.remove("pa-playing", "pw-playing", "pw-introing");
+    cardScroll.classList.remove("pa-playing", "pw-playing", "pw-introing", "pw-savedscreen");
     /* An abandoned round is not a result — it never reaches times[], so the
        match is simply dropped. Coming back lands on setup. */
     if (pa && pa.screen === "game" && !pa.ended) {
@@ -7725,7 +7730,7 @@
     if (state.panel) {
       stopAudio();
       cardFooter.style.display = "none";
-      cardScroll.classList.remove("pa-playing", "pw-playing", "pw-introing", "ci-resulting");
+      cardScroll.classList.remove("pa-playing", "pw-playing", "pw-introing", "pw-savedscreen", "ci-resulting");
       cardScroll.innerHTML = `<div class="ip-panel">
         <div class="ip-head">
           <span class="ip-title">${state.panel === "settings" ? "Settings" : "Tools"}</span>
@@ -7858,19 +7863,12 @@
     ];
 
     return `
+      ${/* Featured Connection stood here and is gone: it was a slot waiting
+            for a curation feature that is not being built, so what it actually
+            showed every visitor was a line saying so. store.featured is left
+            alone — nothing writes it, and dropping it from the store would
+            rewrite every saved profile for no gain. */""}
       <div class="ae-home">
-        <div class="ae-feature">
-          <div class="ae-feature-cap">Featured connection</div>
-          <div class="ae-feature-row">
-            <span class="ae-feature-ring"><img src="assets/nav-icons/icon-user@2x.png" alt=""></span>
-            <span class="ae-feature-text">
-              <span class="ae-feature-name">${esc((store.featured && store.featured.name) || "Nobody featured yet")}</span>
-              <span class="ae-feature-sub">${esc((store.featured && store.featured.sub)
-                || "This slot spotlights a trader or platform. Curation is not wired up yet.")}</span>
-            </span>
-          </div>
-        </div>
-
         <div class="ae-cap">Today</div>
         <div class="ae-snap">
           <div class="ae-snap-cell">
@@ -10600,7 +10598,12 @@
        one has just arrived. */
     else if (t.hasAttribute("data-pw-hub-open")) {
       pw.savedT = Number(t.getAttribute("data-pw-hub-open"));
-      pw.showRound = null;
+      /* Opens on the first round rather than on nothing. This screen is two
+         halves, the chart and the round it opens, and arriving with the bottom
+         half empty would be the blank stretch this layout exists to remove. */
+      const m = (store.pwHistory || []).find((x) => x.t === pw.savedT);
+      const first = pwDecChart(m && m.chart)[0];
+      pw.showRound = first ? first.round : null;
       pw.phase = "saved";
       renderPointaeway();
     }
