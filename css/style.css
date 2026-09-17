@@ -5028,11 +5028,11 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   color: #7FA8CC;
 }
 
-/* ---- the one entry with a scene ----
-   Pointæway's art carries both animals and the VS between them, so it stands
-   in for the icon rather than sitting next to one. The picture fills the top
-   of the card edge to edge and takes the card's own corner radius up there;
-   the line underneath sits on the card's ground, as the other two entries do. */
+/* ---- the entries with a scene ----
+   Each game's art carries the game, so it stands in for the icon rather than
+   sitting next to one. The picture fills the top of the card edge to edge and
+   takes the card's own corner radius up there; the line underneath sits on the
+   card's ground. */
 .gs-card-art {
   position: relative;
   display: block;
@@ -5052,6 +5052,7 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
      The band is kept wide on purpose: it is one of three entries that have to
      share a single view, and every row this picture gains the list loses. */
   aspect-ratio: 2.35 / 1;
+  position: relative;
   background-size: cover;
   background-position: center;
   padding: 12px 44px 0;
@@ -5059,6 +5060,27 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   /* the names have to hold against whatever the picture does behind them */
   text-shadow: 0 2px 10px rgba(0,0,0,.85), 0 0 22px rgba(0,0,0,.7);
 }
+/* The scrim is part of the treatment, not decoration on top of it: with one
+   scene the type happened to sit over the empty middle between two animals and
+   a shadow was enough. With three, it lands on a face and on a countdown clock
+   as well, so the band it sits in gets a ground of its own that fades out
+   before the picture's subject starts.
+
+   A pseudo-element rather than a second background layer: the picture arrives
+   inline, from the entry's own record, and a relative url() handed through a
+   custom property would be resolved against the stylesheet rather than against
+   the page — which is a 404 and a blank card. */
+.gs-scene::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 0;
+  pointer-events: none;
+  background: linear-gradient(180deg,
+    rgba(3,6,18,.88) 0%, rgba(3,6,18,.72) 30%,
+    rgba(3,6,18,.34) 52%, rgba(3,6,18,0) 76%);
+}
+.gs-scene > * { position: relative; z-index: 1; }
 .gs-card-art .gs-name { font-size: calc(19px * var(--fs)); }
 /* The icon rides at the head of the description line, in the same left column
    the other two entries use — this entry's title row is the scene, so there is
@@ -6111,6 +6133,45 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 .pw-hrow-res.win,  .pw-hrow-pts.win  { color: var(--pw-bull); }
 .pw-hrow-res.loss, .pw-hrow-pts.loss { color: #FF5C93; }
 .pw-hrow-res.flat, .pw-hrow-pts.flat { color: var(--pw-muted); }
+/* a row with a match behind it is a button; the frame already ends in a
+   chevron, so the only thing it needs is to answer a press */
+.pw-hrow.open {
+  width: 100%;
+  text-align: left;
+  transition: filter .13s ease, transform .13s ease;
+  -webkit-tap-highlight-color: transparent;
+}
+.pw-hrow.open:active { filter: brightness(1.32); transform: scale(.99); }
+
+/* ---- a match read back off the record ---- */
+.pw-saved { padding: 0 2px 12px; }
+.pw-saved-head {
+  display: flex;
+  align-items: baseline;
+  flex-wrap: wrap;
+  gap: 4px 9px;
+  margin: 2px 2px 10px;
+  font-size: calc(11px * var(--fs));
+  font-weight: 700;
+}
+.pw-saved-res {
+  font-size: calc(15px * var(--fs));
+  font-weight: 800; letter-spacing: .08em; text-transform: uppercase;
+}
+.pw-saved-meta { flex: 1 1 auto; min-width: 0; color: #9FC0E0; font-weight: 600; }
+.pw-saved-pts { font-variant-numeric: tabular-nums; font-size: calc(14px * var(--fs)); }
+.pw-saved-when {
+  flex: 0 0 100%;
+  color: #8FA9C4; font-weight: 600;
+  font-size: calc(10px * var(--fs));
+}
+/* the chart carries its own "Match Replay · N rounds" caption, which is what
+   the screen above it is called and what the line under that already counts —
+   on this screen it is the same thing said three times, so it goes */
+.pw-saved .pw-chart-head { display: none; }
+.pw-saved-res.win,  .pw-saved-pts.win  { color: var(--pw-bull); }
+.pw-saved-res.loss, .pw-saved-pts.loss { color: #FF5C93; }
+.pw-saved-res.flat, .pw-saved-pts.flat { color: var(--pw-muted); }
 
 /* ---- the two ways in ---- */
 .pw-hub-acts { display: flex; gap: 8px; }

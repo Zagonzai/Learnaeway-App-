@@ -3140,19 +3140,22 @@
        and knowledge-test glyphs; icon-match-replay is still what the Match
        Replay button on the Pickæway home screen draws, so it stayed where it
        was rather than being repainted. */
+    /* All three carry a scene now. Each one's art is its game — the reacher
+       going for a candle, the two animals with the VS between them, the pack
+       running the clock down — so the picture stands in for the title row and
+       the icon rides at the head of the line underneath. */
     { id: "pickaeway", name: "Pickæway", tag: "You vs. You",
       blurb: "Read the candles as they print and call the next move before the print dies.",
-      icon: "assets/nav-icons/icon-game-pickaeway@2x.png" },
-    /* The one entry with a scene behind it. Its art carries the two animals
-       and the VS between them, which is the game — so it stands in for the
-       icon rather than sitting beside one, and the other two stay plain. */
+      icon: "assets/nav-icons/icon-game-pickaeway@2x.png",
+      art: "assets/games/banner-pickaeway.jpg" },
     { id: "pointaeway", name: "Pointæway", tag: "1v1 Card Game",
       blurb: "Bull against Bear. Play a candle, reveal together, and push the print 25 points your way.",
       icon: "assets/nav-icons/icon-game-pointaeway@2x.png",
       art: "assets/pointaeway/selection-banner.jpg" },
     { id: "placeaway", name: "Placæway", tag: "Solo Speed Run",
       blurb: "The whole pattern prints at once. Place every candle in order against the clock.",
-      icon: "assets/nav-icons/icon-dock-match-replay@2x.png" },
+      icon: "assets/nav-icons/icon-dock-match-replay@2x.png",
+      art: "assets/games/banner-placeaway.jpg" },
   ];
 
   function renderGames() {
@@ -3525,6 +3528,9 @@
          that unrolled under the picker, so the picker's own state went with
          it. */
       libSet: "bull", seen: {},
+      /* which match off the record the replay screen is showing, by the
+         timestamp it was filed under */
+      savedT: null,
       /* one entry per resolved round: where the print stood when the round
          opened and where it stood when the round closed. That is a candle,
          and the run of them is the match as a chart — which is what View
@@ -4039,6 +4045,41 @@
     return store.pwStats;
   }
 
+  /* ---- a match, small enough to keep sixty of them ----
+     The replay needs the two cards of every round, and a card object carries
+     a name, a kind, an effect and — on a wild — a sentence of prose. Sixty
+     matches of those would be most of a phone's localStorage for this app
+     alone. Nothing about a card has to be stored, though: a candle is decided
+     by its side and its strength and a wild by which of the ten it is, so the
+     round keeps two short codes and the pair is rebuilt from the same tables
+     the decks are built from. About thirty bytes a round rather than four
+     hundred. */
+  function pwEncCard(c) {
+    if (!c) return "";
+    if (c.side === "special") return "S" + PW_SPECIALS.findIndex((s) => s.type === c.type);
+    return (c.side === "bull" ? "U" : "D") + c.pts;
+  }
+  function pwDecCard(code) {
+    if (typeof code !== "string" || !code) return null;
+    if (code.charAt(0) === "S") {
+      const s = PW_SPECIALS[Number(code.slice(1))];
+      return s ? Object.assign({}, s, { id: "sv", side: "special", kind: "special" }) : null;
+    }
+    const side = code.charAt(0) === "U" ? "bull" : "bear";
+    const pts = Number(code.slice(1));
+    const t = pwTiers(side).find((x) => x.pts === pts);
+    return t ? { id: "sv", side, kind: "tier", type: t.type, pts: t.pts } : null;
+  }
+  const pwEncChart = (chart) => (chart || []).map((r) => ({
+    r: r.round, o: r.open, c: r.close, y: pwEncCard(r.you), p: pwEncCard(r.opp),
+  }));
+  function pwDecChart(enc) {
+    if (!Array.isArray(enc)) return [];
+    return enc
+      .map((e) => ({ round: e.r, open: e.o, close: e.c, you: pwDecCard(e.y), opp: pwDecCard(e.p) }))
+      .filter((r) => r.you && r.opp);
+  }
+
   function pwRecordMatch(winner) {
     const st = pwRecord();
     const side = pw.playerSide;
@@ -4053,6 +4094,10 @@
     const pts = side === "bear" ? -pw.candle : pw.candle;
     store.pwHistory.unshift({
       t: Date.now(), side, opp: "computer", result, pts, rounds: pw.round,
+      /* the match itself, not just its scoreline: this is what the hub's
+         history rows open, and it is the same shape the live result screen's
+         replay draws from */
+      chart: pwEncChart(pw.chart),
     });
     if (store.pwHistory.length > PW_HISTORY_MAX) store.pwHistory.length = PW_HISTORY_MAX;
     save();
@@ -4085,12 +4130,26 @@
     return `${date}, ${time}`;
   }
 
+  const pwHasReplay = (m) => Array.isArray(m && m.chart) && m.chart.length > 0;
+
+  /* A row is a button when there is a match behind it to open, and a plain row
+     when there is not — which is every match played before matches were kept.
+     Those still count in the record and still print their scoreline; there is
+     simply nothing to walk back through, and a control that opens nothing is
+     worse than no control. */
   function pwHubRowHTML(m) {
     const win = m.result === "win";
     const tone = m.result === "draw" ? "flat" : win ? "win" : "loss";
     const label = m.result === "draw" ? "Draw" : win ? "Win" : "Loss";
+    const open = pwHasReplay(m);
+    const tag = open ? "button" : "div";
+    const attrs = open
+      ? ` type="button" data-pw-hub-open="${m.t}"` +
+        ` aria-label="${esc(label)} as ${m.side === "bull" ? "Bull" : "Bear"},` +
+        ` ${pwSigned(m.pts)}, ${esc(pwHubWhen(m.t))}. Open the replay."`
+      : "";
     return `
-      <div class="pw-hrow">
+      <${tag} class="pw-hrow${open ? " open" : ""}"${attrs}>
         <span class="pw-hrow-ico">
           <img src="${PW_HUB}ico-${m.side === "bull" ? "bull" : "bear"}.png" alt="">
         </span>
@@ -4099,6 +4158,54 @@
         <span class="pw-hrow-res ${tone}">${label}</span>
         <span class="pw-hrow-pts ${tone}">${pwSigned(m.pts)}</span>
         <span class="pw-hrow-when">${esc(pwHubWhen(m.t))}</span>
+      </${tag}>`;
+  }
+
+  /* ---- a match off the record ----
+     The result of a finished match and the chart that made it, on a screen of
+     its own reached from the hub's history. The chart and the round reveal are
+     the same two components the live result screen uses — they take the rounds
+     as an argument, so neither of them knows whether the match ended a second
+     ago or last week. */
+  function pwSavedHTML() {
+    const m = (store.pwHistory || []).find((x) => x.t === pw.savedT);
+    if (!m) {
+      return `<div class="pw-saved">
+        <div class="pw-lib-head">
+          <button type="button" class="pw-hub-back" data-pw-saved-back
+                  aria-label="Back to Match Hub">
+            <img src="assets/nav-icons/icon-arrow-back@2x.png" alt="">
+          </button>
+          <span class="pw-lib-title">Match Replay</span>
+        </div>
+        <div class="pw-chart-empty">That match is no longer on the record.</div>
+      </div>`;
+    }
+    const rows = pwDecChart(m.chart);
+    const tone = m.result === "draw" ? "flat" : m.result === "win" ? "win" : "loss";
+    const label = m.result === "draw" ? "Draw" : m.result === "win" ? "Win" : "Loss";
+    return `
+      <div class="pw-saved">
+        <div class="pw-lib-head">
+          <button type="button" class="pw-hub-back" data-pw-saved-back
+                  aria-label="Back to Match Hub">
+            <img src="assets/nav-icons/icon-arrow-back@2x.png" alt="">
+          </button>
+          <span class="pw-lib-title">Match Replay</span>
+        </div>
+
+        <div class="pw-saved-head">
+          <span class="pw-saved-res ${tone}">${label}</span>
+          <span class="pw-saved-meta">
+            as ${m.side === "bull" ? "Bull" : "Bear"} ·
+            vs ${m.opp === "friend" ? "Friend" : "Computer"} ·
+            ${rows.length || m.rounds || 0} round${(rows.length || m.rounds) === 1 ? "" : "s"}
+          </span>
+          <span class="pw-saved-pts ${tone}">${pwSigned(m.pts)}</span>
+          <span class="pw-saved-when">${esc(pwHubWhen(m.t))}</span>
+        </div>
+
+        ${pwMatchChartHTML(rows)}
       </div>`;
   }
 
@@ -4255,8 +4362,11 @@
     return r.close === r.open ? "flat" : r.close > r.open ? "bull" : "bear";
   }
 
-  function pwMatchChartHTML() {
-    const rows = pw.chart;
+  /* Takes the rounds rather than reading them: the live result screen hands it
+     the match just played, the hub hands it one off the record, and neither
+     knows the other exists. */
+  function pwMatchChartHTML(chart) {
+    const rows = chart || pw.chart;
     if (!rows.length) {
       return `<div class="pw-chart-empty">No rounds to replay.</div>`;
     }
@@ -4661,6 +4771,14 @@
        than acted on is the one place scrolling is the right answer. */
     if (pw.phase === "library") {
       cardScroll.innerHTML = pwLibraryHTML();
+      cardScroll.scrollTop = 0;
+      return;
+    }
+    /* a finished match read back off the record. Same reason as the library:
+       the chart plus an opened round runs past a view on a short phone, and
+       this screen is read rather than played. */
+    if (pw.phase === "saved") {
+      cardScroll.innerHTML = pwSavedHTML();
       cardScroll.scrollTop = 0;
       return;
     }
@@ -10122,7 +10240,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-library],[data-pw-lib-back],[data-pw-lib-set],[data-pw-setup-back],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-pw-hub-start],[data-pw-hub-find],[data-pw-hub-all],[data-pw-hub-back],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-library],[data-pw-lib-back],[data-pw-lib-set],[data-pw-setup-back],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-pw-hub-start],[data-pw-hub-find],[data-pw-hub-all],[data-pw-hub-back],[data-pw-hub-open],[data-pw-saved-back],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -10477,6 +10595,18 @@
     else if (t.hasAttribute("data-pw-hub-start")) { pw.phase = "setup"; renderPointaeway(); }
     else if (t.hasAttribute("data-pw-hub-find")) { pw.hubNote = !pw.hubNote; renderPointaeway(); }
     else if (t.hasAttribute("data-pw-hub-all")) { pw.hubAll = !pw.hubAll; renderPointaeway(); }
+    /* a history row opens the match it stands for. The chart starts closed —
+       the round reveal belongs to whichever chart it was opened from, and this
+       one has just arrived. */
+    else if (t.hasAttribute("data-pw-hub-open")) {
+      pw.savedT = Number(t.getAttribute("data-pw-hub-open"));
+      pw.showRound = null;
+      pw.phase = "saved";
+      renderPointaeway();
+    }
+    else if (t.hasAttribute("data-pw-saved-back")) {
+      pw.savedT = null; pw.showRound = null; pw.phase = "hub"; renderPointaeway();
+    }
     /* the chart takes the art's slot rather than opening over it — nothing in
        this app arrives as a panel on a dimmed screen */
     else if (t.hasAttribute("data-pw-match")) {
