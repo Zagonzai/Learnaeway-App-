@@ -3,7 +3,7 @@
  * deploys show up immediately; only falls back to cache when offline.
  * Heavy binary assets (images) are cache-first since they rarely change.
  */
-const CACHE = "learnaeway-v179";
+const CACHE = "learnaeway-v181";
 
 const SHELL = [
   "./",
@@ -30,7 +30,6 @@ const SHELL = [
   "./assets/bars/background-bar-pill@2x.png",
   "./assets/backgrounds/background-card-gridpattern@2x.png",
   "./assets/backgrounds/background-card-plain@2x.png",
-  "./assets/bars/info-bar@2x.png",
   "./assets/nav-icons/icon-video-play@2x.png",
   "./assets/buttons-pill/button-pill-standard@2x.png",
   "./assets/buttons-pill/button-gradient-blue@2x.png",
@@ -113,7 +112,13 @@ const SHELL = [
   "./assets/pwa/icon-512.png",
 ];
 
-/* assets/social/og-image.png is deliberately absent: link-preview scrapers
+/* assets/bars/info-bar@2x.png is gone from this list rather than from the
+   repository: the two title bars were the only thing that drew it and they
+   draw the dock's pill now, so every install was paying 80KB for a picture
+   nothing asks for. The file stays on disk in case the flatter bar is wanted
+   back; /assets/ is cache-first, so it would cost one fetch and no more.
+
+   assets/social/og-image.png is deliberately absent: link-preview scrapers
    fetch it directly from the network and never go through this worker, so
    precaching it would cost every install 320KB nobody in the app ever sees.
 

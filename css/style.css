@@ -285,16 +285,24 @@ img { user-select: none; -webkit-user-drag: none; }
   gap: 12px;
   border-radius: var(--radius-pill);
 }
-/* info-bar@2x.png as a 9-slice: pill caps stay crisp, middle stretches */
+/* The dock's own pill, nine-sliced: the two bars and the bar of five icons at
+   the bottom of the screen are the same object now, drawn from the same file.
+   Same slices the dock takes (54 60), and the widths it takes scaled to this
+   bar's height — 19 of 40 against the dock's 24 of 48 — so the caps keep the
+   curve they were drawn with rather than being squashed into a shorter box.
+
+   Nothing here touches layout: this is an absolutely positioned pseudo-element
+   with no content, so its border box is the bar's border box and its border
+   widths cost the bar's own icons and title nothing. */
 .bar::before {
   content: "";
   position: absolute;
   inset: 0;
   z-index: -1;
-  border: 22px solid transparent;
-  border-left-width: 24px;
-  border-right-width: 24px;
-  border-image: url("../assets/bars/info-bar@2x.png") 48 53 fill / 22px 24px stretch;
+  border: 19px solid transparent;
+  border-left-width: 21px;
+  border-right-width: 21px;
+  border-image: url("../assets/bars/background-bar-pill@2x.png") 54 60 fill / 19px 21px stretch;
 }
 
 .bar-icon {
