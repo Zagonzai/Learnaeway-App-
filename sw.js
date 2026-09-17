@@ -3,7 +3,7 @@
  * deploys show up immediately; only falls back to cache when offline.
  * Heavy binary assets (images) are cache-first since they rarely change.
  */
-const CACHE = "learnaeway-v180";
+const CACHE = "learnaeway-v182";
 
 const SHELL = [
   "./",
@@ -79,11 +79,6 @@ const SHELL = [
   "./assets/nav-icons/icon-dock-games@2x.png",
   "./assets/nav-icons/icon-game-pickaeway@2x.png",
   "./assets/nav-icons/icon-game-pointaeway@2x.png",
-  /* the two animals that stand behind Pointæway's table. Small, and the match
-     screen is unreadable without them — the card faces are not here, see the
-     note below */
-  "./assets/pointaeway/flank-bull.png",
-  "./assets/pointaeway/flank-bear.png",
   "./assets/nav-icons/icon-chevron-down@2x.png",
   "./assets/desktop/bar@2x.png",
   "./assets/desktop/square@2x.png",
@@ -112,7 +107,12 @@ const SHELL = [
   "./assets/pwa/icon-512.png",
 ];
 
-/* assets/bars/info-bar@2x.png is gone from this list rather than from the
+/* assets/pointaeway/flank-bull.png and flank-bear.png leave this list with
+   the same reasoning as info-bar below: the two animals that stood behind the
+   match table are off the board, so nothing fetches them and every install was
+   paying for them. The files stay on disk.
+
+   assets/bars/info-bar@2x.png is gone from this list rather than from the
    repository: the two title bars were the only thing that drew it and they
    draw the dock's pill now, so every install was paying 80KB for a picture
    nothing asks for. The file stays on disk in case the flatter bar is wanted

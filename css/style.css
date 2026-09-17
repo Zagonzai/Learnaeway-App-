@@ -4863,6 +4863,16 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   .bottom-nav {
     position: relative;
     z-index: auto;
+    /* The deployed build lifts this pill out of flow on a phone with
+       left/right: 3.5%, and putting it back in flow here did not take those
+       offsets back. On a relatively positioned box `left` is a nudge and
+       `right` is ignored, so the pill was shifted right by its own inset —
+       measured at 11.2px on a 1280 window and 16.8px on a 1920 one, which is
+       exactly 3.5% of the centre column — while its margins kept it the right
+       width. Sitting on top of that nudge it was the one thing on the page not
+       centred on the column it belongs to. */
+    left: auto;
+    right: auto;
     margin: 0 3.5% var(--gap-bottom);
     height: var(--dt-dock);
   }
@@ -5533,8 +5543,8 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 .pw-field {
   position: relative;
   isolation: isolate;
-  /* the flanks are placed to bleed off both edges; without this their tails
-     count toward the scroller's width and the whole screen slides sideways */
+  /* kept from the flanks it used to hold: nothing in here bleeds past the
+     edges now, but a stray wide child still must not slide the screen */
   overflow: hidden;
   padding: 2px 2px 6px;
   display: flex;
@@ -5544,21 +5554,7 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   flex: 1 1 auto;
   min-height: 84px;
 }
-.pw-flank {
-  position: absolute;
-  top: 8%;
-  z-index: -1;
-  width: min(46%, 190px);
-  aspect-ratio: 364 / 480;
-  background-position: center;
-  background-repeat: no-repeat;
-  background-size: contain;
-  /* the seats sit straight on top of them now, so they step back a little */
-  opacity: .2;
-  pointer-events: none;
-}
-.pw-flank.bull { left: -9%;  background-image: url("../assets/pointaeway/flank-bull.png"); }
-.pw-flank.bear { right: -9%; background-image: url("../assets/pointaeway/flank-bear.png"); }
+/* .pw-flank — the two animals behind the table — is gone with them. */
 
 /* ---- what is left, and the two controls that belong with it ---- */
 .pw-counts {
@@ -6151,8 +6147,59 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 }
 .pw-hrow.open:active { filter: brightness(1.32); transform: scale(.99); }
 
-/* ---- a match read back off the record ---- */
-.pw-saved { padding: 0 2px 12px; }
+/* ---- a match read back off the record ----
+   A fixed-height column, not a list that stops where its content does. The two
+   header lines take what they need; everything under them is the chart and the
+   round it opens, and those two split the rest in half. With no round open the
+   chart simply takes all of it — either way the screen ends where the card
+   does, at any round count. */
+.card-scroll.pw-savedscreen { display: flex; flex-direction: column; overflow: hidden; }
+.pw-saved {
+  padding: 0 2px 6px;
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  /* read by both halves below, so they can price the strip that sits between
+     them: the chart is half the area, and the strip plus the round it opens is
+     the other half */
+  --pw-row-h: 44px;
+}
+.pw-saved > .pw-lib-head,
+.pw-saved > .pw-saved-head { flex: 0 0 auto; }
+.pw-saved .pw-chart {
+  flex: 1 1 auto;
+  /* the opposite of the live result screen's chart, which may not shrink past
+     its content because that screen is allowed to scroll. This one is not, so
+     it is the thing that gives. */
+  min-height: 0;
+  margin: 0;
+}
+/* the two halves. The chip row rides inside the top one, with the plot, because
+   the two are one scroller — column n of the chart has to stay column n of the
+   row, and that only holds while they share a parent. */
+.pw-saved .pw-chart-body {
+  /* half the area, plus the strip that rides inside it — so the plot alone is
+     the half, not the plot and the strip together */
+  flex: 1 1 calc(50% + var(--pw-row-h));
+  /* the parent floor goes: on a short phone the whole area can be less than
+     twice this body's natural minimum, and a floor that cannot be met is an
+     overflow rather than a protection. The plot keeps a smaller one of its
+     own. */
+  min-height: 0;
+  --pw-plot-min: 56px;
+}
+.pw-saved .pw-reveal {
+  flex: 1 1 calc(50% - var(--pw-row-h));
+  min-height: 0;
+  margin: 8px 0 0;
+  overflow-y: auto;
+  display: flex;
+  flex-direction: column;
+}
+/* the pair of cards takes the middle of its half rather than hugging the top */
+.pw-saved .pw-reveal-row { flex: 1 1 auto; min-height: 0; }
+.pw-saved .pw-reveal-card { --pw-card-h: clamp(62px, 26vw, 128px); }
 .pw-saved-head {
   display: flex;
   align-items: baseline;
@@ -7431,30 +7478,8 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   color: #8FA9C4;
   margin: 16px 0 8px 2px;
 }
-.ae-feature {
-  padding: 12px 14px;
-  border-radius: 14px;
-  border: 1px solid var(--pw-wild, #E8B23A);
-  background: linear-gradient(160deg, rgba(74,58,20,.5), rgba(7,10,24,.9));
-}
-.ae-feature-cap {
-  font-size: calc(9.5px * var(--fs));
-  font-weight: 800; letter-spacing: .18em; text-transform: uppercase;
-  color: var(--pw-wild, #E8B23A);
-  margin-bottom: 9px;
-}
-.ae-feature-row { display: flex; align-items: center; gap: 12px; }
-.ae-feature-ring {
-  flex: 0 0 auto;
-  width: 44px; height: 44px;
-  display: grid; place-items: center;
-  border-radius: 50%;
-  background: url("../assets/buttons-icon/profile-ring@2x.png") center / contain no-repeat;
-}
-.ae-feature-ring img { width: 22px; height: 22px; }
-.ae-feature-text { min-width: 0; }
-.ae-feature-name { display: block; font-size: calc(14px * var(--fs)); font-weight: 800; color: var(--text); }
-.ae-feature-sub { display: block; font-size: calc(11px * var(--fs)); line-height: 1.45; color: #9FC0E0; margin-top: 2px; }
+/* the Featured Connection panel that stood at the top of this screen is
+   gone; nothing draws .ae-feature any more. */
 
 .ae-snap { display: flex; gap: 7px; }
 .ae-snap-cell {
