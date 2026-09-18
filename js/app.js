@@ -5751,12 +5751,18 @@
   function syncChartPanel() {
     const outer = $("chartOuter");
     const panel = $("chartPanel");
-    if (!outer || !panel) return;
+    const app = document.querySelector(".app");
+    if (!outer || !panel || !app) return;
     const rows = pwChartRows();
     if (!rows) {
       if (!outer.hidden) { outer.hidden = true; panel.innerHTML = ""; }
+      app.classList.remove("chart-open");
       return;
     }
+    /* the panel stands where the video header and the two title pills stand,
+       so they step aside for exactly as long as it is up. Its height is their
+       height, in CSS, which is why the card below never moves. */
+    app.classList.add("chart-open");
     outer.hidden = false;
     panel.innerHTML = pwLiveChartHTML(rows);
   }
@@ -6141,7 +6147,6 @@
       const o = pw.online;
       const live = !!(o && o.room && o.room.status === "active" && !o.timedOut);
       cardScroll.classList.toggle("pw-playing", live);
-      cardScroll.classList.toggle("pw-charting", live && !!o.showChart);
       /* the hand keeps its sideways position across the live re-renders that
          every room change causes */
       const keep = cardScroll.scrollTop;
@@ -6213,11 +6218,10 @@
        nothing scrolls vertically */
     cardScroll.classList.remove("pw-introing");
     cardScroll.classList.add("pw-playing");
-    /* The live print is a panel of its own above this card, not a row inside
-       it — see syncChartPanel. What it costs this card is height, and the
-       board gives that up the way it gives it up to anything else; past its
-       floor the card scrolls rather than the table being crushed. */
-    cardScroll.classList.toggle("pw-charting", !!pw.showChart);
+    /* The live print is a panel of its own, and it stands where the video
+       header stands rather than taking anything from this card — see
+       syncChartPanel. So there is nothing for the board to give up, and
+       nothing here changes when it opens. */
     cardScroll.innerHTML = `
       <div class="pw-counts">
           <span class="pw-count"><b>${ownCount}</b><i>Deck</i></span>

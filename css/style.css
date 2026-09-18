@@ -19,6 +19,9 @@
      fallback invalidates the whole declaration on anything that doesn't
      support it, so every inset in this file goes through these two. */
   --sat: env(safe-area-inset-top, 0px);
+  /* a title pill's height, named because the live chart panel takes over the
+     header's and both pills' footprint and has to be exactly as tall */
+  --bar-h: clamp(40px, 5.3vh, 48px);
   --sab: env(safe-area-inset-bottom, 0px);
   /* What the dock reserves under itself. The inset is the boundary, and this
      sits 14px inside it: the home indicator needs less room than iOS reserves,
@@ -279,7 +282,7 @@ img { user-select: none; -webkit-user-drag: none; }
   flex: 0 0 auto;
   margin: 5px 4% 0;
   padding: 0 14px;
-  height: clamp(40px, 5.3vh, 48px);
+  height: var(--bar-h);
   display: flex;
   align-items: center;
   gap: 12px;
@@ -5235,8 +5238,14 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 /* ===================== POINTÆWAY ===================== */
 /* Its own palette, carried over from the reference prototype: bull teal, bear
    red, wild gold. Kept as local tokens rather than folded into the app's cyan
-   and magenta, because in this game the two colours mean sides, not brand. */
-#cardScroll {
+   and magenta, because in this game the two colours mean sides, not brand.
+
+   The live print panel is named here too because it is the one piece of this
+   game that lives OUTSIDE the content card — it stands where the video header
+   stands — and a candle whose fill is var(--pw-bull) draws in nothing at all
+   when that token does not reach it. */
+#cardScroll,
+#chartPanel {
   --pw-bull: #1FCBA0;
   --pw-bull-dim: #12493D;
   --pw-bear: #E5484D;
@@ -5691,15 +5700,27 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 
 /* ---- the live print, in a panel of its own ----
    Two containers stacked, not one: this panel wears the same 9-slice frame
-   the content card wears, stands between the bars and the card, and the
-   board's own panel starts fresh below it. The module inside is the replay
-   chart, so nothing here redraws it — what this does is frame it and bound
-   its height, because every pixel it takes is one the card below gives up. */
+   the content card wears, and the board's own panel starts fresh below it.
+
+   ITS SIZE IS FIXED, AND IT IS NOT ITS OWN. The panel takes over the exact
+   footprint of the looping video header and the two title pills — one region,
+   two uses that cannot both be open — so its box is their box: the same side
+   margins, and a height that adds up to the three of them plus the gaps
+   between. That is why .app.chart-open hides all three: they are not merely
+   out of the way, the panel is standing where they stood.
+
+   Because the height is computed from the header and the pills rather than
+   from the chart, it is the same box at one candle and at thirty-four. The
+   chart inside compresses to fit, exactly as the replay does for a long
+   match. */
 .chart-outer {
   position: relative;
   isolation: isolate;
   flex: 0 0 auto;
-  margin: 8px 3.5% 0;
+  /* the header's own top margin, then its height, then each pill's gap and
+     height — the three boxes this one replaces, added up */
+  margin: max(var(--sat), 6px) 4% 0;
+  height: calc(var(--head-h, 152px) + 10px + 2 * var(--bar-h));
   border-radius: var(--radius-card);
 }
 .chart-outer[hidden] { display: none; }
@@ -5711,52 +5732,45 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   border: 36px solid transparent;
   border-image: url("../assets/backgrounds/app-background-card-v2@2x.png") 96 fill / 36px stretch;
 }
+/* the panel is open, so the region it borrows is not */
+.app.chart-open .header-zone,
+.app.chart-open .bar { display: none; }
+
 .chart-panel {
   position: relative;
+  height: 100%;
   border-radius: calc(var(--radius-card) - 1.5px);
   overflow: hidden;
   /* the same inset the content card gives its own scroller, so the two
      stacked panels hold their content at the same distance from the frame */
-  padding: 14px 18px 8px;
+  padding: 16px 16px 12px;
 }
-.pw-live { display: flex; }
+.pw-live { display: flex; height: 100%; }
 .pw-live .pw-chart {
-  flex: 1 1 auto; min-width: 0;
+  flex: 1 1 auto; min-width: 0; min-height: 0;
   margin: 0;
 }
-/* the plot and its chip row are what is bounded; a reveal opened from a
-   candle then adds its own height below them */
+/* the chart fills the panel rather than asking for a height of its own: the
+   box is fixed, so the plot is whatever is left after the head, the chip row
+   and a reveal if one is open */
 .pw-live .pw-chart-body {
-  flex: 0 0 auto;
-  height: clamp(90px, 15vh, 140px);
-  --pw-row-h: 28px;
-  --pw-plot-min: 58px;
+  flex: 1 1 auto;
+  min-height: 0;
+  --pw-row-h: 30px;
+  --pw-plot-min: 54px;
 }
 .pw-live .pw-chart-head { margin-bottom: 4px; font-size: calc(8.5px * var(--fs)); }
 .pw-live .pw-chart-rowcap { font-size: calc(6.5px * var(--fs)); }
-/* the panel keeps its size before the first round prints, so opening it does
-   not move the card and then move it again one round later */
 .pw-live .pw-chart-empty {
   display: flex; align-items: center; justify-content: center;
   flex: 1 1 auto;
-  height: clamp(90px, 15vh, 140px);
   padding: 0 6px;
   font-size: calc(10.5px * var(--fs));
   text-align: center;
 }
-/* tapping a candle opens that round the way the replay does — the same
-   component, so the same behaviour */
-.pw-live .pw-reveal { margin-top: 6px; }
-/* The card below is shorter while the panel is up, and on a small phone the
-   board can want more than it is left. It scrolls rather than crushing the
-   table, which is the same bargain the round reveal strikes on the result
-   screen. The board's own panel is otherwise untouched.
-
-   The table's floor goes up with it: the arena is what the print meter takes
-   its height from, and 84px leaves the meter too short to hold its own
-   read-out clear of its two ends. */
-.card-scroll.pw-playing.pw-charting { overflow-y: auto; }
-.card-scroll.pw-playing.pw-charting .pw-field { min-height: 124px; }
+/* tapping a candle opens that round the way the replay does. The panel may
+   not grow for it, so the plot yields the room instead. */
+.pw-live .pw-reveal { flex: 0 0 auto; margin-top: 6px; }
 .pw-count-btn:active { filter: brightness(1.5); }
 
 /* ---- the arena: your card, the meter, theirs ----
@@ -5782,11 +5796,9 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
    through the meter between them. */
 .pw-seat {
   /* A floor under both bounds: whichever runs out first decides the card, but
-     neither may decide there is no card. With the live print panel open the
-     arena is short enough for the height bound to reach zero, and a table
-     with nothing on it is worse than a table that has to be scrolled to —
-     which is what .pw-charting already allows for. Above that floor this is a
-     no-op, so the board at its usual height is unchanged. */
+     neither may decide there is no card. Above the floor this is a no-op, so
+     the board at any ordinary height is unchanged; it is here because a short
+     arena once sized the height bound to zero and emptied the table. */
   --pw-card-h: max(64px, min(
     100cqh - 36px,
     (100cqw - var(--pw-gauge-w) - 18px) / 2 * 334 / 249
@@ -7507,8 +7519,13 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
    the whole point of the chart is the whole match at a glance, and a long one
    pushed half of itself off the edge. The columns get thin instead, and the
    row's numbers thin out with them — see .pw-chip-row.sparse. */
+/* A column may shrink to a hairline for a long match, and it may NOT stretch
+   to fill the box for a short one: four rounds spread across the whole plot
+   read as four wide smears rather than as four candles. The cap is a little
+   above what a full 34-round match gets, so a finished match is untouched and
+   a match in progress grows into the box from the left. */
 .pw-cndl,
-.pw-chip { flex: 1 1 0; min-width: 4px; }
+.pw-chip { flex: 1 1 0; min-width: 4px; max-width: 26px; }
 
 .pw-cndl {
   position: relative;
