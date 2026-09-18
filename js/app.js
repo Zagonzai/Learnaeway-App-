@@ -4891,7 +4891,6 @@
       ? "Waiting for theirs…"
       : theirs ? `${b.opp.side} · ${b.opp.deck} left` : "Awaiting play…";
 
-    const chartRows = o.showChart ? pwOnlineChartRows(b) : null;
     return `
       <div class="pw-on pw-on-board">
         ${/* The board's header is one row, not two. A local match spends
@@ -4913,10 +4912,6 @@
           <span class="pw-on-split" aria-hidden="true"></span>
           ${player(oppInfo, oppScore, "opp", "Opp")}
         </div>
-
-        ${/* the live print, above the board, the same module a single-player
-              match opens from the same row */""}
-        ${o.showChart ? pwLiveChartHTML(chartRows) : ""}
 
         <div class="pw-counts">
           <span class="pw-count"><b>${b.me.deck}</b><i>Deck</i></span>
@@ -5731,6 +5726,41 @@
     })}</div>`;
   }
 
+  /* ---- the panel it lives in ----
+     Its own container in the app's column, between the bars and the content
+     card, wearing the same 9-slice frame the card does. It is not a row of
+     the board: the board's panel starts fresh below it and is exactly what it
+     was before this feature existed.
+
+     Which match it is drawing — local or online — is decided here rather than
+     by either board, so both toggles drive one panel. */
+  function pwChartRows() {
+    if (state.view !== "pointaeway" || !pw) return null;
+    const o = pw.online;
+    if (pw.phase === "online") {
+      if (!o || !o.showChart || !o.room || o.room.status !== "active" || o.timedOut) return null;
+      return pwOnlineChartRows(pwOnlineBoard(o.room, o.me.uid));
+    }
+    if (pw.phase === "selecting" || pw.phase === "draw-choice"
+        || pw.phase === "discipline-pick" || pw.phase === "takeprofit-choice") {
+      return pw.showChart ? (pw.chart || []) : null;
+    }
+    return null;
+  }
+
+  function syncChartPanel() {
+    const outer = $("chartOuter");
+    const panel = $("chartPanel");
+    if (!outer || !panel) return;
+    const rows = pwChartRows();
+    if (!rows) {
+      if (!outer.hidden) { outer.hidden = true; panel.innerHTML = ""; }
+      return;
+    }
+    outer.hidden = false;
+    panel.innerHTML = pwLiveChartHTML(rows);
+  }
+
   /* the room's candles as chart rounds. They open and close around 100, so
      both are moved onto the −25..+25 track the component draws, and clamped
      to it — the module's win condition is five round wins, so a print can run
@@ -6079,9 +6109,10 @@
     const pickName = document.querySelector("#pickBar .pick-name");
     if (pickName) pickName.textContent = "Cool Down Game";
     cardFooter.style.display = "none";
-    /* the phase decides whether the challenge bar belongs here, and this
-       screen repaints itself without going through render() */
+    /* the phase decides whether the challenge bar and the chart panel belong
+       here, and this screen repaints itself without going through render() */
     syncChallengeBar();
+    syncChartPanel();
 
     cardScroll.classList.remove("pw-playing", "pw-introing", "pw-overing",
                                 "pw-revealing", "pw-savedscreen");
@@ -6182,14 +6213,12 @@
        nothing scrolls vertically */
     cardScroll.classList.remove("pw-introing");
     cardScroll.classList.add("pw-playing");
-    /* with the chart open the board may want more than one view on a small
-       phone. It scrolls rather than crushing the table — the same bargain
-       .pw-revealing already strikes for the round reveal. */
+    /* The live print is a panel of its own above this card, not a row inside
+       it — see syncChartPanel. What it costs this card is height, and the
+       board gives that up the way it gives it up to anything else; past its
+       floor the card scrolls rather than the table being crushed. */
     cardScroll.classList.toggle("pw-charting", !!pw.showChart);
     cardScroll.innerHTML = `
-      ${/* the live print, above the board, per the reference */""}
-      ${pw.showChart ? pwLiveChartHTML(pw.chart) : ""}
-
       <div class="pw-counts">
           <span class="pw-count"><b>${ownCount}</b><i>Deck</i></span>
           <span class="pw-count wild"><b>${pw.special.length}</b><i>Wild</i></span>
@@ -9325,6 +9354,9 @@
        challenge in full, and stands up everywhere else, so it has to be
        settled after the view is decided rather than when a challenge lands */
     syncChallengeBar();
+    /* the live print belongs to one screen only, so every other one takes it
+       down on the way in */
+    syncChartPanel();
   }
 
   /* ---------------- navigation ---------------- */

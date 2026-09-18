@@ -5601,53 +5601,74 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 .pw-chart-btn { padding: 6px 9px; display: grid; place-items: center; }
 .pw-chart-ico { width: 20px; height: 15px; display: block; color: currentColor; }
 
-/* ---- the live print, above the board ----
-   The module is the replay chart, so nothing here redraws it. What this does
-   is bound it: on the board it is one row of a fixed-height column and the
-   table below it must keep its floor, so the chart's own plot and chip-row
-   minimums come down and the whole panel is capped. Past that the screen
-   scrolls (.pw-charting) rather than the table being squeezed. */
-.pw-live {
+/* ---- the live print, in a panel of its own ----
+   Two containers stacked, not one: this panel wears the same 9-slice frame
+   the content card wears, stands between the bars and the card, and the
+   board's own panel starts fresh below it. The module inside is the replay
+   chart, so nothing here redraws it — what this does is frame it and bound
+   its height, because every pixel it takes is one the card below gives up. */
+.chart-outer {
+  position: relative;
+  isolation: isolate;
   flex: 0 0 auto;
-  display: flex;
-  margin-bottom: 2px;
-  padding: 7px 9px 4px;
-  border: 1px solid var(--pw-line);
-  border-radius: 14px;
-  background: rgba(4,7,18,.7);
+  margin: 8px 3.5% 0;
+  border-radius: var(--radius-card);
 }
+.chart-outer[hidden] { display: none; }
+.chart-outer::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: -1;
+  border: 36px solid transparent;
+  border-image: url("../assets/backgrounds/app-background-card-v2@2x.png") 96 fill / 36px stretch;
+}
+.chart-panel {
+  position: relative;
+  border-radius: calc(var(--radius-card) - 1.5px);
+  overflow: hidden;
+  /* the same inset the content card gives its own scroller, so the two
+     stacked panels hold their content at the same distance from the frame */
+  padding: 14px 18px 8px;
+}
+.pw-live { display: flex; }
 .pw-live .pw-chart {
   flex: 1 1 auto; min-width: 0;
   margin: 0;
 }
 /* the plot and its chip row are what is bounded; a reveal opened from a
-   candle then adds its own height below them and the screen scrolls */
+   candle then adds its own height below them */
 .pw-live .pw-chart-body {
   flex: 0 0 auto;
-  height: clamp(96px, 15vh, 140px);
+  height: clamp(90px, 15vh, 140px);
   --pw-row-h: 28px;
   --pw-plot-min: 58px;
 }
 .pw-live .pw-chart-head { margin-bottom: 4px; font-size: calc(8.5px * var(--fs)); }
 .pw-live .pw-chart-rowcap { font-size: calc(6.5px * var(--fs)); }
-/* the module keeps its size before the first round prints, so opening it
-   does not move the board and then move it again one round later */
+/* the panel keeps its size before the first round prints, so opening it does
+   not move the card and then move it again one round later */
 .pw-live .pw-chart-empty {
   display: flex; align-items: center; justify-content: center;
   flex: 1 1 auto;
-  height: clamp(96px, 15vh, 140px);
+  height: clamp(90px, 15vh, 140px);
   padding: 0 6px;
   font-size: calc(10.5px * var(--fs));
   text-align: center;
 }
 /* tapping a candle opens that round the way the replay does — the same
-   component, so the same behaviour. It is the one thing the panel grows for,
-   and the screen scrolls to carry it. */
+   component, so the same behaviour */
 .pw-live .pw-reveal { margin-top: 6px; }
-/* With the chart open the board may need more than one view on a short phone.
-   It scrolls rather than crushing the table, which is the same bargain the
-   round reveal already strikes on the result screen. */
+/* The card below is shorter while the panel is up, and on a small phone the
+   board can want more than it is left. It scrolls rather than crushing the
+   table, which is the same bargain the round reveal strikes on the result
+   screen. The board's own panel is otherwise untouched.
+
+   The table's floor goes up with it: the arena is what the print meter takes
+   its height from, and 84px leaves the meter too short to hold its own
+   read-out clear of its two ends. */
 .card-scroll.pw-playing.pw-charting { overflow-y: auto; }
+.card-scroll.pw-playing.pw-charting .pw-field { min-height: 124px; }
 .pw-count-btn:active { filter: brightness(1.5); }
 
 /* ---- the arena: your card, the meter, theirs ----
@@ -5672,10 +5693,16 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
    the width that binds, and sizing on height alone grows the cards straight
    through the meter between them. */
 .pw-seat {
-  --pw-card-h: min(
+  /* A floor under both bounds: whichever runs out first decides the card, but
+     neither may decide there is no card. With the live print panel open the
+     arena is short enough for the height bound to reach zero, and a table
+     with nothing on it is worse than a table that has to be scrolled to —
+     which is what .pw-charting already allows for. Above that floor this is a
+     no-op, so the board at its usual height is unchanged. */
+  --pw-card-h: max(64px, min(
     100cqh - 36px,
     (100cqw - var(--pw-gauge-w) - 18px) / 2 * 334 / 249
-  );
+  ));
   display: flex; flex-direction: column; align-items: center; justify-content: center;
   gap: 3px;
   min-width: 0;
@@ -5753,6 +5780,11 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   position: relative;
   width: var(--pw-gauge-w, clamp(62px, 17vw, 88px));
   height: min(100%, 210px);
+  /* the read-out sits in the middle and the two ends ride inside the gauge,
+     so below this the figure lands on top of +25 and −25. The arena gives the
+     meter its height, and with the live print panel open there is less of it
+     to give — see the floor on .pw-field below. */
+  min-height: 74px;
   border: 1.5px solid rgba(120,200,255,.4);
   border-radius: 14px;
   background: linear-gradient(180deg, rgba(255,60,90,.07), rgba(4,7,18,.85) 46%, rgba(4,7,18,.85) 54%, rgba(47,230,194,.07));

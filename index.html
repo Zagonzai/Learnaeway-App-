@@ -170,6 +170,15 @@
       </button>
     </div>
 
+    <!-- ============ LIVE PRINT — its own panel, above the card ============
+         A panel in its own right, not a row inside the game board: it wears
+         the same 9-slice frame the content card does and stands between the
+         bars and the card. app.js fills it and shows it while a Pointæway
+         match has its chart toggled on, and hides it the rest of the time. -->
+    <div class="chart-outer" id="chartOuter" hidden>
+      <div class="chart-panel" id="chartPanel"></div>
+    </div>
+
     <!-- ===================== MAIN CONTENT CARD ===================== -->
     <main class="card-outer" id="cardOuter">
       <div class="card" id="card">
