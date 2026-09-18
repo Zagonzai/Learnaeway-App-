@@ -1,4 +1,20 @@
 rules_version = '2';
+
+/* Learnæway / Æway Firestore rules.
+ *
+ * ⚠ THIS FILE IS THE REPOSITORY'S COPY. Check it against what is deployed in
+ * the Firebase console before running `firebase deploy --only firestore:rules`
+ * — the rules for rooms, matchmaking, matchInvites and journal were deployed
+ * from elsewhere while this file still said "deny everything else", so the two
+ * have been apart. What is written below covers every collection the modules
+ * in js/online/ actually touch, which is: users, matchmaking, rooms,
+ * matchInvites, journal, connectionRequests, connections and conversations.
+ *
+ * The rule the build prompt asks for by name is at the bottom: a write to a
+ * conversation is refused unless a connections document exists for that pair
+ * and names the writer. messages.js does not check that itself, so this is
+ * the only thing enforcing it — the UI hiding the button is not enforcement.
+ */
 service cloud.firestore {
   match /databases/{database}/documents {
 
@@ -10,30 +26,176 @@ service cloud.firestore {
       return signedIn() && request.auth.uid == uid;
     }
 
-    // Phase 1: each user owns their profile + synced course state.
+    function me() {
+      return request.auth.uid;
+    }
+
+    /* the id both connections.js and messages.js build for a pair: the two
+       uids sorted and joined with an underscore. Written out here because
+       rules cannot sort, so the pair is checked both ways round instead. */
+    function pairIs(id, a, b) {
+      return id == a + '_' + b || id == b + '_' + a;
+    }
+
+    /* the connection document for a pair, which is what makes them able to
+       message each other at all */
+    function connectedPair(pairId) {
+      return exists(/databases/$(database)/documents/connections/$(pairId))
+        && me() in get(/databases/$(database)/documents/connections/$(pairId)).data.members;
+    }
+
+    /* ---------------- profiles ----------------
+     * ⚠ PRIVACY, and it is a real one. Finding a player is a query over this
+     * collection (invites.js's lookupPlayer reads displayNameLower, and
+     * profiles.js's getPlayerByInviteCode reads inviteCode), and
+     * connections.js reads users/{otherUid} to put a name and a photo on a
+     * connection row. So a signed-in account has to be able to read other
+     * accounts' documents here — and this same document is where the app's
+     * own sync (js/firebase.js saveUserDoc) keeps course progress, journal
+     * entries and notes. Firestore cannot hide fields on read, so with this
+     * rule any signed-in user who knows a uid can read all of it.
+     *
+     * The fix is to split the four public fields — displayName,
+     * displayNameLower, photoURL, inviteCode — into their own collection and
+     * point the lookups at it. That is a change to the attached modules,
+     * which this build was asked not to make, so it is flagged here rather
+     * than done. Until then, treat users/{uid} as readable by any signed-in
+     * account. */
     match /users/{uid} {
+      allow read: if signedIn();
+      allow write: if isOwner(uid);
+    }
+
+    /* ---------------- the queue (matchmaking.js) ----------------
+     * findAndClaimOpponent claims somebody else's entry, so a signed-in
+     * account has to be able to read the queue and to update the entry it
+     * claims. Only the owner may create or delete their own. */
+    match /matchmaking/{uid} {
+      allow read: if signedIn();
+      allow create, delete: if isOwner(uid);
+      allow update: if signedIn();
+    }
+
+    /* ---------------- rooms (pointaway.js) ----------------
+     * Both players write to the room every round — commits, reveals, and the
+     * resolution that prints the candle — so membership is the whole rule.
+     * A room is created by quickMatch or by invites.js's acceptInvite, and in
+     * both cases the creator is one of the two players. */
+    match /rooms/{roomId} {
+      allow read: if signedIn() && me() in resource.data.players;
+      allow create: if signedIn()
+        && request.resource.data.players.size() == 2
+        && me() in request.resource.data.players;
+      allow update: if signedIn() && me() in resource.data.players;
+      allow delete: if false;                 // history is the record
+    }
+
+    /* ---------------- match invites (invites.js) ----------------
+     * The sender creates it and may withdraw it; the recipient may accept or
+     * decline it; both watch it. Nobody else sees it. */
+    match /matchInvites/{inviteId} {
+      allow read: if signedIn()
+        && (me() == resource.data.fromUid || me() == resource.data.toUid);
+      allow create: if signedIn()
+        && me() == request.resource.data.fromUid
+        && request.resource.data.status == 'pending';
+      allow update: if signedIn()
+        && (me() == resource.data.fromUid || me() == resource.data.toUid);
+      allow delete: if false;
+    }
+
+    /* ---------------- trade notes (journal.js) ---------------- */
+    match /journal/{uid}/entries/{entryId} {
       allow read, write: if isOwner(uid);
     }
 
-    // Public catalog (client already reads without auth).
-    match /videos/{videoId} {
-      allow read: if true;
-      allow write: if false; // manage in Firebase console / Admin SDK
+    /* ---------------- connection requests (connections.js) ----------------
+     * Same shape as a match invite: the sender creates and may cancel, the
+     * recipient may approve or deny, both watch, nobody else sees it. */
+    match /connectionRequests/{requestId} {
+      allow read: if signedIn()
+        && (me() == resource.data.fromUid || me() == resource.data.toUid);
+      allow create: if signedIn()
+        && me() == request.resource.data.fromUid
+        && request.resource.data.fromUid != request.resource.data.toUid
+        && request.resource.data.status == 'pending';
+      allow update: if signedIn()
+        && (me() == resource.data.fromUid || me() == resource.data.toUid);
+      allow delete: if false;
     }
 
-    // Marketing leads keyed by email slug — create/merge from client, no public list.
+    /* ---------------- connections (connections.js) ----------------
+     * One document per pair, id = the two uids sorted and joined. It is what
+     * the message rules below hang on, so what may create one matters.
+     *
+     * ⚠ RESIDUAL GAP, stated plainly. approveConnectionRequest writes only
+     * { members, createdAt }, so there is nothing in the document pointing at
+     * the request it approved — and a rule cannot search for that request,
+     * because it cannot query. So the strongest rule expressible without
+     * changing connections.js is the one below: the id must be the real pair,
+     * there must be exactly two members, and the writer must be one of them.
+     * A signed-in account could therefore force a connection with somebody
+     * who never approved, and messaging would then open between them.
+     *
+     * Closing it takes one field: have approveConnectionRequest write the
+     * requestId onto the connection, and this rule can then get() that
+     * request and require that it is addressed to the writer. That is a
+     * change to an attached module, which this build was asked not to make. */
+    match /connections/{pairId} {
+      allow read: if signedIn() && me() in resource.data.members;
+      allow create: if signedIn()
+        && request.resource.data.members.size() == 2
+        && me() in request.resource.data.members
+        && pairIs(pairId, request.resource.data.members[0], request.resource.data.members[1]);
+      allow update, delete: if false;         // made once, never edited
+    }
+
+    /* ---------------- messages (messages.js) ----------------
+     * ⚠ THE RULE THE BUILD PROMPT ASKS FOR. messages.js does not check that
+     * two players are connected before writing, so this is where that line is
+     * actually held: every read and every write below requires a connections
+     * document for the pair, and requires the writer to be one of its two
+     * members. conversationId and pairId are built the same way, so the
+     * conversation's own id IS the connection's id.
+     *
+     * A message, once sent, cannot be edited or deleted by the client. */
+    match /conversations/{convoId} {
+      allow read: if signedIn() && connectedPair(convoId);
+      allow create: if signedIn()
+        && connectedPair(convoId)
+        && request.resource.data.members.size() == 2
+        && me() in request.resource.data.members;
+      allow update: if signedIn()
+        && connectedPair(convoId)
+        && me() in resource.data.members;
+      allow delete: if false;
+
+      match /messages/{messageId} {
+        allow read: if signedIn() && connectedPair(convoId);
+        allow create: if signedIn()
+          && connectedPair(convoId)
+          && request.resource.data.senderUid == me();
+        allow update, delete: if false;
+      }
+    }
+
+    /* ---------------- public catalog and telemetry (unchanged) ---------- */
+    match /videos/{videoId} {
+      allow read: if true;
+      allow write: if false;                  // manage in the console / Admin SDK
+    }
+
     match /leads/{leadId} {
       allow create, update: if true;
       allow read, delete: if false;
     }
 
-    // Access-gate telemetry — append-only from client.
     match /access-attempts/{id} {
       allow create: if true;
       allow read, update, delete: if false;
     }
 
-    // Deny everything else by default (friends/matches land in Phase 2–3).
+    /* anything not named above */
     match /{document=**} {
       allow read, write: if false;
     }

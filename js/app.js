@@ -68,8 +68,9 @@
     if (p.tradingSince === undefined) p.tradingSince = "";
     if (p.investingSince === undefined) p.investingSince = "";
     if (!p.links) p.links = {};
-    if (!Array.isArray(p.requestsSent)) p.requestsSent = [];
-    if (!Array.isArray(p.connections)) p.connections = [];
+    /* requestsSent and connections were the connect-code feature's local
+       lists. connections.js keeps both on the server now, so an old profile
+       carrying them is simply left alone — nothing reads them. */
   }
   if (store.profilePhoto === undefined) store.profilePhoto = "";  // data: URL, "" = use the default icon
   if (!store.pickaeway) store.pickaeway = {           // Reward Battle record
@@ -247,10 +248,6 @@
     const out = Object.assign({}, cloud, local);
     out.links = Object.assign({}, cloud.links || {}, local.links || {});
     out.markets = (local.markets && local.markets.length) ? local.markets : (cloud.markets || []);
-    out.requestsSent = (local.requestsSent && local.requestsSent.length)
-      ? local.requestsSent : (cloud.requestsSent || []);
-    out.connections = (local.connections && local.connections.length)
-      ? local.connections : (cloud.connections || []);
     for (const k of ["firstName", "lastName", "username", "location", "bio",
                      "tradingSince", "investingSince", "name", "email", "phone"]) {
       if (!out[k] && cloud[k]) out[k] = cloud[k];
@@ -384,7 +381,8 @@
     journalReplace: null,    // { batchId, acctId } — CSV picker open to replace a batch
     profileMode: "view",     // 'view' (what others would see) | 'edit'
     profileNotice: null,     // { kind, text } — transient line under a Connect action
-    profileCodeDraft: "",    // what's typed in the connect-code box, kept across renders
+    connQuery: "",           // what's typed in the Connections lookup, kept across renders
+    onlineReconnectErr: null,// why the last Æway Online reconnect was refused
     checkinResult: null,     // { go, noCount } — result shown in place of the rows
     /* Review Answers: the seven rows come back over an already-submitted
        result, filled in with what was logged. Cleared on the way out of the
@@ -4010,15 +4008,22 @@
     const o = opts || {};
     const special = card.side === "special";
     const sideCls = special ? "wild" : card.side;
-    const clickable = o.play || o.answer;
+    const clickable = o.play || o.answer || o.online;
     const tag = clickable ? "button" : "div";
     const attrs = o.play ? ` type="button" data-pw-play="${esc(card.id)}"`
-                : o.answer ? ` type="button" data-pw-answer="${esc(card.id)}"` : "";
+                : o.answer ? ` type="button" data-pw-answer="${esc(card.id)}"`
+                /* the online hand plays through its own handler: the local one
+                   would resolve the round against the local deck */
+                : o.online ? ` type="button" data-pw-online-card="${esc(card.id)}"${o.disabled ? " disabled" : ""}`
+                : "";
     /* Deck depth for this tier, on the player's own hand cards only — they
        already know their own deck. Nothing to show on a wild, which has no
        tier, or on the opponent's slot. It rides bottom-right: the art keeps
        its own strength badge in the top-left corner. */
-    const left = o.depth && card.kind === "tier" ? pwTierLeft(card.type) : null;
+    /* an online hand counts its own copies off the room's deck, so the badge
+       takes a number there; locally it is read off the local deck */
+    const left = o.left != null ? o.left
+      : o.depth && card.kind === "tier" ? pwTierLeft(card.type) : null;
     const size = o.small ? " sm" : "";
     const anim = pw.flipAnim === card.id ? " flipping" : "";
     const art = pwArtFile(card);
@@ -4329,6 +4334,132 @@
     return { id: `on-${side}-${power}`, side, kind: "tier", type: t ? t.type : side, pts: power };
   }
 
+  /* ==================== the online board ====================
+     An online match is the same board as a single-player one — the deck, the
+     wild and opponent counts, the print, the two cards on the table, the hand
+     and the specials sheet — and not a second, smaller game.
+
+     Everything on it is a pure function of the room document. The room holds
+     the round number, the candles printed so far, and inside each candle the
+     card both players played. From those three, and nothing else, this
+     computes: which side each player is on, what order their deck comes out
+     in, what is left in it, what is in their hand, and where the print
+     stands. Two phones running this over the same document therefore draw the
+     same board, and a reload draws the board it left.
+
+     ==> WHAT THE MODULE CANNOT CARRY, and why the board says so:
+       · A move is {side, power 1..5}. A wild has no power and printCandle
+         only sums powers, so a wild sent over the wire would resolve as a
+         zero and do nothing. Online decks are candle cards only and the Wild
+         count reads 0 — which is the truth, not a placeholder. View Specials
+         still opens, because it is a reference sheet.
+       · The room has no deck or hand field, so the deck below is the client's
+         reading of the room rather than something the module enforces. It is
+         deterministic, so both sides agree; it is not anti-cheat. The module's
+         own anti-cheat is the commit-reveal in pointaway.js, which covers the
+         thing that matters — neither player can see the other's card first.
+       · The module ends a match at five round wins. The print is the room's
+         own close, counted from the opening 100, so it can pass ±25 while the
+         match runs on. The gauge pins at the ends and the number stays exact;
+         making ±25 the finish line would mean rewriting pointaway.js. */
+
+  const PW_ON_HAND = PW_HAND_SIZE;          // dealt at the start, topped up to
+  const PW_ON_PLAYABLE = [5, 4, 3, 2, 1];   // the powers a move can carry
+
+  /* players[0] is bull, players[1] bear. The room doc fixes the order when it
+     is created, both clients read the same array, and neither can drift. */
+  function pwOnSide(room, uid) {
+    return (room.players || [])[0] === uid ? "bull" : "bear";
+  }
+
+  /* One deck order per player per room, from a hash of the two ids — so the
+     hand is the same on both phones and the same after a reload, without a
+     byte of it going to Firestore. */
+  function pwOnHash(str) {
+    let h = 2166136261;
+    for (let i = 0; i < str.length; i++) { h ^= str.charCodeAt(i); h = Math.imul(h, 16777619); }
+    return h >>> 0;
+  }
+  function pwOnOrder(roomId, uid, side) {
+    const cards = [];
+    pwTiers(side).forEach((t) => {
+      if (!PW_ON_PLAYABLE.includes(t.pts)) return;     // the Null card is not dealt
+      for (let i = 0; i < PW_TIER_COPIES; i++) {
+        cards.push({ id: `on-${uid}-${t.pts}-${i}`, side, kind: "tier", type: t.type, pts: t.pts });
+      }
+    });
+    let s = pwOnHash(`${roomId}:${uid}`) || 1;
+    const rnd = () => { s ^= s << 13; s ^= s >>> 17; s ^= s << 5; s >>>= 0; return s / 4294967296; };
+    for (let i = cards.length - 1; i > 0; i--) {
+      const j = Math.floor(rnd() * (i + 1));
+      const t = cards[i]; cards[i] = cards[j]; cards[j] = t;
+    }
+    return cards;
+  }
+
+  /* what one player holds and has left, after the rounds the room has printed */
+  function pwOnSeat(room, uid) {
+    const side = pwOnSide(room, uid);
+    const order = pwOnOrder(room.id, uid, side);
+    const played = (room.candles || [])
+      .map((k) => (k && k.cards ? k.cards[uid] : null))
+      .filter(Boolean);
+    /* A played card leaves the deck for good — matched on strength, which is
+       all a move carries and all that separates two cards of one side. What
+       is left, in order, is then six in hand and the rest face down. Taking
+       the hand off the remainder rather than off a running count is what
+       keeps it at six even if a move arrives that this client never dealt:
+       the module accepts any {side, power}, so the board must not be able to
+       drift when one does. */
+    const left = order.slice();
+    played.forEach((c) => {
+      const i = left.findIndex((h) => h.pts === Number(c.power));
+      if (i >= 0) left.splice(i, 1);
+    });
+    const hand = left.slice(0, Math.min(PW_ON_HAND, left.length));
+    const rest = left.slice(hand.length);
+    return { uid, side, hand, rest, deck: rest.length, played };
+  }
+
+  /* the whole board, from the room and who is reading it */
+  function pwOnlineBoard(room, meUid) {
+    if (!room || !meUid) return null;
+    const oppUid = (room.players || []).find((p) => p !== meUid) || "";
+    const me = pwOnSeat(room, meUid);
+    const opp = pwOnSeat(room, oppUid);
+    const candles = room.candles || [];
+    const last = candles[candles.length - 1] || null;
+    /* the print, as the room counts it: every candle opens where the last one
+       closed and the first opens at 100, so the move away from 100 is the
+       running total both players are pulling on. Bull up, bear down — the
+       same direction the local meter reads. */
+    const print = last ? Math.round(Number(last.close) - 100) : 0;
+    /* the two cards of the round just printed stay on the table until this
+       player commits to the next one */
+    const table = last ? {
+      me: last.cards && last.cards[meUid] ? pwOnlineCard(me.side, Number(last.cards[meUid].power)) : null,
+      opp: last.cards && last.cards[oppUid] ? pwOnlineCard(opp.side, Number(last.cards[oppUid].power)) : null,
+      round: last.round,
+    } : { me: null, opp: null, round: 0 };
+    /* what the opponent has spent, by name — the local board's Seen panel,
+       and online it is a fact rather than a memory */
+    const seen = {};
+    pwTiers(opp.side).forEach((t) => { seen[t.type] = 0; });
+    opp.played.forEach((c) => {
+      const t = pwTiers(opp.side).find((x) => x.pts === Number(c.power));
+      if (t) seen[t.type] = (seen[t.type] || 0) + 1;
+    });
+    return { me, opp, oppUid, print, table, seen, candles, last };
+  }
+
+  /* how many of this candle this player still holds, hand and deck together —
+     the ×N badge the local board puts in the corner of its own cards */
+  function pwOnLeft(board, card) {
+    if (!board) return null;
+    const same = (c) => c.pts === card.pts;
+    return board.me.hand.filter(same).length + board.me.rest.filter(same).length;
+  }
+
   function pwOnlineNew() {
     return {
       stage: "auth",      // auth | finding | match
@@ -4340,6 +4471,9 @@
       unsub: null,
       waiting: false,     // our card is committed, the opponent's is not
       picked: null,       // the card we committed this round
+      board: null,        // the board read off the room — see pwOnlineBoard
+      showSeen: false,    // the panel listing what the opponent has spent
+      showSpecials: false,// the ten wilds, as a reference sheet
       err: null,          // offline | signin | profile | matchmaking | <message>
       timedOut: false,    // playRound's 60s wait expired
       confirmForfeit: false,
@@ -4433,12 +4567,25 @@
     });
   }
 
+  /* A card is played out of the hand the board derived, so what goes over the
+     wire is the move the module understands — {side, power} — and what stays
+     here is which of the five copies it was. */
+  async function pwOnlinePlayCard(cardId) {
+    const o = pw.online;
+    if (!o || !o.board) return;
+    const card = o.board.me.hand.find((c) => c.id === cardId);
+    if (!card) return;
+    pwOnlinePlay(card.side, card.pts);
+  }
+
   async function pwOnlinePlay(side, power) {
     const api = online();
     const o = pw.online;
     if (!api || !o || !o.room || o.room.status !== "active" || o.waiting) return;
     o.waiting = true;
     o.picked = { side, power };
+    o.showSeen = false;
+    o.showSpecials = false;
     o.err = null;
     o.timedOut = false;
     renderPointaeway();
@@ -4579,7 +4726,13 @@
         <span>Playing online needs a connection. The computer is always ready — Start Match plays it.</span>
       </div>
       <div class="pw-over-row">${retry}${back}</div>`;
-    if (o.err === "signin") return `
+    if (o.err === "signin") {
+      /* signed into the app but not into Æway Online — a password, not a
+         sign-up. See onlineAuthState. */
+      if (onlineAuthState() === "reconnect") return `
+        ${onlineReconnectHTML("Pw")}
+        <div class="pw-over-row">${back}</div>`;
+      return `
       <div class="pw-on-msg">
         <b>Sign in to play online</b>
         <span>Your account has to be signed in on this device for live matches and your online profile.</span>
@@ -4588,6 +4741,7 @@
         <button type="button" class="pw-over-pill on" data-pw-online-signin><span>Sign In</span></button>
         ${back}
       </div>`;
+    }
     if (o.err === "profile") return `
       <div class="pw-on-msg"><b>Couldn't load your profile</b><span>Check your connection and try again.</span></div>
       <div class="pw-over-row">${retry}${back}</div>`;
@@ -4662,7 +4816,7 @@
         <b class="pw-on-score">${score}</b>
       </div>`;
 
-    let body;
+    let body = null;
     if (finished) {
       const outcome = !room.winner ? "draw" : room.winner === meId ? "win" : "loss";
       const line = outcome === "win" ? "You won" : outcome === "loss" ? "You lost" : "Draw";
@@ -4689,65 +4843,145 @@
             <img src="assets/nav-icons/icon-home@2x.png" alt=""><span>Back to Hub</span>
           </button>
         </div>`;
-    } else if (o.waiting) {
-      const c = o.picked ? pwOnlineCard(o.picked.side, o.picked.power) : null;
-      body = `
-        <div class="pw-on-wait">
-          ${c ? `<div class="pw-on-picked">${pwCardHTML(c, { small: true })}</div>` : ""}
-          <div class="pw-spinner sm" aria-hidden="true"></div>
-          <div class="pw-finding-cap" role="status">Waiting for opponent…</div>
-          <div class="pw-finding-sub">Your card is locked in. It's revealed when theirs is.</div>
-        </div>
-        ${pwOnlineForfeitHTML(o)}`;
-    } else {
-      const row = (side) => `
-        <div class="pw-on-row ${side}">
-          <span class="pw-on-rowcap">${side === "bull" ? "Bull" : "Bear"}</span>
-          <div class="pw-on-cards">
-            ${[5, 4, 3, 2, 1].map((p) => `
-              <button type="button" class="pw-on-pick" data-pw-online-card="${side}:${p}"
-                      aria-label="${side === "bull" ? "Bull" : "Bear"} power ${p}">
-                ${pwCardHTML(pwOnlineCard(side, p), { small: true })}
-              </button>`).join("")}
-          </div>
-        </div>`;
-      body = `
-        <div class="pw-on-cap">Round ${room.round} · pick a card</div>
-        ${row("bull")}
-        ${row("bear")}
-        ${o.err ? `<div class="pw-on-err" role="alert">${esc(o.err)}</div>` : ""}
-        ${pwOnlineForfeitHTML(o)}`;
     }
 
-    return `
-      <div class="pw-on">
-        ${head}
-        <div class="pw-on-head">
-          ${player(meInfo, myScore, "me", "You")}
-          <span class="pw-on-vs" aria-hidden="true">VS</span>
-          ${player(oppInfo, oppScore, "opp", "Opp")}
-        </div>
-        <div class="pw-on-chart">
-          ${pwOnlineChartSVG(candles)}
-          <div class="pw-on-chartcap">
-            <span>${candles.length ? `${candles.length} candle${candles.length === 1 ? "" : "s"}` : "No candles yet"}</span>
-            <span>${last ? `last close ${Number(last.close).toFixed(0)}` : `first to ${ONLINE_ROUNDS_TO_WIN}`}</span>
+    /* the finished and timed-out states are a result screen, so they keep the
+       chart and the two ways out. A live match is the board. */
+    if (body) {
+      return `
+        <div class="pw-on">
+          ${head}
+          <div class="pw-on-head">
+            ${player(meInfo, myScore, "me", "You")}
+            <span class="pw-on-vs" aria-hidden="true">VS</span>
+            ${player(oppInfo, oppScore, "opp", "Opp")}
           </div>
-        </div>
-        ${body}
-      </div>`;
+          <div class="pw-on-chart">
+            ${pwOnlineChartSVG(candles)}
+            <div class="pw-on-chartcap">
+              <span>${candles.length ? `${candles.length} candle${candles.length === 1 ? "" : "s"}` : "No candles yet"}</span>
+              <span>${last ? `last close ${Number(last.close).toFixed(0)}` : `first to ${ONLINE_ROUNDS_TO_WIN}`}</span>
+            </div>
+          </div>
+          ${body}
+        </div>`;
+    }
+
+    return pwOnlineBoardHTML(o, room, meInfo, oppInfo, myScore, oppScore, head, player);
   }
 
-  function pwOnlineForfeitHTML(o) {
-    if (o.confirmForfeit) return `
-      <div class="pw-on-forfeit confirm">
-        <span>Forfeit this match? Your opponent takes the win.</span>
-        <button type="button" class="pw-count-btn on" data-pw-online-forfeit-yes>Forfeit</button>
-        <button type="button" class="pw-count-btn" data-pw-online-forfeit-no>Keep Playing</button>
-      </div>`;
+  /* ---- the live board ----
+     The same table a single-player match is played on: what is left to draw
+     from, their seat, the meter both sides are pulling on, your seat, then
+     your hand. The only things it adds are the two names and the round-win
+     score, because online there is somebody to name. */
+  function pwOnlineBoardHTML(o, room, meInfo, oppInfo, myScore, oppScore, _head, player) {
+    const b = pwOnlineBoard(room, o.me.uid);
+    o.board = b;                                  // the tap handler reads it back
+    const canPlay = room.status === "active" && !o.waiting;
+    const picked = o.picked ? pwOnlineCard(b.me.side, o.picked.power) : null;
+    /* your seat holds the card you have committed this round; once the round
+       prints, it holds what you actually played until you commit the next */
+    const mine = picked || b.table.me;
+    const theirs = o.waiting ? null : b.table.opp;
+    const youHint = o.waiting ? "Locked in" : canPlay ? "Tap a card to play" : "…";
+    const oppHint = o.waiting
+      ? "Waiting for theirs…"
+      : theirs ? `${b.opp.side} · ${b.opp.deck} left` : "Awaiting play…";
+
     return `
-      <div class="pw-on-forfeit">
-        <button type="button" class="pw-count-btn" data-pw-online-forfeit>Forfeit</button>
+      <div class="pw-on pw-on-board">
+        ${/* The board's header is one row, not two. A local match spends
+              nothing on chrome above the counts, and the online one has two
+              names and two scores to fit as well — so the title line goes,
+              the way back moves into the row with the players, and the VS
+              between them goes with it. On a 320×568 phone those two rows
+              are the difference between the board sitting in one view and
+              not, and the whole point of this screen is that it is the same
+              board. */""}
+        <div class="pw-on-head tight">
+          <button type="button" class="pw-on-back" data-pw-online-back
+                  aria-label="Back to Match Hub">
+            <img src="assets/nav-icons/icon-arrow-back@2x.png" alt="">
+          </button>
+          ${player(meInfo, myScore, "me", "You")}
+          ${/* the two round-win scores meet in the middle of this row, so
+                something has to stand between them */""}
+          <span class="pw-on-split" aria-hidden="true"></span>
+          ${player(oppInfo, oppScore, "opp", "Opp")}
+        </div>
+
+        <div class="pw-counts">
+          <span class="pw-count"><b>${b.me.deck}</b><i>Deck</i></span>
+          ${/* a wild cannot cross the wire — see the note on pwOnlineBoard —
+                so online the pile is empty, and the chip says so rather than
+                being left off the board */""}
+          <span class="pw-count wild"><b>0</b><i>Wild</i></span>
+          <span class="pw-count opp"><b>${b.opp.hand.length}</b><i>Opp</i></span>
+          <span class="pw-counts-gap"></span>
+          <button type="button" class="pw-count-btn${o.showSeen ? " on" : ""}" data-pw-online-seen
+                  aria-pressed="${!!o.showSeen}"
+                  aria-label="What the opponent has played">Seen</button>
+          <button type="button" class="pw-count-btn" data-pw-online-forfeit
+                  aria-label="Forfeit this match">Forfeit</button>
+        </div>
+
+        <div class="pw-field">
+          <div class="pw-arena">
+            <div class="pw-seat you">
+              <span class="pw-seat-tag you">You</span>
+              <div class="pw-seat-slot${mine ? " filled" : ""}">
+                ${mine ? pwCardHTML(mine, {}) : pwBackHTML(b.me.side)}
+              </div>
+              <span class="pw-seat-cap">${esc(youHint)}</span>
+            </div>
+            ${pwPrintHTML(b.print)}
+            <div class="pw-seat opp">
+              <span class="pw-seat-tag opp">Opp</span>
+              <div class="pw-seat-slot${theirs ? " filled" : ""}">
+                ${theirs ? pwCardHTML(theirs, {}) : pwBackHTML(b.opp.side)}
+              </div>
+              <span class="pw-seat-cap">${esc(oppHint)}</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="pw-handhead">
+          <span class="pw-hand-cap">Your Hand <b>(${b.me.hand.length})</b></span>
+          <button type="button" class="pw-specials-btn${o.showSpecials ? " on" : ""}"
+                  data-pw-online-specials aria-expanded="${!!o.showSpecials}" aria-controls="pwSheet">
+            <span class="pw-specials-ico" aria-hidden="true"></span>
+            <span>View Specials</span>
+          </button>
+        </div>
+
+        ${o.err ? `<div class="pw-on-err" role="alert">${esc(o.err)}</div>` : ""}
+
+        ${o.showSpecials ? pwSpecialsSheetHTML() : o.showSeen ? `
+        <div class="pw-seen">
+          <div class="pw-seen-cap">Opponent has played</div>
+          ${pwTiers(b.opp.side).filter((t) => t.pts > 0).map((t) => {
+            const n = b.seen[t.type] || 0;
+            return `<div class="pw-seen-row${n ? " on" : ""}">
+              <span>${esc(t.type)}</span>
+              <span class="pw-seen-n ${b.opp.side}">${n}/${PW_TIER_COPIES}</span>
+            </div>`;
+          }).join("")}
+          <button class="pw-ghost" data-pw-online-seen>Close</button>
+        </div>` : o.confirmForfeit ? `
+        <div class="pw-choice">
+          <div class="pw-choice-cap">Forfeit this match? Your opponent takes the win.</div>
+          <div class="pw-choice-btns">
+            <button class="pw-choice-btn wild" data-pw-online-forfeit-yes>Forfeit</button>
+            <button class="pw-choice-btn ${b.me.side}" data-pw-online-forfeit-no>Keep playing</button>
+          </div>
+        </div>` : `
+        <div class="pw-hand">
+          ${b.me.hand.length
+            ? b.me.hand.map((c) => pwCardHTML(c, {
+                online: true, disabled: !canPlay, dim: !canPlay, left: pwOnLeft(b, c) })).join("")
+            : `<div class="pw-hand-empty">Empty — nothing left to play.</div>`}
+        </div>`}
       </div>`;
   }
 
@@ -4821,6 +5055,88 @@
   /* who is playing, resolved once and shared by every path that needs a
      {uid, displayName, photoURL} to hand a module */
   let aewayMe = null;
+  /* ---- the two sessions, and the gap between them ----
+     The app signs in over Firebase's REST API and keeps that session itself;
+     the modular SDK behind js/online/ keeps a second one, and the mirror in
+     the login handler is what makes them the same account. An account that
+     signed in BEFORE that mirror existed therefore has the first session and
+     not the second — and every online feature then finds nobody and does
+     nothing, quietly, while the app plainly says the user is signed in. That
+     is not a state to leave unexplained, so it has a name of its own:
+
+       "ok"        both sessions, everything works
+       "reconnect" signed into the app, not into Æway Online — one password
+                   away from working, and the screens say so
+       "signin"    not signed into the app at all
+       "offline"   the bridge never loaded (no CDN, or no connection)
+
+     There is no way to hand the REST session's token to the SDK from the
+     client, so the fix is a sign-in, not a token swap. */
+  function onlineAuthState() {
+    const api = online();
+    if (!api) return "offline";
+    const appUser = window.FB && FB.user();
+    if (api.currentUser && api.currentUser()) return "ok";
+    return appUser ? "reconnect" : "signin";
+  }
+
+  const onlineAppEmail = () => (window.FB && FB.user() && FB.user().email) || "";
+
+  /* the shared block every screen shows when the two sessions have drifted */
+  function onlineReconnectHTML(idSuffix) {
+    const id = `onRe${idSuffix || ""}`;
+    return `
+      <div class="on-reconnect">
+        <b>Reconnect to Æway Online</b>
+        <span>You're signed in to the app, but live play, challenges,
+          connections and messages each keep their own session and this device
+          hasn't opened one yet. Your password opens it — once.</span>
+        <div class="on-reconnect-mail">${esc(onlineAppEmail() || "your account")}</div>
+        <input class="mt-input" id="${id}" type="password" autocomplete="current-password"
+               placeholder="Password" aria-label="Password">
+        <button type="button" class="ad-save" data-online-reconnect="${id}">Reconnect</button>
+        ${state.onlineReconnectErr ? `<div class="pw-on-err" role="alert">${esc(state.onlineReconnectErr)}</div>` : ""}
+      </div>`;
+  }
+
+  async function onlineReconnect(inputId) {
+    const api = online();
+    const input = $(inputId);
+    if (!api || !input) return;
+    const password = input.value;
+    const email = onlineAppEmail();
+    if (!email) { state.onlineReconnectErr = "Sign in to the app first."; rerenderOnlineScreens(); return; }
+    if (!password) { state.onlineReconnectErr = "Enter your password."; rerenderOnlineScreens(); return; }
+    state.onlineReconnectErr = null;
+    input.disabled = true;
+    try { await api.signIn(email, password); }
+    catch (e) {
+      input.disabled = false;
+      state.onlineReconnectErr = "That didn't sign in. Check the password and try again.";
+      rerenderOnlineScreens();
+      return;
+    }
+    aewayMe = null;
+    inboxStart();
+    connectionsStart();
+    rerenderOnlineScreens(true);
+  }
+
+  /* whichever online screen is up, re-run from the top now that there is a
+     session behind it */
+  function rerenderOnlineScreens(reload) {
+    if (state.view === "profile") { if (reload) profileOnlineLoad(true); else renderProfileOnlineInPlace(); }
+    else if (state.view === "connections") { if (reload) connectionsLoad(true); else renderConnections(); }
+    else if (state.view === "pointaeway" && pw) {
+      if (reload && pw.online) {
+        if (pw.phase === "onlinehistory") pwOnlineHistoryOpen();
+        else if (pw.phase === "challenge") pwChallengeOpen();
+        else if (pw.phase === "finding") pwOnlineStart();
+        else renderPointaeway();
+      } else renderPointaeway();
+    }
+  }
+
   async function aewayIdentity(force) {
     const api = online();
     if (!api) return null;
@@ -4843,7 +5159,8 @@
      is anywhere, and the dock's Gameæway slot is where the app already points
      at the games. Started once the bridge is up and somebody is signed in,
      stopped on sign-out. */
-  const inbox = { unsub: null, uid: null, list: [], busy: null, err: null };
+  const inbox = { unsub: null, uid: null, list: [], busy: null, err: null,
+                  hidden: null };   // the one the bar was dismissed for
 
   function inboxCount() { return inbox.list.length; }
 
@@ -4864,6 +5181,45 @@
       `Gameæway — choose a game. ${n} challenge${n === 1 ? "" : "s"} waiting.`);
   }
 
+  /* ---- the bar at the top of whatever screen you are on ----
+     A dock badge says a challenge is waiting; it does not say who from, and
+     it cannot be answered. Since the recipient may be anywhere in the app
+     when one lands, the newest challenge also draws itself into the card's
+     own header strip, above the current screen, with Accept and Decline on
+     it. It is part of the card, not a layer over it. */
+  function syncChallengeBar() {
+    const bar = $("chalBar");
+    if (!bar) return;
+    const inv = inbox.list.find((v) => v.id !== inbox.hidden);
+    /* the hub already lists every challenge in full, so the bar stands down
+       there rather than saying the same thing twice */
+    const onHub = state.view === "pointaeway" && pw && pw.phase === "hub";
+    if (!inv || onHub) { bar.hidden = true; bar.innerHTML = ""; return; }
+    const busy = inbox.busy === inv.id;
+    const more = inbox.list.length - 1;
+    bar.hidden = false;
+    bar.innerHTML = `
+      <span class="chal-bar-dot" aria-hidden="true"></span>
+      <span class="chal-bar-text">
+        <b>${esc(inv.fromName || "A trader")}</b>
+        <i>challenged you to Pointæway${more > 0 ? ` · ${more} more waiting` : ""}</i>
+      </span>
+      ${busy
+        ? `<span class="pw-spinner sm" aria-hidden="true"></span>`
+        : `<button type="button" class="chal-bar-btn yes" data-pw-inv-accept="${esc(inv.id)}">Accept</button>
+           <button type="button" class="chal-bar-btn" data-pw-inv-decline="${esc(inv.id)}">Decline</button>
+           <button type="button" class="chal-bar-x" data-chal-bar-hide="${esc(inv.id)}"
+                   aria-label="Hide this for now">×</button>`}`;
+  }
+
+  /* everything that changes when the list does, in one place, so no caller
+     has to remember the three */
+  function syncInbox() {
+    syncInboxBadge();
+    syncChallengeBar();
+    if (state.view === "pointaeway" && pw && pw.phase === "hub") renderPointaeway();
+  }
+
   async function inboxStart() {
     const api = await onlineReady();
     if (!api || !api.watchIncomingInvites) return;
@@ -4874,15 +5230,14 @@
     inbox.uid = me.uid;
     inbox.unsub = api.watchIncomingInvites(me.uid, (list) => {
       inbox.list = Array.isArray(list) ? list : [];
-      syncInboxBadge();
-      /* the hub is where challenges are answered, so it repaints under them */
-      if (state.view === "pointaeway" && pw && pw.phase === "hub") renderPointaeway();
+      if (inbox.hidden && !inbox.list.some((v) => v.id === inbox.hidden)) inbox.hidden = null;
+      syncInbox();
     });
   }
   function inboxStop() {
     if (inbox.unsub) { try { inbox.unsub(); } catch (e) { /* gone */ } }
-    inbox.unsub = null; inbox.uid = null; inbox.list = []; inbox.busy = null;
-    syncInboxBadge();
+    inbox.unsub = null; inbox.uid = null; inbox.list = []; inbox.busy = null; inbox.hidden = null;
+    syncInbox();
   }
 
   /* Accept lands in the room the module just made — the same room shape
@@ -4891,15 +5246,15 @@
     const api = online();
     if (!api || inbox.busy) return;
     inbox.busy = inviteId;
-    if (state.view === "pointaeway") renderPointaeway();
+    syncInbox();
     const me = await aewayIdentity();
-    if (!me) { inbox.busy = null; return; }
+    if (!me) { inbox.busy = null; syncInbox(); return; }
     let roomId = null;
     try { roomId = await api.acceptInvite(inviteId, me); }
     catch (e) {
       inbox.busy = null;
       inbox.err = (e && e.message) || "That challenge is no longer available.";
-      if (state.view === "pointaeway") renderPointaeway();
+      syncInbox();
       return;
     }
     inbox.busy = null; inbox.err = null;
@@ -4915,11 +5270,11 @@
     const api = online();
     if (!api || inbox.busy) return;
     inbox.busy = inviteId;
-    if (state.view === "pointaeway") renderPointaeway();
+    syncInbox();
     try { await api.declineInvite(inviteId); } catch (e) { /* it will fall out of the inbox anyway */ }
     inbox.busy = null;
     /* watchIncomingInvites drops it from the list and repaints */
-    if (state.view === "pointaeway") renderPointaeway();
+    syncInbox();
   }
 
   function inboxHTML() {
@@ -5407,8 +5762,10 @@
      middle. It used to carry a written target either side; the two played
      cards stand there now, which says the same thing and says it about this
      round rather than about the rules. */
-  function pwPrintHTML() {
-    const c = pw.candle;
+  function pwPrintHTML(value) {
+    /* the online board reads its print off the room rather than off the local
+       game, so the meter takes a number; with none it is the local one */
+    const c = value == null ? pw.candle : value;
     const pct = Math.min(1, Math.abs(c) / PW_TARGET);
     const tone = c === 0 ? "flat" : c > 0 ? "bull" : "bear";
     return `<div class="pw-print">
@@ -5656,6 +6013,9 @@
     const pickName = document.querySelector("#pickBar .pick-name");
     if (pickName) pickName.textContent = "Cool Down Game";
     cardFooter.style.display = "none";
+    /* the phase decides whether the challenge bar belongs here, and this
+       screen repaints itself without going through render() */
+    syncChallengeBar();
 
     cardScroll.classList.remove("pw-playing", "pw-introing", "pw-overing",
                                 "pw-revealing", "pw-savedscreen");
@@ -5678,11 +6038,17 @@
        than a view. */
     if (pw.phase === "finding") { cardScroll.innerHTML = pwFindingHTML(); cardScroll.scrollTop = 0; return; }
     if (pw.phase === "online") {
-      /* the pick rows keep their scroll position across the live re-renders
-         that every room change causes */
+      /* a live match is the same fixed-height column a local one is — the
+         board has to sit in one view, and the hand scrolls sideways inside
+         it. A finished match is a result screen and scrolls normally. */
+      const o = pw.online;
+      const live = !!(o && o.room && o.room.status === "active" && !o.timedOut);
+      cardScroll.classList.toggle("pw-playing", live);
+      /* the hand keeps its sideways position across the live re-renders that
+         every room change causes */
       const keep = cardScroll.scrollTop;
       cardScroll.innerHTML = pwOnlineHTML();
-      cardScroll.scrollTop = keep;
+      cardScroll.scrollTop = live ? 0 : keep;
       return;
     }
     if (pw.phase === "onlinehistory") {
@@ -8801,7 +9167,9 @@
     const on = inChecklist();
     const jr = state.view === "journal";
     const pk = inPickaeway();
-    const pr = state.view === "profile";
+    /* Connections is a room off the profile, so it wears the profile's bar
+       rather than the progress bar every other screen falls back to */
+    const pr = state.view === "profile" || state.view === "connections";
     checkinBar.classList.toggle("hidden", !on);
     $("journalBar").classList.toggle("hidden", !jr);
     $("pickBar").classList.toggle("hidden", !pk);
@@ -8852,6 +9220,7 @@
     else if (state.view === "result") renderResult();
     else if (state.view === "replay") renderReplay();
     else if (state.view === "profile") renderProfile();
+    else if (state.view === "connections") renderConnections();
     else renderScreen();
 
     /* Last, so it takes the body over from whatever just wrote it. The view
@@ -8876,6 +9245,11 @@
       </div>`;
       cardScroll.scrollTop = 0;
     }
+
+    /* ==> invites.js: the bar stands down on the one screen that lists every
+       challenge in full, and stands up everywhere else, so it has to be
+       settled after the view is decided rather than when a challenge lands */
+    syncChallengeBar();
   }
 
   /* ---------------- navigation ---------------- */
@@ -10617,31 +10991,6 @@
     { id: "website", label: "Website", placeholder: "yoursite.com" },
   ];
 
-  /* Ambiguous characters left out so a code can be read down a phone line */
-  const CONNECT_ALPHABET = "ABCDEFGHJKLMNPQRSTUVWXYZ23456789";
-  const CONNECT_RE = /^AEW-[ABCDEFGHJKLMNPQRSTUVWXYZ23456789]{6}$/;
-
-  /* ==> BACKEND: the code has to be issued by the server and unique across all
-     users. Generating it here means it is only unique on this device. */
-  function connectCode() {
-    const p = store.profile;
-    if (!p.connectCode) {
-      let c = "";
-      for (let i = 0; i < 6; i++) c += CONNECT_ALPHABET[Math.floor(Math.random() * CONNECT_ALPHABET.length)];
-      p.connectCode = `AEW-${c}`;
-      save();
-    }
-    return p.connectCode;
-  }
-
-  /* accepts "aew-ab12cd", "AB12CD" or with stray spaces; returns the canonical
-     form, or "" when it isn't a code at all */
-  function normaliseConnectCode(raw) {
-    let v = String(raw == null ? "" : raw).toUpperCase().replace(/[\s_]/g, "");
-    if (v.indexOf("AEW-") !== 0) v = `AEW-${v.replace(/^AEW/, "")}`;
-    return CONNECT_RE.test(v) ? v : "";
-  }
-
   function profileName() {
     const p = store.profile;
     const n = `${p.firstName || ""} ${p.lastName || ""}`.trim();
@@ -10740,41 +11089,15 @@
       <div class="pr-owner">
         <div class="pr-owner-note">Only visible to you</div>
         <button class="ad-save" data-pr-edit>Edit Profile</button>
-        ${profileConnectHTML()}
-      </div>`;
-  }
-
-  /* ---------------- connect ----------------
-     ==> BACKEND: sending a request has to POST to the server, which resolves
-     the code to a user, records a pending request and notifies them. Right now
-     the code is only checked for shape and the request is pushed onto a local
-     list, so nothing reaches anybody. */
-  function profileConnectHTML() {
-    const p = store.profile;
-    const n = state.profileNotice;
-    return `
-      <div class="pr-sec pr-connect">
-        <div class="pr-sec-head">Connect</div>
-        <div class="pr-code-cap">Your connect code</div>
-        <div class="pr-code" id="prCode">${esc(connectCode())}</div>
-        <button class="pr-code-btn" data-pr-share>${
-          navigator.share ? "Share Code" : "Copy Code"}</button>
-
-        <div class="pr-code-sub">Have someone else's code? Send them a request.</div>
-        <input class="mt-input pr-code-input" id="prCodeInput" type="text"
-               inputmode="latin" autocapitalize="characters" autocomplete="off" spellcheck="false"
-               maxlength="10" placeholder="AEW-XXXXXX" value="${esc(state.profileCodeDraft || "")}">
-        <button class="ad-save" data-pr-request>Send Request</button>
-        ${n ? `<div class="pr-notice ${esc(n.kind)}">${esc(n.text)}</div>` : ""}
-        ${p.requestsSent.length ? `
-          <div class="pr-sent-head">Requests sent</div>
-          ${p.requestsSent.map((r) => `
-            <div class="pr-sent">
-              <span>${esc(r.code)}</span>
-              <span class="pr-sent-state">Pending</span>
-            </div>`).join("")}` : ""}
-        <div class="pr-stub">Not wired up yet — requests are held on this device
-          only and reach nobody until accounts are live.</div>
+        ${/* ==> connections.js: the connect-code section that used to sit here
+              is gone — code, share, AEW-XXXXXX box and Send Request with it.
+              Connections are their own screen now, and they are found the way
+              challenges are: an exact name or a match invite code. */""}
+        <button class="pr-conn-entry" data-open-connections>
+          <span class="pr-conn-entry-n">${connCount()}</span>
+          <span class="pr-conn-entry-cap">Connections</span>
+          <span class="pr-conn-entry-go" aria-hidden="true">›</span>
+        </button>
       </div>`;
   }
 
@@ -10898,70 +11221,6 @@
     const full = `${p.firstName} ${p.lastName}`.trim();
     p.name = full;
     if (full) store.settings.name = full;
-  }
-
-  /* Share sheet where the device has one, clipboard otherwise, and a manual
-     select as the last resort — clipboard writes need a secure context and
-     silently reject in a few embedded browsers. */
-  function shareConnectCode(btn) {
-    const code = connectCode();
-    const done = (text) => {
-      state.profileNotice = { kind: "ok", text };
-      renderProfileInPlace();
-    };
-    if (navigator.share) {
-      navigator.share({ title: "My Learnæway connect code", text: code })
-        .then(() => done("Code shared."))
-        .catch(() => { /* dismissed — say nothing */ });
-      return;
-    }
-    if (navigator.clipboard && navigator.clipboard.writeText) {
-      navigator.clipboard.writeText(code)
-        .then(() => done("Code copied."))
-        .catch(() => selectConnectCode());
-      return;
-    }
-    selectConnectCode();
-  }
-
-  function selectConnectCode() {
-    const el = $("prCode");
-    if (!el) return;
-    const r = document.createRange();
-    r.selectNodeContents(el);
-    const sel = window.getSelection();
-    sel.removeAllRanges();
-    sel.addRange(r);
-    state.profileNotice = { kind: "warn", text: "Copy isn't available here — the code is selected for you." };
-    renderProfileInPlace();
-  }
-
-  /* ==> BACKEND: this is where the request has to go to the server. Today it
-     only checks the code's shape and records it locally, so the other person
-     never hears about it. Sending to a real service also needs: rejecting a
-     code that doesn't belong to anyone, rejecting your own code (checked
-     below, but only against this device's), and de-duplicating a request that
-     is already pending on the server rather than only in this list. */
-  function sendConnectRequest() {
-    const input = $("prCodeInput");
-    if (!input) return;
-    const raw = input.value;
-    state.profileCodeDraft = raw;
-    const code = normaliseConnectCode(raw);
-    const notice = (kind, text) => {
-      state.profileNotice = { kind, text };
-      renderProfileInPlace();
-    };
-    if (!raw.trim()) return notice("err", "Enter a code first.");
-    if (!code) return notice("err", "That isn't a valid code. They look like AEW-4KP7XQ.");
-    if (code === connectCode()) return notice("err", "That's your own code.");
-    if (store.profile.requestsSent.some((r) => r.code === code)) {
-      return notice("warn", `A request to ${code} is already pending.`);
-    }
-    store.profile.requestsSent.push({ code, at: new Date().toISOString(), state: "pending" });
-    save();
-    state.profileCodeDraft = "";
-    notice("ok", `Request sent to ${code}.`);
   }
 
   function openProfile() {
@@ -11102,6 +11361,443 @@
     if (host && state.view === "profile") host.outerHTML = profileOnlineHTML();
   }
 
+  /* ==================== Connections ====================
+     The connect-code feature this replaces issued a code on the device, took
+     another one in a box, and pushed the request onto a local list that
+     reached nobody. All of it is gone. What stands here instead is one screen
+     with four things on it and nothing else:
+
+       · who you are, and how many people you are connected to
+       · the requests waiting on your answer, answered where they are listed
+       · one place to find somebody, and one control that says where you stand
+         with them — Connect, Requested, Connected
+       · a thread, once you are connected
+
+     ==> INTEGRATION (connections.js and messages.js, through AEWAY_ONLINE):
+       watchConnectionCount(uid, cb)             — the live count
+       watchIncomingConnectionRequests(uid, cb)  — what is waiting on you
+       watchOutgoingConnectionRequests(uid, cb)  — what you are waiting on
+       getMyConnections(uid)                     — the list, with the other
+                                                   person's name and photo
+       getConnectionState(myUid, otherUid)       — where you stand with one
+       sendConnectionRequest / approve / deny / cancel
+       sendMessage(me, otherUid, text) / watchMessages(myUid, otherUid, cb)
+
+     ==> FINDING SOMEBODY is invites.js's lookupPlayer, unchanged and shared
+     with the challenge screen: an exact display name or a match invite code.
+     There is deliberately no directory, no prefix search and nothing to
+     browse, which is the same rule challenges keep.
+
+     ==> SECURITY: messages.js does not check that two players are connected.
+     firestore.rules does — a write to conversations/{a_b} is refused unless
+     connections/{a_b} exists and names the writer. The UI hiding the button
+     is not the enforcement; that rule is. */
+
+  const conn = {
+    status: "idle",        // idle | loading | ready | offline | signin | error
+    uid: null,
+    unsubCount: null, unsubIn: null, unsubOut: null,
+    count: 0,
+    incoming: [],          // requests waiting on me
+    outgoing: [],          // requests waiting on them
+    list: null,            // getMyConnections, or null before it is asked for
+    listOpen: false,
+    listBusy: false,
+    results: null,         // what the last lookup resolved to
+    states: {},            // uid -> the state getConnectionState reported
+    busy: null,            // the uid or request id a call is in flight for
+    err: null,
+    notice: null,
+    thread: null,          // { uid, displayName, photoURL, msgs, unsub, err, sending }
+  };
+
+  const connCount = () => conn.count || 0;
+
+  /* The count and the two request lists are watched app-wide, like the
+     challenge inbox: an approval can land while its recipient is anywhere,
+     and the profile's entry row carries the number. */
+  async function connectionsStart() {
+    const api = await onlineReady();
+    if (!api || !api.watchConnectionCount) return;
+    const me = await aewayIdentity();
+    if (!me) return;
+    if (conn.unsubCount && conn.uid === me.uid) return;
+    connectionsStop();
+    conn.uid = me.uid;
+    conn.unsubCount = api.watchConnectionCount(me.uid, (n) => {
+      conn.count = Number(n) || 0;
+      /* the list is stale the moment the count moves */
+      if (conn.listOpen) connLoadList();
+      connRepaint();
+    });
+    conn.unsubIn = api.watchIncomingConnectionRequests(me.uid, (list) => {
+      conn.incoming = Array.isArray(list) ? list : [];
+      connRepaint();
+    });
+    conn.unsubOut = api.watchOutgoingConnectionRequests(me.uid, (list) => {
+      conn.outgoing = Array.isArray(list) ? list : [];
+      connRepaint();
+    });
+  }
+
+  function connectionsStop() {
+    [conn.unsubCount, conn.unsubIn, conn.unsubOut].forEach((f) => {
+      if (f) { try { f(); } catch (e) { /* gone */ } }
+    });
+    conn.unsubCount = conn.unsubIn = conn.unsubOut = null;
+    connThreadClose();
+    conn.uid = null; conn.count = 0; conn.incoming = []; conn.outgoing = [];
+    conn.list = null; conn.listOpen = false; conn.results = null;
+    conn.states = {}; conn.busy = null; conn.err = null; conn.notice = null;
+    connRepaint();
+  }
+
+  function connRepaint() {
+    if (state.view === "connections") renderConnections();
+    else if (state.view === "profile") {
+      const n = document.querySelector(".pr-conn-entry-n");
+      if (n) n.textContent = String(connCount());
+    }
+  }
+
+  function openConnections() {
+    stopAudio();
+    state.view = "connections";
+    state.slideDir = 0;
+    conn.notice = null;
+    closeOverlay();
+    render();
+    connectionsLoad();
+  }
+
+  async function connectionsLoad(force) {
+    if (conn.status === "ready" && !force) { connectionsStart(); return; }
+    conn.status = "loading";
+    conn.err = null;
+    renderConnections();
+    const api = await onlineReady();
+    if (state.view !== "connections") return;
+    if (!api) { conn.status = "offline"; renderConnections(); return; }
+    const me = await aewayIdentity(force);
+    if (state.view !== "connections") return;
+    if (!me) { conn.status = "signin"; renderConnections(); return; }
+    conn.status = "ready";
+    await connectionsStart();
+    renderConnections();
+  }
+
+  /* ---- finding somebody: the challenge screen's lookup, shared ---- */
+  async function connLookup() {
+    const api = online();
+    if (!api || conn.busy) return;
+    const input = $("connFind");
+    if (input) state.connQuery = input.value.trim();
+    conn.err = null; conn.notice = null;
+    if (!state.connQuery) { conn.err = "Enter an invite code or a player's exact name."; renderConnections(); return; }
+    conn.busy = "lookup"; conn.results = null;
+    renderConnections();
+    let list = [];
+    try { list = await api.lookupPlayer(state.connQuery, conn.uid) || []; }
+    catch (e) { conn.busy = null; conn.err = "That lookup didn't go through — check your connection."; renderConnections(); return; }
+    conn.busy = null;
+    conn.results = list;
+    if (!list.length) conn.err = "No player found. Check the code or name and try again.";
+    /* where we stand with each of them, from the module rather than from
+       whatever this screen happens to be holding */
+    await Promise.all(list.map(async (p) => {
+      try { conn.states[p.uid] = await api.getConnectionState(conn.uid, p.uid); }
+      catch (e) { conn.states[p.uid] = "none"; }
+    }));
+    if (state.view === "connections") renderConnections();
+  }
+
+  /* the state of one person, live: the subscriptions know before a re-read
+     would, so they win over the last getConnectionState */
+  function connStateOf(uid) {
+    if ((conn.list || []).some((c) => c.uid === uid)) return "connected";
+    if (conn.outgoing.some((r) => r.toUid === uid)) return "pending-sent";
+    if (conn.incoming.some((r) => r.fromUid === uid)) return "pending-received";
+    return conn.states[uid] || "none";
+  }
+
+  async function connConnect(uid) {
+    const api = online();
+    const target = (conn.results || []).find((p) => p.uid === uid);
+    if (!api || !target || conn.busy) return;
+    conn.busy = uid; conn.err = null;
+    renderConnections();
+    const me = await aewayIdentity();
+    if (!me) { conn.busy = null; renderConnections(); return; }
+    try { await api.sendConnectionRequest(me, target); conn.states[uid] = "pending-sent"; }
+    catch (e) { conn.err = (e && e.message) || "That request didn't send — check your connection."; }
+    conn.busy = null;
+    renderConnections();
+  }
+
+  async function connCancel(uid) {
+    const api = online();
+    const req = conn.outgoing.find((r) => r.toUid === uid);
+    if (!api || !req || conn.busy) return;
+    conn.busy = uid;
+    renderConnections();
+    try { await api.cancelConnectionRequest(req.id); conn.states[uid] = "none"; }
+    catch (e) { conn.err = "That didn't go through — check your connection."; }
+    conn.busy = null;
+    renderConnections();
+  }
+
+  async function connAnswer(requestId, approve) {
+    const api = online();
+    if (!api || conn.busy) return;
+    conn.busy = requestId; conn.err = null;
+    renderConnections();
+    try {
+      if (approve) await api.approveConnectionRequest(requestId);
+      else await api.denyConnectionRequest(requestId);
+      if (approve) { conn.list = null; if (conn.listOpen) await connLoadList(); }
+    } catch (e) {
+      conn.err = (e && e.message) || "That request is no longer available.";
+    }
+    conn.busy = null;
+    renderConnections();
+  }
+
+  /* ---- the list ---- */
+  async function connToggleList() {
+    conn.listOpen = !conn.listOpen;
+    if (conn.listOpen && conn.list === null) { renderConnections(); await connLoadList(); }
+    renderConnections();
+  }
+
+  async function connLoadList() {
+    const api = online();
+    if (!api || !conn.uid) return;
+    conn.listBusy = true;
+    try { conn.list = await api.getMyConnections(conn.uid) || []; }
+    catch (e) { conn.list = []; conn.err = "That list couldn't be loaded — check your connection."; }
+    conn.listBusy = false;
+    if (state.view === "connections") renderConnections();
+  }
+
+  /* ---- the thread ----
+     Text only, one pair, and it opens inside this screen rather than over it.
+     Only a connection has a Message button, and the security rule is what
+     actually holds that line. */
+  async function connThreadOpen(uid) {
+    const api = online();
+    const who = (conn.list || []).find((c) => c.uid === uid);
+    if (!api || !who || !conn.uid) return;
+    connThreadClose();
+    conn.thread = { uid, displayName: who.displayName, photoURL: who.photoURL,
+                    msgs: null, unsub: null, err: null, sending: false };
+    renderConnections();
+    const t = conn.thread;
+    try {
+      t.unsub = api.watchMessages(conn.uid, uid, (list) => {
+        if (conn.thread !== t) return;
+        t.msgs = Array.isArray(list) ? list : [];
+        renderConnections();
+        connThreadScroll();
+      });
+    } catch (e) {
+      t.err = "That conversation couldn't be opened.";
+      renderConnections();
+    }
+  }
+
+  function connThreadClose() {
+    const t = conn.thread;
+    if (t && t.unsub) { try { t.unsub(); } catch (e) { /* gone */ } }
+    conn.thread = null;
+  }
+
+  function connThreadScroll() {
+    const box = $("connMsgs");
+    if (box) box.scrollTop = box.scrollHeight;
+  }
+
+  async function connSend() {
+    const api = online();
+    const t = conn.thread;
+    const input = $("connMsgInput");
+    if (!api || !t || !input || t.sending) return;
+    const text = input.value.trim();
+    if (!text) return;
+    t.sending = true; t.err = null;
+    input.value = "";
+    renderConnections();
+    const me = await aewayIdentity();
+    if (!me || conn.thread !== t) return;
+    try { await api.sendMessage(me, t.uid, text); }
+    catch (e) {
+      /* the commonest reason is the security rule: the two are not connected */
+      t.err = "That message didn't send. You can only message a connection.";
+    }
+    t.sending = false;
+    if (conn.thread === t) { renderConnections(); connThreadScroll(); }
+  }
+
+  /* ---- what it looks like ---- */
+  function renderConnections() {
+    if (state.view !== "connections") return;
+    barTitle.textContent = "Learnæway";
+    const nameEl = $("profileBarName");
+    if (nameEl) nameEl.textContent = "Connections";
+    cardFooter.style.display = "none";
+    const keep = cardScroll.scrollTop;
+    cardScroll.innerHTML = connectionsHTML();
+    cardScroll.scrollTop = keep;
+    connThreadScroll();
+  }
+
+  const connAvatar = (p, cls) => pwOnlineAvatar(p, cls);
+
+  function connectionsHTML() {
+    const head = `
+      <div class="pw-lib-head">
+        <button type="button" class="pw-hub-back" data-conn-back aria-label="Back to your profile">
+          <img src="assets/nav-icons/icon-arrow-back@2x.png" alt="">
+        </button>
+        <span class="pw-lib-title">Connections</span>
+      </div>`;
+    if (conn.status === "idle" || conn.status === "loading") {
+      return `<div class="conn">${head}
+        <div class="pw-finding-body"><div class="pw-spinner sm" aria-hidden="true"></div>
+        <div class="pw-finding-cap" role="status">Loading…</div></div></div>`;
+    }
+    if (conn.status === "offline") {
+      return `<div class="conn">${head}
+        <div class="pw-on-msg"><b>You're offline</b>
+        <span>Connections and messages need a connection.</span></div>
+        <div class="pw-over-row"><button type="button" class="pw-over-pill on" data-conn-retry><span>Try Again</span></button></div></div>`;
+    }
+    if (conn.status === "signin") {
+      if (onlineAuthState() === "reconnect") return `<div class="conn">${head}${onlineReconnectHTML("Cn")}</div>`;
+      return `<div class="conn">${head}
+        <div class="pw-on-msg"><b>Sign in to connect</b>
+        <span>Connections live on your account, so it has to be signed in on this device.</span></div>
+        <div class="pw-over-row"><button type="button" class="pw-over-pill on" data-pw-online-signin><span>Sign In</span></button></div></div>`;
+    }
+    if (conn.thread) return `<div class="conn">${head}${connThreadHTML()}</div>`;
+
+    const me = aewayMe || {};
+    return `
+      <div class="conn">
+        ${head}
+
+        ${/* who you are, and the count — tapping it opens the list */""}
+        <button type="button" class="conn-me" data-conn-list aria-expanded="${conn.listOpen}">
+          ${connAvatar({ photoURL: me.photoURL || store.profilePhoto }, "lg")}
+          <span class="conn-me-n">${connCount()}</span>
+          <span class="conn-me-cap">Connection${connCount() === 1 ? "" : "s"}</span>
+          <span class="conn-me-go" aria-hidden="true">${conn.listOpen ? "▲" : "▼"}</span>
+        </button>
+
+        ${conn.listOpen ? `
+        <div class="conn-list">
+          ${conn.listBusy && conn.list === null
+            ? `<div class="conn-empty"><span class="pw-spinner sm" aria-hidden="true"></span> Loading your connections…</div>`
+            : (conn.list || []).length
+              ? (conn.list || []).map((c) => `
+                <div class="conn-row">
+                  ${connAvatar(c, "")}
+                  <span class="conn-row-name">${esc(c.displayName || "Trader")}</span>
+                  <button type="button" class="conn-btn msg" data-conn-msg="${esc(c.uid)}">Message</button>
+                </div>`).join("")
+              : `<div class="conn-empty">No connections yet. Find someone below.</div>`}
+        </div>` : ""}
+
+        ${conn.incoming.length ? `
+        <div class="conn-sec">
+          <div class="conn-sec-head">
+            <span>Requests</span><span class="conn-sec-n">${conn.incoming.length}</span>
+          </div>
+          ${conn.incoming.map((r) => {
+            const busy = conn.busy === r.id;
+            return `
+            <div class="conn-row">
+              ${connAvatar({ photoURL: r.fromPhoto }, "")}
+              <span class="conn-row-name">${esc(r.fromName || "A trader")}<i>wants to connect</i></span>
+              ${busy
+                ? `<span class="pw-spinner sm" aria-hidden="true"></span>`
+                : `<button type="button" class="conn-btn yes" data-conn-approve="${esc(r.id)}">Approve</button>
+                   <button type="button" class="conn-btn" data-conn-deny="${esc(r.id)}">Deny</button>`}
+            </div>`;
+          }).join("")}
+        </div>` : ""}
+
+        <div class="conn-sec">
+          <div class="conn-sec-head"><span>Find someone</span></div>
+          ${/* ==> invites.js: the same lookup the challenge screen uses. No
+                directory, no prefix search, nothing to browse. */""}
+          <div class="conn-find-cap">Their invite code, or their display name exactly as they wrote it.</div>
+          <input class="mt-input conn-find" id="connFind" type="text"
+                 inputmode="latin" autocapitalize="characters" autocomplete="off" spellcheck="false"
+                 maxlength="40" placeholder="KQ7Z2M  ·  or  ·  Jane Trader" value="${esc(state.connQuery || "")}">
+          <button type="button" class="btn-primary conn-go" data-conn-find${conn.busy === "lookup" ? " disabled" : ""}>
+            ${conn.busy === "lookup" ? "Looking…" : "Find Player"}</button>
+          ${conn.err ? `<div class="pw-on-err" role="alert">${esc(conn.err)}</div>` : ""}
+          ${(conn.results || []).map((p) => connResultHTML(p)).join("")}
+        </div>
+
+        <div class="conn-foot">Your own invite code is on your profile — the same one
+          that lets somebody challenge you.</div>
+      </div>`;
+  }
+
+  /* one person, and the single control that says where you stand with them */
+  function connResultHTML(p) {
+    const st = connStateOf(p.uid);
+    const busy = conn.busy === p.uid;
+    const btn = busy
+      ? `<span class="pw-spinner sm" aria-hidden="true"></span>`
+      : st === "connected"
+        ? `<span class="conn-btn done" aria-disabled="true">Connected</span>`
+        : st === "pending-sent"
+          ? `<button type="button" class="conn-btn sent" data-conn-cancel="${esc(p.uid)}"
+                     title="Tap to cancel">Requested</button>`
+          : st === "pending-received"
+            ? `<span class="conn-btn done" aria-disabled="true">Asked you</span>`
+            : `<button type="button" class="conn-btn yes" data-conn-add="${esc(p.uid)}">Connect</button>`;
+    return `
+      <div class="conn-row result">
+        ${connAvatar(p, "md")}
+        <span class="conn-row-name">${esc(p.displayName || "Trader")}</span>
+        ${btn}
+      </div>`;
+  }
+
+  function connThreadHTML() {
+    const t = conn.thread;
+    const rows = t.msgs;
+    return `
+      <div class="conn-thread">
+        <div class="conn-thread-head">
+          <button type="button" class="conn-thread-back" data-conn-thread-close aria-label="Back to connections">‹</button>
+          ${connAvatar(t, "")}
+          <span class="conn-thread-name">${esc(t.displayName || "Trader")}</span>
+        </div>
+        <div class="conn-msgs" id="connMsgs">
+          ${rows === null
+            ? `<div class="conn-empty"><span class="pw-spinner sm" aria-hidden="true"></span> Loading…</div>`
+            : rows.length
+              ? rows.map((m) => `
+                <div class="conn-msg ${m.senderUid === conn.uid ? "mine" : "theirs"}">
+                  <span>${esc(m.text || "")}</span>
+                </div>`).join("")
+              : `<div class="conn-empty">No messages yet. Say something.</div>`}
+        </div>
+        ${t.err ? `<div class="pw-on-err" role="alert">${esc(t.err)}</div>` : ""}
+        <div class="conn-compose">
+          <input class="mt-input conn-msg-input" id="connMsgInput" type="text" maxlength="500"
+                 placeholder="Message ${esc(t.displayName || "them")}" autocomplete="off"
+                 ${t.sending ? "disabled" : ""}>
+          <button type="button" class="conn-send" data-conn-send ${t.sending ? "disabled" : ""}
+                  aria-label="Send">${t.sending ? "…" : "Send"}</button>
+        </div>
+      </div>`;
+  }
+
   function profileOnlineHTML() {
     const so = profileOnlineState();
     const wrap = (inner) => `<div class="pr-sec pr-online" id="prOnline">
@@ -11114,6 +11810,8 @@
         <button type="button" class="ad-back" data-pr-online-retry>Try Again</button>`);
     }
     if (so.status === "signin") {
+      /* signed into the app but not into Æway Online — see onlineAuthState */
+      if (onlineAuthState() === "reconnect") return wrap(onlineReconnectHTML("Pr"));
       return wrap(`<div class="pr-online-line">Sign in to sync your name, photo and match record across devices and play live opponents.</div>
         <button type="button" class="ad-save" data-pr-online-signin>Sign In</button>`);
     }
@@ -11569,7 +12267,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-library],[data-pw-lib-back],[data-pw-lib-set],[data-pw-setup-back],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-pw-hub-start],[data-pw-hub-find],[data-pw-hub-all],[data-pw-hub-back],[data-pw-hub-open],[data-pw-saved-back],[data-pw-hub-history],[data-pw-online-cancel],[data-pw-online-back],[data-pw-online-retry],[data-pw-online-signin],[data-pw-online-card],[data-pw-online-forfeit],[data-pw-online-forfeit-yes],[data-pw-online-forfeit-no],[data-pw-online-again],[data-pw-online-rematch],[data-pw-oh-open],[data-pr-online-save],[data-pr-online-level],[data-pr-online-signin],[data-pr-online-retry],[data-jnote-new],[data-jnote-cancel],[data-jnote-save],[data-jnote-img],[data-jnote-img-clear],[data-jnote-edit],[data-jnote-del],[data-jnote-del-yes],[data-jnote-del-no],[data-jnote-open],[data-jnote-retry],[data-jnote-signin],[data-pw-hub-challenge],[data-pw-chal-find],[data-pw-chal-send],[data-pw-chal-cancel],[data-pw-chal-again],[data-pw-oh-rematch],[data-pw-inv-accept],[data-pw-inv-decline],[data-pr-code-copy],[data-pr-code-share],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-open-connections],[data-conn-back],[data-conn-retry],[data-conn-list],[data-conn-find],[data-conn-add],[data-conn-cancel],[data-conn-approve],[data-conn-deny],[data-conn-msg],[data-conn-thread-close],[data-conn-send],[data-chal-bar-hide],[data-online-reconnect],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-library],[data-pw-lib-back],[data-pw-lib-set],[data-pw-setup-back],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-pw-hub-start],[data-pw-hub-find],[data-pw-hub-all],[data-pw-hub-back],[data-pw-hub-open],[data-pw-saved-back],[data-pw-hub-history],[data-pw-online-cancel],[data-pw-online-back],[data-pw-online-retry],[data-pw-online-signin],[data-pw-online-card],[data-pw-online-seen],[data-pw-online-specials],[data-pw-online-forfeit],[data-pw-online-forfeit-yes],[data-pw-online-forfeit-no],[data-pw-online-again],[data-pw-online-rematch],[data-pw-oh-open],[data-pr-online-save],[data-pr-online-level],[data-pr-online-signin],[data-pr-online-retry],[data-jnote-new],[data-jnote-cancel],[data-jnote-save],[data-jnote-img],[data-jnote-img-clear],[data-jnote-edit],[data-jnote-del],[data-jnote-del-yes],[data-jnote-del-no],[data-jnote-open],[data-jnote-retry],[data-jnote-signin],[data-pw-hub-challenge],[data-pw-chal-find],[data-pw-chal-send],[data-pw-chal-cancel],[data-pw-chal-again],[data-pw-oh-rematch],[data-pw-inv-accept],[data-pw-inv-decline],[data-pr-code-copy],[data-pr-code-share],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -11868,8 +12566,21 @@
       save();
       renderProfileInPlace();
     }
-    else if (t.hasAttribute("data-pr-share")) shareConnectCode(t);
-    else if (t.hasAttribute("data-pr-request")) sendConnectRequest();
+    else if (t.hasAttribute("data-open-connections")) openConnections();
+    /* ==> connections.js + messages.js: the whole screen */
+    else if (t.hasAttribute("data-conn-back")) { connThreadClose(); openProfile(); }
+    else if (t.hasAttribute("data-conn-retry")) connectionsLoad(true);
+    else if (t.hasAttribute("data-conn-list")) connToggleList();
+    else if (t.hasAttribute("data-conn-find")) connLookup();
+    else if (t.hasAttribute("data-conn-add")) connConnect(t.getAttribute("data-conn-add"));
+    else if (t.hasAttribute("data-conn-cancel")) connCancel(t.getAttribute("data-conn-cancel"));
+    else if (t.hasAttribute("data-conn-approve")) connAnswer(t.getAttribute("data-conn-approve"), true);
+    else if (t.hasAttribute("data-conn-deny")) connAnswer(t.getAttribute("data-conn-deny"), false);
+    else if (t.hasAttribute("data-conn-msg")) connThreadOpen(t.getAttribute("data-conn-msg"));
+    else if (t.hasAttribute("data-conn-thread-close")) { connThreadClose(); renderConnections(); }
+    else if (t.hasAttribute("data-conn-send")) connSend();
+    else if (t.hasAttribute("data-chal-bar-hide")) { inbox.hidden = t.getAttribute("data-chal-bar-hide"); syncChallengeBar(); }
+    else if (t.hasAttribute("data-online-reconnect")) onlineReconnect(t.getAttribute("data-online-reconnect"));
     else if (t.hasAttribute("data-photo-pick")) $("photoInput").click();
     else if (t.hasAttribute("data-crop-save")) savePhotoCrop();
     else if (t.hasAttribute("data-photo-clear")) {
@@ -12001,11 +12712,14 @@
       lo.setAttribute("data-logout", "");
       document.body.appendChild(lo); lo.click(); lo.remove();
     }
-    else if (t.hasAttribute("data-pw-online-card")) {
-      const [side, power] = t.getAttribute("data-pw-online-card").split(":");
-      pwOnlinePlay(side, Number(power));
+    else if (t.hasAttribute("data-pw-online-card")) pwOnlinePlayCard(t.getAttribute("data-pw-online-card"));
+    else if (t.hasAttribute("data-pw-online-seen")) {
+      if (pw.online) { pw.online.showSeen = !pw.online.showSeen; pw.online.showSpecials = false; renderPointaeway(); }
     }
-    else if (t.hasAttribute("data-pw-online-forfeit")) { if (pw.online) { pw.online.confirmForfeit = true; renderPointaeway(); } }
+    else if (t.hasAttribute("data-pw-online-specials")) {
+      if (pw.online) { pw.online.showSpecials = !pw.online.showSpecials; pw.online.showSeen = false; renderPointaeway(); }
+    }
+    else if (t.hasAttribute("data-pw-online-forfeit")) { if (pw.online) { pw.online.confirmForfeit = true; pw.online.showSeen = false; pw.online.showSpecials = false; renderPointaeway(); } }
     else if (t.hasAttribute("data-pw-online-forfeit-no")) { if (pw.online) { pw.online.confirmForfeit = false; renderPointaeway(); } }
     else if (t.hasAttribute("data-pw-online-forfeit-yes")) pwOnlineForfeit();
     else if (t.hasAttribute("data-pw-online-again")) pwOnlineStart();
@@ -12331,6 +13045,8 @@
       state.jnotes = null;
       aewayMe = null;
       inboxStop();
+      connectionsStop();
+      conn.status = "idle";
       store.authSeen = false;
       save();
       closeOverlay();
@@ -12468,7 +13184,7 @@
          incoming challenges follows that session. */
       onlineReady(4000).then((api) => {
         if (!api) return;
-        api.signIn(email, password).then(() => { aewayMe = null; inboxStart(); }).catch(() => {});
+        api.signIn(email, password).then(() => { aewayMe = null; inboxStart(); connectionsStart(); }).catch(() => {});
       });
       await pullCloudAndMerge();   // resume progress/notes from other devices
       authScreen.classList.add("hidden");
@@ -13515,6 +14231,18 @@
     }
   });
 
+  /* ==> connections.js / messages.js: Enter sends, on both of the screen's
+     two inputs. A message thread that needs a tap on a button to send is a
+     thread nobody uses. */
+  cardScroll.addEventListener("keydown", (e) => {
+    if (e.key !== "Enter" || e.shiftKey) return;
+    const id = e.target && e.target.id;
+    if (id === "connMsgInput") { e.preventDefault(); connSend(); }
+    else if (id === "connFind") { e.preventDefault(); connLookup(); }
+    else if (id === "pwChalInput") { e.preventDefault(); pwChallengeLookup(); }
+    else if (/^onRe/.test(id || "")) { e.preventDefault(); onlineReconnect(id); }
+  });
+
   if (dcWidePanel) dcWidePanel.addEventListener("input", (e) => {
     if (e.target.id !== "dcSearch") return;
     state.dcQuery = e.target.value;
@@ -13553,6 +14281,7 @@
        before that mirror existed will not have — inboxStart simply finds
        nobody and does nothing. */
     inboxStart();
+    connectionsStart();
   }
 
   if ("serviceWorker" in navigator) {

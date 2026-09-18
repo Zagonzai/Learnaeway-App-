@@ -6380,57 +6380,63 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   color: #6E86A6;
 }
 
-.pw-on-cap {
-  margin: 12px 2px 6px;
-  text-align: center;
-  font-size: calc(11px * var(--fs)); font-weight: 800; letter-spacing: .2em; text-transform: uppercase;
-  color: #9FD9FF;
+/* ---- the live board ----
+   An online match is played on the same table a single-player one is, so it
+   reuses .pw-counts, .pw-field/.pw-arena, .pw-handhead and .pw-hand whole.
+   What is added here is only the wrapper: the scroller becomes a fixed-height
+   flex column for a local match, and the online board sits one level inside
+   it, so the column has to be handed down. */
+.card-scroll.pw-playing > .pw-on-board {
+  flex: 1 1 auto; min-height: 0;
+  display: flex; flex-direction: column;
+  padding-bottom: 2px;
 }
-.pw-on-row { display: flex; align-items: center; gap: 6px; margin-bottom: 8px; }
-.pw-on-rowcap {
-  flex: 0 0 34px;
-  font-size: calc(9.5px * var(--fs)); font-weight: 800; letter-spacing: .1em; text-transform: uppercase;
-  text-align: center;
-}
-.pw-on-row.bull .pw-on-rowcap { color: var(--pw-bull); }
-.pw-on-row.bear .pw-on-rowcap { color: var(--pw-bear); }
-.pw-on-cards { flex: 1 1 auto; min-width: 0; display: flex; gap: 5px; justify-content: space-between; }
-.pw-on-pick {
-  flex: 1 1 0; min-width: 0;
-  display: flex; justify-content: center;
-  padding: 2px 0;
-  border-radius: 10px;
+/* The board's one header row: the way back, then both players with their
+   round-win scores beside them. Off the board this row stacks the score under
+   the name and there is a title line above it; here neither fits, so the
+   player collapses to a single line and the title is gone entirely. */
+.pw-on-head.tight { padding: 2px 2px 4px; gap: 4px; flex: 0 0 auto; }
+.pw-on-back {
+  flex: 0 0 auto;
+  width: 26px; height: 26px;
+  display: grid; place-items: center;
+  border: 0; background: none;
   -webkit-tap-highlight-color: transparent;
-  /* five across the row: the height is what the width allows */
-  --pw-card-h: clamp(56px, 15.5vw, 78px);
-  transition: transform .12s ease, filter .12s ease;
 }
-.pw-on-pick:active { transform: translateY(-3px) scale(1.04); filter: brightness(1.2); }
+.pw-on-back img { width: 18px; height: 18px; object-fit: contain; }
+.pw-on-back:active { filter: brightness(1.4); transform: scale(.9); }
+.pw-on-head.tight .pw-on-player {
+  grid-template-columns: auto 1fr auto;
+  grid-template-rows: auto;
+  column-gap: 6px;
+}
+.pw-on-head.tight .pw-on-player .pw-on-ava { grid-row: 1; width: 30px; height: 30px; }
+.pw-on-head.tight .pw-on-ava img { width: 16px; height: 16px; }
+.pw-on-head.tight .pw-on-ava img.shot { width: 23px; height: 23px; }
+/* YOU / OPP is already written under both seats on the table below */
+.pw-on-head.tight .pw-on-ptag { display: none; }
+.pw-on-split {
+  flex: 0 0 auto;
+  width: 1px; height: 22px;
+  margin: 0 5px;
+  background: rgba(255,255,255,.18);
+}
+.pw-on-head.tight .pw-on-score {
+  grid-column: 3; grid-row: 1;
+  margin-top: 0;
+  font-size: calc(17px * var(--fs));
+}
+.pw-on-board .pw-counts,
+.pw-on-board .pw-handhead,
+.pw-on-board .pw-hand,
+.pw-on-board .pw-seen,
+.pw-on-board .pw-choice,
+.pw-on-board .pw-on-err { flex: 0 0 auto; }
+.pw-on-board .pw-sheet { flex: 1 1 auto; min-height: 0; }
+/* a card in the online hand is a button; the local hand's are too, so the
+   only thing to say is that a disabled one still reads as a card */
+.pw-on-board .pw-hand .pw-card[disabled] { opacity: .55; }
 
-.pw-on-wait {
-  display: flex; flex-direction: column; align-items: center; gap: 10px;
-  padding: 16px 0 10px;
-  text-align: center;
-}
-.pw-on-picked { --pw-card-h: clamp(88px, 24vw, 118px); display: flex; }
-
-.pw-on-forfeit { display: flex; justify-content: center; gap: 8px; margin-top: 10px; }
-.pw-on-forfeit.confirm {
-  flex-wrap: wrap;
-  align-items: center;
-  margin: 10px 2px 0;
-  padding: 10px 12px;
-  border: 1px solid rgba(255,92,147,.4);
-  border-radius: 12px;
-  background: rgba(40,8,20,.5);
-}
-.pw-on-forfeit.confirm span {
-  flex: 1 1 100%;
-  margin-bottom: 6px;
-  font-size: calc(11.5px * var(--fs)); line-height: 1.4;
-  color: #FFC4D2;
-  text-align: center;
-}
 
 .pw-on-banner {
   display: flex; flex-direction: column; align-items: center; gap: 4px;
@@ -6479,6 +6485,261 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 .pw-oh-res.live, .pw-oh-score.live { color: var(--cyan); }
 .pw-oh-chart { padding: 0 8px 8px; }
 .pw-oh-chart .pw-on-svg { height: 110px; }
+
+/* ---- the challenge bar (invites.js) ----
+   A challenge can land while its recipient is anywhere in the app, so the
+   newest one draws itself in a strip at the top of the card, above whatever
+   screen is up. It is a row of the card's own flex column, not a layer over
+   it — nothing in this app opens on a dimmed background. */
+.chal-bar {
+  flex: 0 0 auto;
+  display: flex; align-items: center; gap: 8px;
+  padding: 8px 12px;
+  border-bottom: 1px solid rgba(255,92,147,.3);
+  background: linear-gradient(180deg, rgba(58,10,32,.92), rgba(24,6,18,.92));
+}
+.chal-bar[hidden] { display: none; }
+.chal-bar-dot {
+  flex: 0 0 auto;
+  width: 8px; height: 8px; border-radius: 50%;
+  background: var(--pink, #FF5C93);
+  box-shadow: 0 0 8px rgba(255,92,147,.9);
+  animation: chal-pulse 1.6s ease-in-out infinite;
+}
+@keyframes chal-pulse { 50% { opacity: .35; } }
+@media (prefers-reduced-motion: reduce) { .chal-bar-dot { animation: none; } }
+.chal-bar-text {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; flex-direction: column;
+  font-size: calc(11.5px * var(--fs)); color: var(--text);
+}
+.chal-bar-text b,
+.chal-bar-text i {
+  display: block; max-width: 100%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.chal-bar-text b { font-weight: 800; }
+.chal-bar-text i {
+  font-style: normal; font-size: calc(9.5px * var(--fs)); font-weight: 600;
+  color: #E7A8BF;
+}
+.chal-bar-btn {
+  flex: 0 0 auto;
+  padding: 5px 10px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.22);
+  background: rgba(255,255,255,.05);
+  font-size: calc(10px * var(--fs)); font-weight: 800;
+  color: var(--text);
+  white-space: nowrap;
+}
+.chal-bar-btn.yes { border-color: rgba(61,223,255,.55); color: var(--cyan); }
+.chal-bar-btn:active { filter: brightness(1.4); }
+.chal-bar-x {
+  flex: 0 0 auto;
+  width: 22px; height: 22px;
+  border: 0; background: none;
+  font-size: calc(15px * var(--fs)); line-height: 1;
+  color: #B487A0;
+}
+
+/* ---- the two sessions have drifted (see onlineAuthState) ---- */
+.on-reconnect {
+  display: flex; flex-direction: column; gap: 8px;
+  margin: 10px 2px;
+  padding: 12px 13px;
+  border: 1px solid rgba(61,223,255,.32);
+  border-radius: 14px;
+  background: rgba(6,16,30,.72);
+}
+.on-reconnect b { font-size: calc(13px * var(--fs)); font-weight: 800; color: var(--text); }
+.on-reconnect span { font-size: calc(11px * var(--fs)); line-height: 1.5; color: var(--pw-muted, #8FA9C6); }
+.on-reconnect-mail {
+  font-size: calc(11px * var(--fs)); font-weight: 700;
+  color: var(--cyan);
+  word-break: break-all;
+}
+
+/* ---- Connections (connections.js + messages.js) ---- */
+.conn { padding: 0 2px 14px; }
+.conn-me {
+  width: 100%;
+  display: grid;
+  grid-template-columns: auto auto 1fr auto;
+  align-items: center; gap: 10px;
+  margin-bottom: 14px;
+  padding: 10px 12px;
+  border: 1px solid var(--pw-line, rgba(120,170,255,.22));
+  border-radius: 16px;
+  background: rgba(4,7,18,.7);
+  text-align: left;
+}
+.conn-me-n { font-size: calc(22px * var(--fs)); font-weight: 800; color: var(--cyan); }
+.conn-me-cap {
+  font-size: calc(10px * var(--fs)); font-weight: 700;
+  letter-spacing: .14em; text-transform: uppercase;
+  color: var(--pw-muted, #8FA9C6);
+}
+.conn-me-go { font-size: calc(10px * var(--fs)); color: var(--pw-muted, #8FA9C6); }
+.conn-me:active { filter: brightness(1.25); }
+
+.conn-list { margin: -6px 2px 16px; }
+.conn-sec { margin-bottom: 18px; }
+.conn-sec-head {
+  display: flex; align-items: center; gap: 7px;
+  margin: 0 2px 8px;
+  font-size: calc(10.5px * var(--fs)); font-weight: 800;
+  letter-spacing: .18em; text-transform: uppercase;
+  color: #8FA9C6;
+}
+.conn-sec-n {
+  min-width: 18px; height: 18px;
+  display: grid; place-items: center;
+  padding: 0 5px;
+  border-radius: 999px;
+  background: var(--pink, #FF5C93);
+  font-size: calc(9.5px * var(--fs)); font-weight: 800;
+  letter-spacing: 0;
+  color: #fff;
+}
+.conn-row {
+  display: flex; align-items: center; gap: 9px;
+  padding: 7px 2px;
+}
+.conn-row + .conn-row { border-top: 1px solid rgba(255,255,255,.07); }
+.conn-row .pw-on-ava { width: 34px; height: 34px; }
+.conn-row .pw-on-ava img { width: 18px; height: 18px; }
+.conn-row .pw-on-ava img.shot { width: 26px; height: 26px; }
+.conn-row.result .pw-on-ava { width: 42px; height: 42px; }
+.conn-row.result .pw-on-ava img { width: 22px; height: 22px; }
+.conn-row.result .pw-on-ava img.shot { width: 32px; height: 32px; }
+.conn-row-name {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; flex-direction: column;
+  font-size: calc(12px * var(--fs)); font-weight: 800; color: var(--text);
+}
+/* a display name runs to 40 characters and the narrowest phone is 320px, so
+   both lines ellipsize rather than run under the buttons */
+.conn-row-name i {
+  display: block; max-width: 100%;
+  font-style: normal; font-size: calc(9.5px * var(--fs)); font-weight: 600;
+  color: #9FB4CC;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.conn-row-name { overflow: hidden; }
+.conn-row-name > :first-child { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
+.conn-btn {
+  flex: 0 0 auto;
+  padding: 6px 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.22);
+  background: rgba(255,255,255,.05);
+  font-size: calc(10px * var(--fs)); font-weight: 800;
+  color: var(--text);
+  white-space: nowrap;
+}
+.conn-btn.yes { border-color: rgba(61,223,255,.55); color: var(--cyan); }
+.conn-btn.sent { border-color: rgba(255,196,94,.5); color: #FFC45E; }
+.conn-btn.done { border-color: rgba(120,255,190,.4); color: #6FE9B0; }
+.conn-btn.msg { border-color: rgba(190,140,255,.5); color: #C9A0FF; }
+.conn-btn:active { filter: brightness(1.4); }
+.conn-empty {
+  padding: 10px 2px;
+  font-size: calc(11px * var(--fs)); color: var(--pw-muted, #8FA9C6);
+}
+.conn-find-cap {
+  margin: 0 2px 7px;
+  font-size: calc(10.5px * var(--fs)); line-height: 1.5;
+  color: var(--pw-muted, #8FA9C6);
+}
+.conn-find { text-transform: none; }
+.conn-go { width: 100%; margin-top: 8px; }
+.conn-foot {
+  margin: 4px 2px 0;
+  font-size: calc(10px * var(--fs)); line-height: 1.5;
+  color: #6F86A3;
+  text-align: center;
+}
+.pr-conn-entry {
+  width: 100%;
+  display: grid; grid-template-columns: auto 1fr auto;
+  align-items: center; gap: 10px;
+  margin-top: 10px;
+  padding: 11px 14px;
+  border: 1px solid var(--pw-line, rgba(120,170,255,.22));
+  border-radius: 14px;
+  background: rgba(4,7,18,.7);
+  text-align: left;
+}
+.pr-conn-entry-n { font-size: calc(18px * var(--fs)); font-weight: 800; color: var(--cyan); }
+.pr-conn-entry-cap {
+  font-size: calc(11px * var(--fs)); font-weight: 700;
+  letter-spacing: .12em; text-transform: uppercase;
+  color: var(--pw-muted, #8FA9C6);
+}
+.pr-conn-entry-go { font-size: calc(15px * var(--fs)); color: var(--pw-muted, #8FA9C6); }
+.pr-conn-entry:active { filter: brightness(1.25); }
+
+/* ---- one thread, text only (messages.js) ---- */
+.conn-thread { display: flex; flex-direction: column; }
+.conn-thread-head {
+  display: flex; align-items: center; gap: 9px;
+  padding: 2px 2px 10px;
+  border-bottom: 1px solid rgba(255,255,255,.08);
+}
+.conn-thread-back {
+  width: 28px; height: 28px;
+  border: 0; background: none;
+  font-size: calc(22px * var(--fs)); line-height: 1;
+  color: var(--cyan);
+}
+.conn-thread-head .pw-on-ava { width: 32px; height: 32px; }
+.conn-thread-head .pw-on-ava img { width: 17px; height: 17px; }
+.conn-thread-head .pw-on-ava img.shot { width: 24px; height: 24px; }
+.conn-thread-name {
+  flex: 1 1 auto; min-width: 0;
+  font-size: calc(13px * var(--fs)); font-weight: 800; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.conn-msgs {
+  display: flex; flex-direction: column; gap: 6px;
+  min-height: 180px;
+  max-height: 46vh;
+  padding: 10px 2px;
+  overflow-y: auto;
+  overscroll-behavior: contain;
+}
+.conn-msg {
+  max-width: 78%;
+  padding: 7px 11px;
+  border-radius: 14px;
+  font-size: calc(12px * var(--fs)); line-height: 1.45;
+  color: var(--text);
+  word-wrap: break-word; overflow-wrap: anywhere;
+}
+.conn-msg.mine {
+  align-self: flex-end;
+  border: 1px solid rgba(61,223,255,.35);
+  background: rgba(10,40,58,.75);
+}
+.conn-msg.theirs {
+  align-self: flex-start;
+  border: 1px solid rgba(255,255,255,.14);
+  background: rgba(16,20,34,.8);
+}
+.conn-compose { display: flex; align-items: center; gap: 8px; padding-top: 8px; }
+.conn-msg-input { flex: 1 1 auto; min-width: 0; text-transform: none; }
+.conn-send {
+  flex: 0 0 auto;
+  padding: 10px 16px;
+  border-radius: 999px;
+  border: 1px solid rgba(61,223,255,.55);
+  background: rgba(10,40,58,.6);
+  font-size: calc(11px * var(--fs)); font-weight: 800;
+  color: var(--cyan);
+}
+.conn-send:active { filter: brightness(1.4); }
+.conn-send[disabled] { opacity: .5; }
 
 /* ---- challenges: the inbox, the lookup, the wait (invites.js) ---- */
 /* the count on the dock's Gameæway slot — the one place the app already
