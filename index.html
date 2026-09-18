@@ -227,6 +227,10 @@
 
     <!-- profile photo picker, driven from Settings -->
     <input type="file" id="photoInput" accept="image/*" hidden>
+    <!-- a trade screenshot for a journal note. Its own input rather than the
+         profile picture's: that one opens the round cropper, and a chart
+         screenshot is kept whole. See journalNotes in app.js. -->
+    <input type="file" id="jnoteImg" accept="image/*" hidden>
 
     <!-- ===================== OVERLAYS ===================== -->
     <div id="overlay" class="overlay hidden">
