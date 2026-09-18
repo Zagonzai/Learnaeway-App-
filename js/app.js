@@ -4233,6 +4233,11 @@
                draggable="false">
         </div>
 
+        ${/* somebody has challenged this player: answered here, at the top of
+              the game's own front door, rather than over whatever screen they
+              happened to be on */""}
+        ${inboxHTML()}
+
         <div class="pw-hub-stats">
           ${PW_HUB_STATS.map((s) => `
             <div class="pw-stat t${s.tile}">
@@ -4268,6 +4273,12 @@
             <span class="pw-hub-pill-s">Pointæway 1v1 · live opponent</span>
           </button>
         </div>
+        ${/* the second way into a live room: you name the player rather than
+              taking whoever is in the queue */""}
+        <button type="button" class="pw-hub-pill chal" data-pw-hub-challenge>
+          <span class="pw-hub-pill-t">Challenge a Player</span>
+          <span class="pw-hub-pill-s">By invite code or exact name</span>
+        </button>
         <button type="button" class="pw-hub-link" data-pw-hub-history>
           Online match history <span aria-hidden="true">›</span>
         </button>
@@ -4335,6 +4346,7 @@
       recorded: false,
       history: null,      // the rooms getMatchHistory returned, or null
       histOpen: null,     // which of them is expanded
+      chal: null,         // a challenge being addressed, sent, or waited on
     };
   }
 
@@ -4346,6 +4358,14 @@
     const api = online();
     if (o.mm) { try { o.mm.cancel(); } catch (e) { /* already stopped */ } }
     if (o.unsub) { try { o.unsub(); } catch (e) { /* already gone */ } }
+    /* a challenge still out there is withdrawn rather than left ringing on
+       somebody else's phone for five minutes */
+    if (o.chal) {
+      pwChalDrop();
+      if (api && o.chal.inviteId && o.chal.step === "waiting") {
+        api.cancelInvite(o.chal.inviteId).catch(() => {});
+      }
+    }
     if (api && o.roomId && o.room && o.room.status === "active" && o.me) {
       api.forfeitRoom(o.roomId, o.me.uid).catch(() => {});
     }
@@ -4354,7 +4374,8 @@
        phase that only makes sense with a live flow behind it has to go with
        the flow, or coming back to the game would try to draw a room that no
        longer exists */
-    if (pw.phase === "finding" || pw.phase === "online" || pw.phase === "onlinehistory") pw.phase = "hub";
+    if (pw.phase === "finding" || pw.phase === "online"
+        || pw.phase === "onlinehistory" || pw.phase === "challenge") pw.phase = "hub";
   }
 
   async function pwOnlineStart() {
@@ -4768,9 +4789,382 @@
           ${open ? `<div class="pw-oh-chart">${pwOnlineChartSVG(room.candles, { h: 110 })}
             <div class="pw-on-chartcap"><span>${(room.candles || []).length} candles</span><span>${esc(label)}</span></div>
           </div>` : ""}
+          ${/* ==> invites.js: a past opponent is somebody you already meant to
+                play, so this skips the lookup and sends straight to them */""}
+          ${oppId ? `<div class="pw-oh-foot">
+            <button type="button" class="pw-oh-rematch" data-pw-oh-rematch="${esc(room.id)}">
+              Rematch <span aria-hidden="true">›</span>
+            </button>
+          </div>` : ""}
         </div>`;
     }).join("");
     return `<div class="pw-on pw-oh">${head}<div class="pw-oh-list">${rows}</div></div>`;
+  }
+
+  /* ==================== Challenges ====================
+     The second way into a live room, beside quickMatch: you name the player.
+     There is deliberately no directory here — no browsing, no prefix search,
+     no leaderboard — because the backend deliberately does not support one.
+     A challenge is sent two ways only: an invite code or an exact display
+     name typed in, or a past opponent tapped in the match history.
+
+     ==> INTEGRATION POINTS (invites.js, through window.AEWAY_ONLINE):
+       lookupPlayer(input, selfUid)        — a code or an exact name; never a partial list
+       sendMatchInvite(me, target, {game}) — inviteId; expires in INVITE_TTL_MS
+       watchInvite(inviteId, cb)           — the sender's side: accepted/declined/cancelled
+       watchIncomingInvites(uid, cb)       — the recipient's inbox, live, expired hidden
+       acceptInvite(inviteId, me)          — makes the room quickMatch would have made
+       declineInvite(inviteId) / cancelInvite(inviteId)
+     The room acceptInvite creates is the same shape quickMatch creates, so
+     the match screen takes it unchanged — pwOnlineEnter is the same call. */
+
+  /* who is playing, resolved once and shared by every path that needs a
+     {uid, displayName, photoURL} to hand a module */
+  let aewayMe = null;
+  async function aewayIdentity(force) {
+    const api = online();
+    if (!api) return null;
+    if (aewayMe && !force) return aewayMe;
+    let user;
+    try { user = await api.requireUser(); } catch (e) { return null; }
+    let p = null;
+    try { p = await api.getProfile(user.uid); } catch (e) { p = null; }
+    aewayMe = {
+      uid: user.uid,
+      displayName: (p && p.displayName) || profileName() || "Trader",
+      photoURL: (p && p.photoURL) || store.profilePhoto || "",
+      inviteCode: (p && p.inviteCode) || "",
+    };
+    return aewayMe;
+  }
+
+  /* ---- the inbox ----
+     App-wide rather than per-screen: a challenge can land while its recipient
+     is anywhere, and the dock's Gameæway slot is where the app already points
+     at the games. Started once the bridge is up and somebody is signed in,
+     stopped on sign-out. */
+  const inbox = { unsub: null, uid: null, list: [], busy: null, err: null };
+
+  function inboxCount() { return inbox.list.length; }
+
+  function syncInboxBadge() {
+    const btn = $("navBattle");
+    if (!btn) return;
+    const n = inboxCount();
+    let dot = btn.querySelector(".dock-badge");
+    if (!n) { if (dot) dot.remove(); btn.removeAttribute("data-badge"); return; }
+    if (!dot) {
+      dot = document.createElement("span");
+      dot.className = "dock-badge";
+      btn.appendChild(dot);
+    }
+    dot.textContent = n > 9 ? "9+" : String(n);
+    btn.setAttribute("data-badge", String(n));
+    btn.setAttribute("aria-label",
+      `Gameæway — choose a game. ${n} challenge${n === 1 ? "" : "s"} waiting.`);
+  }
+
+  async function inboxStart() {
+    const api = await onlineReady();
+    if (!api || !api.watchIncomingInvites) return;
+    const me = await aewayIdentity();
+    if (!me) return;
+    if (inbox.unsub && inbox.uid === me.uid) return;      // already watching this account
+    inboxStop();
+    inbox.uid = me.uid;
+    inbox.unsub = api.watchIncomingInvites(me.uid, (list) => {
+      inbox.list = Array.isArray(list) ? list : [];
+      syncInboxBadge();
+      /* the hub is where challenges are answered, so it repaints under them */
+      if (state.view === "pointaeway" && pw && pw.phase === "hub") renderPointaeway();
+    });
+  }
+  function inboxStop() {
+    if (inbox.unsub) { try { inbox.unsub(); } catch (e) { /* gone */ } }
+    inbox.unsub = null; inbox.uid = null; inbox.list = []; inbox.busy = null;
+    syncInboxBadge();
+  }
+
+  /* Accept lands in the room the module just made — the same room shape
+     quickMatch makes, so the match screen needs nothing new. */
+  async function inboxAccept(inviteId) {
+    const api = online();
+    if (!api || inbox.busy) return;
+    inbox.busy = inviteId;
+    if (state.view === "pointaeway") renderPointaeway();
+    const me = await aewayIdentity();
+    if (!me) { inbox.busy = null; return; }
+    let roomId = null;
+    try { roomId = await api.acceptInvite(inviteId, me); }
+    catch (e) {
+      inbox.busy = null;
+      inbox.err = (e && e.message) || "That challenge is no longer available.";
+      if (state.view === "pointaeway") renderPointaeway();
+      return;
+    }
+    inbox.busy = null; inbox.err = null;
+    if (!roomId) return;
+    openPointaeway();
+    pwOnlineLeave();
+    pw.online = pwOnlineNew();
+    pw.online.me = me;
+    pwOnlineEnter(roomId);
+  }
+
+  async function inboxDecline(inviteId) {
+    const api = online();
+    if (!api || inbox.busy) return;
+    inbox.busy = inviteId;
+    if (state.view === "pointaeway") renderPointaeway();
+    try { await api.declineInvite(inviteId); } catch (e) { /* it will fall out of the inbox anyway */ }
+    inbox.busy = null;
+    /* watchIncomingInvites drops it from the list and repaints */
+    if (state.view === "pointaeway") renderPointaeway();
+  }
+
+  function inboxHTML() {
+    if (!inbox.list.length && !inbox.err) return "";
+    if (inbox.err) {
+      return `<div class="pw-inbox"><div class="pw-inbox-err" role="alert">${esc(inbox.err)}</div></div>`;
+    }
+    return `
+      <div class="pw-inbox">
+        <div class="pw-inbox-head">
+          <span class="pw-inbox-title">Challenges</span>
+          <span class="pw-inbox-n">${inbox.list.length}</span>
+        </div>
+        ${inbox.list.map((inv) => {
+          const busy = inbox.busy === inv.id;
+          return `
+          <div class="pw-inv">
+            ${pwOnlineAvatar({ photoURL: inv.fromPhoto }, "")}
+            <span class="pw-inv-name"><b>${esc(inv.fromName || "A trader")}</b><i>challenged you</i></span>
+            ${busy
+              ? `<span class="pw-inv-busy"><span class="pw-spinner sm" aria-hidden="true"></span></span>`
+              : `<button type="button" class="pw-inv-act yes" data-pw-inv-accept="${esc(inv.id)}">Accept</button>
+                 <button type="button" class="pw-inv-act" data-pw-inv-decline="${esc(inv.id)}">Decline</button>`}
+          </div>`;
+        }).join("")}
+      </div>`;
+  }
+
+  /* ---- the challenge screen ----
+     One input, then whoever it resolved to, then the wait. Each of those is a
+     step of the same screen rather than three screens: the whole thing is one
+     errand and backing out of it means backing out of all of it. */
+  function pwChalNew() {
+    return { step: "input", query: "", results: null, target: null,
+             inviteId: null, unsub: null, timer: null, err: null, busy: false };
+  }
+
+  function pwChalDrop() {
+    const o = pw && pw.online;
+    const c = o && o.chal;
+    if (!c) return;
+    if (c.unsub) { try { c.unsub(); } catch (e) { /* gone */ } c.unsub = null; }
+    if (c.timer) { clearTimeout(c.timer); c.timer = null; }
+  }
+
+  async function pwChallengeOpen() {
+    pwOnlineLeave();
+    pw.online = pwOnlineNew();
+    pw.online.chal = pwChalNew();
+    pw.phase = "challenge";
+    renderPointaeway();
+    const o = pw.online;
+    const api = await onlineReady();
+    if (pw.online !== o) return;
+    if (!api) { o.err = "offline"; renderPointaeway(); return; }
+    const me = await aewayIdentity();
+    if (pw.online !== o) return;
+    if (!me) { o.err = "signin"; renderPointaeway(); return; }
+    o.me = me;
+    renderPointaeway();
+    const inp = $("pwChalInput");
+    if (inp) inp.focus({ preventScroll: true });
+  }
+
+  function pwChalReadInput() {
+    const c = pw && pw.online && pw.online.chal;
+    const inp = $("pwChalInput");
+    if (c && inp) c.query = inp.value.trim();
+  }
+
+  async function pwChallengeLookup() {
+    const api = online();
+    const o = pw && pw.online;
+    const c = o && o.chal;
+    if (!api || !c || c.busy) return;
+    pwChalReadInput();
+    if (!c.query) { c.err = "Enter an invite code or a player's exact name."; renderPointaeway(); return; }
+    c.busy = true; c.err = null; c.results = null;
+    renderPointaeway();
+    let list = [];
+    try { list = await api.lookupPlayer(c.query, o.me.uid) || []; }
+    catch (e) { if (pw.online !== o) return; c.busy = false; c.err = "That lookup didn't go through — check your connection."; renderPointaeway(); return; }
+    if (pw.online !== o) return;
+    c.busy = false;
+    c.results = list;
+    c.step = list.length ? "results" : "input";
+    if (!list.length) c.err = "No player found. Check the code or name and try again.";
+    renderPointaeway();
+  }
+
+  /* the send, from either door: the lookup's result card, or a past opponent
+     in the history, which skips the lookup entirely */
+  async function pwChallengeSend(target) {
+    const api = online();
+    const o = pw && pw.online;
+    const c = o && o.chal;
+    if (!api || !c || c.busy) return;
+    c.busy = true; c.err = null; c.target = target; c.step = "sending";
+    renderPointaeway();
+    let id = null;
+    try { id = await api.sendMatchInvite(o.me, target, { game: ONLINE_GAME }); }
+    catch (e) {
+      if (pw.online !== o) return;
+      c.busy = false; c.step = "results";
+      c.err = (e && e.message) || "That challenge didn't send — check your connection.";
+      renderPointaeway(); return;
+    }
+    if (pw.online !== o) { try { api.cancelInvite(id); } catch (e) { /* best effort */ } return; }
+    c.busy = false; c.inviteId = id; c.step = "waiting";
+    renderPointaeway();
+    /* the sender's side of the handshake */
+    c.unsub = api.watchInvite(id, (inv) => {
+      if (pw.online !== o || c.inviteId !== id) return;
+      if (inv.status === "accepted" && inv.roomId) {
+        pwChalDrop();
+        pwOnlineEnter(inv.roomId);
+      } else if (inv.status === "declined") {
+        pwChalDrop(); c.step = "declined"; renderPointaeway();
+      } else if (inv.status === "cancelled") {
+        pwChalDrop(); c.step = "cancelled"; renderPointaeway();
+      }
+    });
+    /* An invite expires after five minutes and nothing writes to it when it
+       does — there is no status change for the listener to see — so the wait
+       is ended here instead. */
+    const ttl = api.INVITE_TTL_MS || 5 * 60 * 1000;
+    c.timer = setTimeout(() => {
+      if (pw.online !== o || c.inviteId !== id || c.step !== "waiting") return;
+      pwChalDrop();
+      try { api.cancelInvite(id); } catch (e) { /* best effort */ }
+      c.step = "expired";
+      renderPointaeway();
+    }, ttl);
+  }
+
+  async function pwChallengeCancel() {
+    const api = online();
+    const o = pw && pw.online;
+    const c = o && o.chal;
+    if (!c) return;
+    const id = c.inviteId;
+    pwChalDrop();
+    if (api && id) { try { await api.cancelInvite(id); } catch (e) { /* best effort */ } }
+    if (pw.online !== o) return;
+    c.inviteId = null; c.step = c.results && c.results.length ? "results" : "input";
+    renderPointaeway();
+  }
+
+  /* a past opponent, challenged straight from the history row */
+  async function pwChallengeRematch(uid, name, photo) {
+    const api = await onlineReady();
+    if (!api) return;
+    const me = await aewayIdentity();
+    if (!me) return;
+    pwOnlineLeave();
+    pw.online = pwOnlineNew();
+    pw.online.me = me;
+    pw.online.chal = pwChalNew();
+    pw.phase = "challenge";
+    renderPointaeway();
+    pwChallengeSend({ uid, displayName: name, photoURL: photo });
+  }
+
+  function pwChalCardHTML(p) {
+    return `
+      <div class="pw-chal-card">
+        ${pwOnlineAvatar(p, "md")}
+        <span class="pw-chal-name">${esc(p.displayName || "Trader")}</span>
+        <button type="button" class="pw-over-pill on" data-pw-chal-send="${esc(p.uid)}">
+          <span>Send challenge</span>
+        </button>
+      </div>`;
+  }
+
+  function pwChallengeHTML() {
+    const o = pw.online;
+    const c = o.chal;
+    const head = `
+      <div class="pw-lib-head">
+        <button type="button" class="pw-hub-back" data-pw-online-back aria-label="Back to Match Hub">
+          <img src="assets/nav-icons/icon-arrow-back@2x.png" alt="">
+        </button>
+        <span class="pw-lib-title">Challenge a Player</span>
+      </div>`;
+    if (o.err) return `<div class="pw-on pw-chal">${head}${pwOnlineErrorHTML(o)}</div>`;
+    if (!c || !o.me) {
+      return `<div class="pw-on pw-chal">${head}
+        <div class="pw-finding-body"><div class="pw-spinner sm" aria-hidden="true"></div>
+        <div class="pw-finding-cap" role="status">Getting you ready…</div></div></div>`;
+    }
+    const back = `<button type="button" class="pw-over-pill" data-pw-online-back>
+        <img src="assets/nav-icons/icon-home@2x.png" alt=""><span>Back to Hub</span></button>`;
+
+    if (c.step === "waiting" || c.step === "sending") {
+      const t = c.target || {};
+      return `
+        <div class="pw-on pw-chal">${head}
+          <div class="pw-finding-body">
+            ${pwOnlineAvatar(t, "lg")}
+            <div class="pw-finding-name">${esc(t.displayName || "Trader")}</div>
+            <div class="pw-spinner" aria-hidden="true"></div>
+            <div class="pw-finding-cap" role="status">
+              ${c.step === "sending" ? "Sending…" : `Waiting for ${esc(t.displayName || "them")}…`}
+            </div>
+            <div class="pw-finding-sub">The challenge expires in five minutes.</div>
+          </div>
+          ${c.step === "waiting"
+            ? `<button type="button" class="pw-over-pill pw-finding-cancel" data-pw-chal-cancel><span>Cancel</span></button>`
+            : ""}
+        </div>`;
+    }
+    if (c.step === "declined" || c.step === "expired" || c.step === "cancelled") {
+      const t = c.target || {};
+      const msg = c.step === "declined"
+        ? { b: "They declined", s: `${esc(t.displayName || "They")} turned down this challenge.` }
+        : c.step === "expired"
+          ? { b: "Challenge expired", s: "Five minutes passed with no answer. Send it again, or play the computer." }
+          : { b: "Challenge cancelled", s: "That challenge was withdrawn." };
+      return `
+        <div class="pw-on pw-chal">${head}
+          <div class="pw-on-msg"><b>${msg.b}</b><span>${msg.s}</span></div>
+          <div class="pw-over-row">
+            <button type="button" class="pw-over-pill on" data-pw-chal-again><span>Challenge Again</span></button>
+            ${back}
+          </div>
+        </div>`;
+    }
+    const results = c.step === "results" && c.results && c.results.length ? `
+      <div class="pw-chal-results">
+        <div class="pw-chal-cap">${c.results.length === 1 ? "Found" : `${c.results.length} players share that name — pick the right one`}</div>
+        ${c.results.map(pwChalCardHTML).join("")}
+      </div>` : "";
+    return `
+      <div class="pw-on pw-chal">${head}
+        <div class="pw-chal-intro">Challenges are sent to one person. Enter their invite code, or their display name exactly as they wrote it.</div>
+        <label class="mt-label" for="pwChalInput">Invite code or exact player name</label>
+        <input class="mt-input pw-chal-input" id="pwChalInput" type="text"
+               inputmode="latin" autocapitalize="characters" autocomplete="off" spellcheck="false"
+               maxlength="40" placeholder="KQ7Z2M  ·  or  ·  Jane Trader" value="${esc(c.query || "")}">
+        <button type="button" class="btn-primary pw-chal-go" data-pw-chal-find${c.busy ? " disabled" : ""}>
+          ${c.busy ? "Looking…" : "Find Player"}</button>
+        ${c.err ? `<div class="pw-on-err" role="alert">${esc(c.err)}</div>` : ""}
+        ${results}
+        <div class="pw-chal-foot">Your own code is on your profile — share it and they can challenge you.</div>
+      </div>`;
   }
 
   /* ---- the result screen ----
@@ -5294,6 +5688,13 @@
     if (pw.phase === "onlinehistory") {
       const keep = cardScroll.scrollTop;
       cardScroll.innerHTML = pwOnlineHistoryHTML();
+      cardScroll.scrollTop = keep;
+      return;
+    }
+    if (pw.phase === "challenge") {
+      /* the typed code survives the re-render that follows every lookup */
+      const keep = cardScroll.scrollTop;
+      cardScroll.innerHTML = pwChallengeHTML();
       cardScroll.scrollTop = keep;
       return;
     }
@@ -10672,6 +11073,28 @@
     } catch (e) { /* the app's own copy is saved; the account's follows next time */ }
   }
 
+  /* Copy or the system share sheet, whichever the button asked for — the same
+     two the connect code already offers, over the account's invite code. */
+  function profileShareInviteCode(btn, useShare) {
+    const so = profileOnlineState();
+    const code = so.profile && so.profile.inviteCode;
+    if (!code) return;
+    const done = (text) => { so.notice = { kind: "ok", text }; renderProfileOnlineInPlace(); };
+    if (useShare && navigator.share) {
+      navigator.share({ title: "Challenge me on Æway", text: `Challenge me on Æway! My code: ${code}` })
+        .then(() => done("Code shared."))
+        .catch(() => { /* dismissed — say nothing */ });
+      return;
+    }
+    if (navigator.clipboard && navigator.clipboard.writeText) {
+      navigator.clipboard.writeText(code)
+        .then(() => done("Code copied."))
+        .catch(() => done(`Your code is ${code}`));
+      return;
+    }
+    done(`Your code is ${code}`);
+  }
+
   /* the section is re-rendered on its own so the rest of the profile — and
      the scroll position — stay put */
   function renderProfileOnlineInPlace() {
@@ -10709,6 +11132,20 @@
           <div class="pr-online-stat"><b>${st.draws}</b><span>Draws</span></div>
           <div class="pr-online-stat"><b class="xp">${st.xp}</b><span>XP</span></div>
         </div>
+        ${/* ==> profiles.js: the code is the profile's own, generated when the
+              account was created and backfilled onto older ones on read. It is
+              how somebody challenges this player without a directory to find
+              them in. */""}
+        ${p.inviteCode ? `
+        <div class="pr-invite">
+          <div class="pr-invite-cap">Your invite code</div>
+          <div class="pr-invite-code" id="prInviteCode">${esc(p.inviteCode)}</div>
+          <div class="pr-invite-row">
+            <button type="button" class="ad-back" data-pr-code-copy>Copy</button>
+            <button type="button" class="ad-save" data-pr-code-share>Share</button>
+          </div>
+          <div class="pr-invite-note">Anyone with this code can challenge you to a live match.</div>
+        </div>` : ""}
         <div class="pr-sec-note">The name and photo below are what opponents see. The photo is your profile picture — tap it above to change it.</div>
         <label class="mt-label">Display name
           <input class="mt-input" id="prOnName" type="text" maxlength="40" placeholder="Trader"
@@ -11132,7 +11569,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-library],[data-pw-lib-back],[data-pw-lib-set],[data-pw-setup-back],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-pw-hub-start],[data-pw-hub-find],[data-pw-hub-all],[data-pw-hub-back],[data-pw-hub-open],[data-pw-saved-back],[data-pw-hub-history],[data-pw-online-cancel],[data-pw-online-back],[data-pw-online-retry],[data-pw-online-signin],[data-pw-online-card],[data-pw-online-forfeit],[data-pw-online-forfeit-yes],[data-pw-online-forfeit-no],[data-pw-online-again],[data-pw-online-rematch],[data-pw-oh-open],[data-pr-online-save],[data-pr-online-level],[data-pr-online-signin],[data-pr-online-retry],[data-jnote-new],[data-jnote-cancel],[data-jnote-save],[data-jnote-img],[data-jnote-img-clear],[data-jnote-edit],[data-jnote-del],[data-jnote-del-yes],[data-jnote-del-no],[data-jnote-open],[data-jnote-retry],[data-jnote-signin],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-library],[data-pw-lib-back],[data-pw-lib-set],[data-pw-setup-back],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-pw-hub-start],[data-pw-hub-find],[data-pw-hub-all],[data-pw-hub-back],[data-pw-hub-open],[data-pw-saved-back],[data-pw-hub-history],[data-pw-online-cancel],[data-pw-online-back],[data-pw-online-retry],[data-pw-online-signin],[data-pw-online-card],[data-pw-online-forfeit],[data-pw-online-forfeit-yes],[data-pw-online-forfeit-no],[data-pw-online-again],[data-pw-online-rematch],[data-pw-oh-open],[data-pr-online-save],[data-pr-online-level],[data-pr-online-signin],[data-pr-online-retry],[data-jnote-new],[data-jnote-cancel],[data-jnote-save],[data-jnote-img],[data-jnote-img-clear],[data-jnote-edit],[data-jnote-del],[data-jnote-del-yes],[data-jnote-del-no],[data-jnote-open],[data-jnote-retry],[data-jnote-signin],[data-pw-hub-challenge],[data-pw-chal-find],[data-pw-chal-send],[data-pw-chal-cancel],[data-pw-chal-again],[data-pw-oh-rematch],[data-pw-inv-accept],[data-pw-inv-decline],[data-pr-code-copy],[data-pr-code-share],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -11521,11 +11958,39 @@
     /* ==> ONLINE: the pill on the hub, and everything that follows from it */
     else if (t.hasAttribute("data-pw-hub-find")) pwOnlineStart();
     else if (t.hasAttribute("data-pw-hub-history")) pwOnlineHistoryOpen();
+    /* ==> invites.js: the challenge screen, the inbox, and the rematch */
+    else if (t.hasAttribute("data-pw-hub-challenge")) pwChallengeOpen();
+    else if (t.hasAttribute("data-pw-chal-find")) pwChallengeLookup();
+    else if (t.hasAttribute("data-pw-chal-send")) {
+      const c = pw.online && pw.online.chal;
+      const p = c && (c.results || []).find((x) => x.uid === t.getAttribute("data-pw-chal-send"));
+      if (p) pwChallengeSend(p);
+    }
+    else if (t.hasAttribute("data-pw-chal-cancel")) pwChallengeCancel();
+    else if (t.hasAttribute("data-pw-chal-again")) {
+      const c = pw.online && pw.online.chal;
+      if (c && c.target) { c.inviteId = null; pwChallengeSend(c.target); }
+    }
+    else if (t.hasAttribute("data-pw-oh-rematch")) {
+      const o = pw.online;
+      const room = o && (o.history || []).find((r) => r.id === t.getAttribute("data-pw-oh-rematch"));
+      if (room) {
+        const oppId = (room.players || []).find((p) => p !== o.me.uid);
+        const info = (room.playerInfo || {})[oppId] || {};
+        if (oppId) pwChallengeRematch(oppId, info.displayName || "Trader", info.photoURL || "");
+      }
+    }
+    else if (t.hasAttribute("data-pw-inv-accept")) inboxAccept(t.getAttribute("data-pw-inv-accept"));
+    else if (t.hasAttribute("data-pw-inv-decline")) inboxDecline(t.getAttribute("data-pw-inv-decline"));
+    else if (t.hasAttribute("data-pr-code-copy")) profileShareInviteCode(t, false);
+    else if (t.hasAttribute("data-pr-code-share")) profileShareInviteCode(t, true);
     else if (t.hasAttribute("data-pw-online-cancel") || t.hasAttribute("data-pw-online-back")) {
       pwOnlineLeave(); pw.phase = "hub"; renderPointaeway();
     }
     else if (t.hasAttribute("data-pw-online-retry")) {
-      if (pw.phase === "onlinehistory") pwOnlineHistoryOpen(); else pwOnlineStart();
+      if (pw.phase === "onlinehistory") pwOnlineHistoryOpen();
+      else if (pw.phase === "challenge") pwChallengeOpen();
+      else pwOnlineStart();
     }
     /* the SDK has no session for this account. The app's own sign-in is the
        one place that mirrors into it, so the way there is the app's own way
@@ -11864,6 +12329,8 @@
       { const api = online(); if (api) api.signOut().catch(() => {}); }
       state.online = null;
       state.jnotes = null;
+      aewayMe = null;
+      inboxStop();
       store.authSeen = false;
       save();
       closeOverlay();
@@ -11997,8 +12464,12 @@
       save();
       /* ==> ONLINE: the SDK behind the online modules keeps a session of its
          own. Signed in beside the app's, best effort and never awaited — the
-         app's own login neither waits for it nor fails with it. */
-      onlineReady(4000).then((api) => { if (api) api.signIn(email, password).catch(() => {}); });
+         app's own login neither waits for it nor fails with it. The inbox of
+         incoming challenges follows that session. */
+      onlineReady(4000).then((api) => {
+        if (!api) return;
+        api.signIn(email, password).then(() => { aewayMe = null; inboxStart(); }).catch(() => {});
+      });
       await pullCloudAndMerge();   // resume progress/notes from other devices
       authScreen.classList.add("hidden");
       syncSessionClock();       // signing in is what puts the clock on screen
@@ -13046,6 +13517,12 @@
 
   if (window.FB && FB.user() && store.authSeen) {
     pullCloudAndMerge().then((merged) => { if (merged && state.view === "home") render(); });
+    /* ==> invites.js: a challenge can arrive while its recipient is anywhere
+       in the app, so the inbox is watched from boot rather than from the game
+       screen. It needs the SDK's own session, which a visitor who signed in
+       before that mirror existed will not have — inboxStart simply finds
+       nobody and does nothing. */
+    inboxStart();
   }
 
   if ("serviceWorker" in navigator) {

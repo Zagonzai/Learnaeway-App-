@@ -5384,6 +5384,11 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   font-size: calc(14px * var(--fs));
   font-weight: 800; letter-spacing: .22em; text-transform: uppercase;
   color: #9FD9FF;
+  /* the back arrow is absolute at the head's left edge, so the title has to
+     keep a 38px gutter on BOTH sides or a long one slides under it on a 320px
+     phone — and the gutter has to be symmetric, or the title stops being
+     centred. Past that width it wraps instead of overlapping. */
+  padding: 0 38px; text-align: center;
 }
 .pw-lib-tiles { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
 .pw-lib-tile {
@@ -6386,6 +6391,171 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 .pw-oh-res.live, .pw-oh-score.live { color: var(--cyan); }
 .pw-oh-chart { padding: 0 8px 8px; }
 .pw-oh-chart .pw-on-svg { height: 110px; }
+
+/* ---- challenges: the inbox, the lookup, the wait (invites.js) ---- */
+/* the count on the dock's Gameæway slot — the one place the app already
+   points at the games, so it is where a waiting challenge announces itself */
+.dock-badge {
+  position: absolute;
+  top: 4px; right: 8px;
+  min-width: 16px; height: 16px;
+  padding: 0 4px;
+  border-radius: 999px;
+  background: var(--magenta, #FF3D9A);
+  box-shadow: 0 0 8px rgba(255,61,154,.8);
+  color: #fff;
+  font-size: 10px; font-weight: 800; line-height: 16px;
+  text-align: center;
+  pointer-events: none;
+}
+
+.pw-inbox {
+  margin: 0 0 10px;
+  padding: 9px 10px 10px;
+  border: 1px solid rgba(255,61,154,.45);
+  border-radius: 12px;
+  background: linear-gradient(160deg, rgba(60,10,34,.6), rgba(7,10,24,.85));
+}
+.pw-inbox-head { display: flex; align-items: center; gap: 7px; margin-bottom: 7px; }
+.pw-inbox-title {
+  flex: 1 1 auto;
+  font-size: calc(10.5px * var(--fs)); font-weight: 800; letter-spacing: .16em; text-transform: uppercase;
+  color: #FFC4D2;
+}
+.pw-inbox-n {
+  min-width: 18px; height: 18px; padding: 0 5px;
+  border-radius: 999px; background: var(--magenta, #FF3D9A);
+  color: #fff; font-size: 10px; font-weight: 800; line-height: 18px; text-align: center;
+}
+.pw-inbox-err { font-size: calc(11px * var(--fs)); color: #FFC4D2; }
+.pw-inv { display: flex; align-items: center; gap: 8px; padding: 5px 0; }
+.pw-inv + .pw-inv { border-top: 1px solid rgba(255,255,255,.07); }
+.pw-inv .pw-on-ava { width: 34px; height: 34px; }
+.pw-inv .pw-on-ava img { width: 18px; height: 18px; }
+.pw-inv .pw-on-ava img.shot { width: 26px; height: 26px; }
+.pw-inv-name {
+  flex: 1 1 auto; min-width: 0;
+  display: flex; flex-direction: column;
+  font-size: calc(12px * var(--fs)); font-weight: 800; color: var(--text);
+}
+/* a display name is up to 40 characters and the narrowest phone is 320px, so
+   both lines ellipsize rather than run under the two buttons. The ellipsis
+   has to sit on the children: the column itself is a flex box, and a flex
+   box never ellipsizes its own content. */
+.pw-inv-name b,
+.pw-inv-name i {
+  display: block; max-width: 100%;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pw-inv-name b { font-weight: 800; }
+.pw-inv-name i {
+  font-style: normal; font-size: calc(9.5px * var(--fs)); font-weight: 600;
+  color: #C9A0B4;
+}
+.pw-inv-act {
+  flex: 0 0 auto;
+  padding: 6px 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(255,255,255,.22);
+  font-size: calc(10.5px * var(--fs)); font-weight: 800;
+  color: #DDEFFF;
+}
+.pw-inv-act.yes { border-color: rgba(0,220,160,.55); color: var(--pw-bull); background: rgba(0,200,150,.14); }
+.pw-inv-act:active { filter: brightness(1.35); transform: scale(.96); }
+.pw-inv-busy { flex: 0 0 auto; display: grid; place-items: center; width: 60px; }
+
+/* the hub's third pill — the same frame as Find Match, since it is the same
+   kind of thing: another way into a live room */
+.pw-hub-pill.chal {
+  width: 100%;
+  margin-top: 8px;
+  border-image-source: url("../assets/pointaeway/hub/pill-find.png");
+}
+
+/* ---- the challenge screen ---- */
+.pw-chal { padding: 0 2px 14px; }
+.pw-chal-intro {
+  margin: 2px 2px 12px;
+  font-size: calc(11.5px * var(--fs)); line-height: 1.5;
+  color: var(--pw-muted);
+  text-align: center;
+}
+.pw-chal-input {
+  text-transform: uppercase;
+  letter-spacing: .08em;
+  font-weight: 700;
+}
+.pw-chal-go { margin-top: 10px; }
+.pw-chal-go[disabled] { opacity: .6; }
+.pw-chal-cap {
+  margin: 14px 2px 8px;
+  text-align: center;
+  font-size: calc(10px * var(--fs)); font-weight: 800; letter-spacing: .16em; text-transform: uppercase;
+  color: #9FD9FF;
+}
+.pw-chal-results { display: flex; flex-direction: column; gap: 8px; }
+.pw-chal-card {
+  display: flex; align-items: center; gap: 10px;
+  padding: 9px 10px;
+  border: 1px solid var(--pw-line);
+  border-radius: 12px;
+  background: rgba(7,10,24,.7);
+}
+.pw-chal-name {
+  flex: 1 1 auto; min-width: 0;
+  font-size: calc(13px * var(--fs)); font-weight: 800; color: var(--text);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pw-chal-card .pw-over-pill { flex: 0 0 auto; }
+.pw-on-ava.md { width: 52px; height: 52px; }
+.pw-on-ava.md img { width: 26px; height: 26px; }
+.pw-on-ava.md img.shot { width: 42px; height: 42px; }
+.pw-chal-foot {
+  margin: 16px 2px 0;
+  text-align: center;
+  font-size: calc(10.5px * var(--fs)); line-height: 1.5;
+  color: #6E86A6;
+}
+
+/* ---- rematch, on a past opponent ---- */
+.pw-oh-foot { display: flex; justify-content: flex-end; padding: 0 8px 8px; }
+.pw-oh-rematch {
+  padding: 5px 11px;
+  border-radius: 999px;
+  border: 1px solid rgba(61,223,255,.4);
+  background: rgba(6,14,34,.6);
+  font-size: calc(10.5px * var(--fs)); font-weight: 800; letter-spacing: .04em;
+  color: #9FD9FF;
+}
+.pw-oh-rematch:active { filter: brightness(1.4); transform: scale(.96); }
+
+/* ---- the invite code, on the profile ---- */
+.pr-invite {
+  margin: 0 0 14px;
+  padding: 11px 12px 12px;
+  border: 1px solid rgba(61,223,255,.3);
+  border-radius: 12px;
+  background: rgba(2,4,14,.6);
+  text-align: center;
+}
+.pr-invite-cap {
+  font-size: calc(9.5px * var(--fs)); font-weight: 800; letter-spacing: .18em; text-transform: uppercase;
+  color: #8FA9C4;
+  margin-bottom: 6px;
+}
+.pr-invite-code {
+  font-size: calc(26px * var(--fs)); font-weight: 800; letter-spacing: .18em;
+  color: var(--cyan);
+  text-shadow: 0 0 14px rgba(61,223,255,.5);
+  user-select: all; -webkit-user-select: all;
+}
+.pr-invite-row { display: flex; gap: 8px; margin-top: 10px; }
+.pr-invite-row .ad-save, .pr-invite-row .ad-back { flex: 1 1 0; min-width: 0; margin: 0; }
+.pr-invite-note {
+  margin-top: 8px;
+  font-size: calc(10px * var(--fs)); line-height: 1.45;
+  color: #6E86A6;
+}
 
 /* ---- trade notes, under the journal's ledger (journal.js) ---- */
 .jn {

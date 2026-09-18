@@ -22,7 +22,13 @@ import { auth, onAuth, requireUser } from './aeway-backend.js';
 import {
   signInWithEmailAndPassword, signOut,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-auth.js';
-import { getProfile, saveProfile, uploadProfilePhoto, recordMatchResult } from './profiles.js';
+import {
+  getProfile, saveProfile, uploadProfilePhoto, recordMatchResult, getPlayerByInviteCode,
+} from './profiles.js';
+import {
+  lookupPlayer, sendMatchInvite, watchInvite, watchIncomingInvites,
+  acceptInvite, declineInvite, cancelInvite, INVITE_TTL_MS,
+} from './invites.js';
 import { quickMatch } from './matchmaking.js';
 import { watchRoom, playRound, forfeitRoom, getMatchHistory } from './pointaway.js';
 import { saveJournalEntry, getJournalEntries, deleteJournalEntry } from './journal.js';
@@ -40,6 +46,16 @@ window.AEWAY_ONLINE = {
   saveProfile,
   uploadProfilePhoto,
   recordMatchResult,
+  getPlayerByInviteCode,
+  /* invites.js — challenge a named player, and the inbox on the other side */
+  lookupPlayer,
+  sendMatchInvite,
+  watchInvite,
+  watchIncomingInvites,
+  acceptInvite,
+  declineInvite,
+  cancelInvite,
+  INVITE_TTL_MS,
   /* matchmaking.js */
   quickMatch,
   /* pointaway.js */

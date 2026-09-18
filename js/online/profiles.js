@@ -7,38 +7,78 @@
  */
 import {
   doc, getDoc, setDoc, updateDoc, serverTimestamp,
+  collection, query, where, limit, getDocs,
 } from 'https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore.js';
 import { db } from './aeway-backend.js';
 
 const BLANK_PROFILE = {
   displayName: '',
+  displayNameLower: '',
   photoURL: '',
   bio: '',
   tradingLevel: 'beginner', // beginner | intermediate | advanced
   stats: { xp: 0, wins: 0, losses: 0, draws: 0 },
 };
 
-/** Fetch a profile; creates a blank one on first load. */
-export async function getProfile(uid) {
-  const snap = await getDoc(doc(db, 'users', uid));
-  if (snap.exists()) return { uid, ...snap.data() };
-  const fresh = {
-    ...BLANK_PROFILE,
-    createdAt: serverTimestamp(),
-    updatedAt: serverTimestamp(),
-  };
-  await setDoc(doc(db, 'users', uid), fresh);
-  return { uid, ...BLANK_PROFILE };
+// Invite codes: 6 chars, no confusing characters (0/O, 1/I/L).
+const CODE_CHARS = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
+
+/** Generate a unique 6-char invite code (retries on collision). */
+async function generateUniqueInviteCode() {
+  for (let i = 0; i < 8; i++) {
+    const code = Array.from({ length: 6 },
+      () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
+    const snap = await getDocs(query(
+      collection(db, 'users'), where('inviteCode', '==', code), limit(1)));
+    if (snap.empty) return code;
+  }
+  // Astronomically unlikely fallback: longer code, no collision check.
+  return Array.from({ length: 10 },
+    () => CODE_CHARS[Math.floor(Math.random() * CODE_CHARS.length)]).join('');
 }
 
-/** Save editable profile fields (displayName, bio, tradingLevel). */
+/** Fetch a profile; creates a blank one (with a unique invite code) on first load.
+ *  Older profiles missing an invite code get one lazily on read. */
+export async function getProfile(uid) {
+  const ref_ = doc(db, 'users', uid);
+  const snap = await getDoc(ref_);
+  if (snap.exists()) {
+    const data = snap.data();
+    if (!data.inviteCode) {
+      const inviteCode = await generateUniqueInviteCode();
+      await updateDoc(ref_, { inviteCode, updatedAt: serverTimestamp() });
+      data.inviteCode = inviteCode;
+    }
+    return { uid, ...data };
+  }
+  const fresh = { ...BLANK_PROFILE, inviteCode: await generateUniqueInviteCode() };
+  await setDoc(ref_, { ...fresh, createdAt: serverTimestamp(), updatedAt: serverTimestamp() });
+  return { uid, ...fresh };
+}
+
+/** Look up a single player by their invite code (case-insensitive). */
+export async function getPlayerByInviteCode(code) {
+  const clean = (code || '').trim().toUpperCase();
+  if (!/^[A-Z0-9]{6,10}$/.test(clean)) return null;
+  const snap = await getDocs(query(
+    collection(db, 'users'), where('inviteCode', '==', clean), limit(1)));
+  if (snap.empty) return null;
+  const d = snap.docs[0];
+  const p = d.data();
+  return { uid: d.id, displayName: p.displayName || 'Trader', photoURL: p.photoURL || '' };
+}
+
+/** Save editable profile fields (displayName, bio, tradingLevel).
+ *  Also maintains displayNameLower for case-insensitive player search. */
 export async function saveProfile(uid, { displayName, bio, tradingLevel }) {
-  await updateDoc(doc(db, 'users', uid), {
-    ...(displayName !== undefined && { displayName }),
-    ...(bio !== undefined && { bio }),
-    ...(tradingLevel !== undefined && { tradingLevel }),
-    updatedAt: serverTimestamp(),
-  });
+  const patch = { updatedAt: serverTimestamp() };
+  if (displayName !== undefined) {
+    patch.displayName = displayName;
+    patch.displayNameLower = displayName.trim().toLowerCase();
+  }
+  if (bio !== undefined) patch.bio = bio;
+  if (tradingLevel !== undefined) patch.tradingLevel = tradingLevel;
+  await updateDoc(doc(db, 'users', uid), patch);
 }
 
 /**
