@@ -3,7 +3,7 @@
  * deploys show up immediately; only falls back to cache when offline.
  * Heavy binary assets (images) are cache-first since they rarely change.
  */
-const CACHE = "learnaeway-v183";
+const CACHE = "learnaeway-v185";
 
 const SHELL = [
   "./",
@@ -14,6 +14,15 @@ const SHELL = [
   "./js/firebase.js",
   "./data/course-data.js",
   "./data/videos.json",
+  /* the online bridge and the four backend modules behind it. Same-origin and
+     small, so they are kept; the Firebase SDK they import comes from the CDN,
+     which this worker never sees — offline, the module graph fails as a whole
+     and the app treats the live features as unavailable, which is right. */
+  "./js/online/bridge.js",
+  "./js/online/aeway-backend.js",
+  "./js/online/profiles.js",
+  "./js/online/matchmaking.js",
+  "./js/online/pointaway.js",
   "./manifest.webmanifest",
   "./assets/logo/logo-symbol-v2@3x.png",
   "./assets/logo/logo-wordmark@3x.png",
