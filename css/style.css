@@ -5684,6 +5684,58 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   color: var(--pw-muted);
 }
 .pw-count-btn.on { border-color: var(--pw-wild); color: var(--pw-wild); }
+/* the live chart's button: a glyph rather than a word, because the row it
+   joins already carries two words and a 320px phone has no room for a third */
+.pw-chart-btn { padding: 6px 9px; display: grid; place-items: center; }
+.pw-chart-ico { width: 20px; height: 15px; display: block; color: currentColor; }
+
+/* ---- the live print, above the board ----
+   The module is the replay chart, so nothing here redraws it. What this does
+   is bound it: on the board it is one row of a fixed-height column and the
+   table below it must keep its floor, so the chart's own plot and chip-row
+   minimums come down and the whole panel is capped. Past that the screen
+   scrolls (.pw-charting) rather than the table being squeezed. */
+.pw-live {
+  flex: 0 0 auto;
+  display: flex;
+  margin-bottom: 2px;
+  padding: 7px 9px 4px;
+  border: 1px solid var(--pw-line);
+  border-radius: 14px;
+  background: rgba(4,7,18,.7);
+}
+.pw-live .pw-chart {
+  flex: 1 1 auto; min-width: 0;
+  margin: 0;
+}
+/* the plot and its chip row are what is bounded; a reveal opened from a
+   candle then adds its own height below them and the screen scrolls */
+.pw-live .pw-chart-body {
+  flex: 0 0 auto;
+  height: clamp(96px, 15vh, 140px);
+  --pw-row-h: 28px;
+  --pw-plot-min: 58px;
+}
+.pw-live .pw-chart-head { margin-bottom: 4px; font-size: calc(8.5px * var(--fs)); }
+.pw-live .pw-chart-rowcap { font-size: calc(6.5px * var(--fs)); }
+/* the module keeps its size before the first round prints, so opening it
+   does not move the board and then move it again one round later */
+.pw-live .pw-chart-empty {
+  display: flex; align-items: center; justify-content: center;
+  flex: 1 1 auto;
+  height: clamp(96px, 15vh, 140px);
+  padding: 0 6px;
+  font-size: calc(10.5px * var(--fs));
+  text-align: center;
+}
+/* tapping a candle opens that round the way the replay does — the same
+   component, so the same behaviour. It is the one thing the panel grows for,
+   and the screen scrolls to carry it. */
+.pw-live .pw-reveal { margin-top: 6px; }
+/* With the chart open the board may need more than one view on a short phone.
+   It scrolls rather than crushing the table, which is the same bargain the
+   round reveal already strikes on the result screen. */
+.card-scroll.pw-playing.pw-charting { overflow-y: auto; }
 .pw-count-btn:active { filter: brightness(1.5); }
 
 /* ---- the arena: your card, the meter, theirs ----
@@ -7698,10 +7750,15 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   .pw-specials-btn { padding: 5px 9px; font-size: calc(8.5px * var(--fs)); }
 }
 
-/* Narrow phones: five chips in one row is the tightest thing on this screen,
-   and the row may not wrap — a second line costs the arena its height. The
-   restart glyph goes first, then the padding. */
-@media (max-width: 365px) {
+/* Phones: the counter row is the tightest thing on this screen, and it may not
+   wrap — a second line costs the arena its height. The restart glyph goes
+   first, then the padding.
+   This used to start at 365px, when the row held five things. The live chart's
+   button makes six, which is about 40px more than the roomy sizing has room
+   for on a 375–430px phone, so the tight sizing now covers every phone width
+   and the roomy one is left to the desktop layout, which has its own rule
+   above and the width to spend. */
+@media (max-width: 440px) {
   .pw-counts { gap: 4px; }
   .pw-count { min-width: 38px; padding: 2px 5px; }
   .pw-count b { font-size: calc(13px * var(--fs)); }
