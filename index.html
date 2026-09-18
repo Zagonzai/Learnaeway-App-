@@ -391,5 +391,9 @@
   <script src="js/firebase.js"></script>
   <script src="data/course-data.js"></script>
   <script src="js/app.js"></script>
+  <!-- Æway Online: the four backend modules (Firebase modular SDK, ES modules)
+       reach app.js through this bridge. It loads after app.js and announces
+       itself; app.js never assumes it is there. See js/online/bridge.js. -->
+  <script type="module" src="js/online/bridge.js"></script>
 </body>
 </html>

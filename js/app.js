@@ -3119,6 +3119,8 @@
       store.profilePhoto = cv.toDataURL("image/jpeg", 0.82);
       save();
       syncProfilePhoto();
+      /* ==> ONLINE: the account's photo is this one too (profiles.js) */
+      profileOnlinePhotoSync(store.profilePhoto);
       closeOverlay();
       // both screens paint the photo themselves and need it repainted
       if (state.view === "pickaeway" || state.view === "profile") render();
@@ -3540,7 +3542,7 @@
       showMatch: false,     // the chart, in the result screen's own slot
       showRound: null,      // which round's reveal is open under the row
       hubAll: false,        // the whole match history rather than the last five
-      hubNote: false,       // the line saying friend matches are not live yet
+      online: null,         // the live 1v1, when one is being found or played
       discipline: null,     // a peek in progress: the Discipline card and theirs
       tp: null,             // a Take Profit waiting on the double-up answer
       aiDoubledUp: null,    // the card the AI spent doubling its own Take Profit
@@ -3938,6 +3940,9 @@
        this function exists to stop */
     pwRollCancel();
     pwCommitPending(true);
+    /* the live 1v1 too: leaving the screen mid-match forfeits it, the same
+       bargain Pickæway's match makes, and a queue entry is withdrawn */
+    pwOnlineLeave();
   }
 
   /* ---- drawing ---- */
@@ -4256,18 +4261,516 @@
             <span class="pw-hub-pill-t">Start Match</span>
             <span class="pw-hub-pill-s">Play against computer</span>
           </button>
-          <button type="button" class="pw-hub-pill find" data-pw-hub-find
-                  aria-describedby="pwHubNote">
-            <span class="pw-hub-pill-t">Find Match</span>
-            <span class="pw-hub-pill-s">Play against your friend</span>
+          ${/* ==> ONLINE: the pill that used to say friend matches were not
+                live is the way into them now — it was drawn for this */""}
+          <button type="button" class="pw-hub-pill find" data-pw-hub-find>
+            <span class="pw-hub-pill-t">Play Online</span>
+            <span class="pw-hub-pill-s">Pointæway 1v1 · live opponent</span>
           </button>
         </div>
-        ${/* said in place rather than in a panel over the screen, and only
-              once asked: there is no friend to find yet */""}
-        <div class="pw-hub-note${pw.hubNote ? "" : " hidden"}" id="pwHubNote" role="status">
-          Friend matches are not live yet. Start Match plays the computer.
-        </div>
+        <button type="button" class="pw-hub-link" data-pw-hub-history>
+          Online match history <span aria-hidden="true">›</span>
+        </button>
       </div>`;
+  }
+
+  /* ==================== Pointæway Online ====================
+     The live 1v1 on Firestore, through the four backend modules in js/online/
+     and nothing else. This section is the UI around them; the rules, the
+     matchmaking and the commit-reveal live in the modules and are not
+     duplicated here.
+
+     ==> INTEGRATION POINTS, all reached through window.AEWAY_ONLINE (see
+         js/online/bridge.js):
+       requireUser()                 — who is playing; throws when nobody is
+       getProfile(uid)               — name and photo to enter the queue with
+       quickMatch(me, {game})        — {promise, cancel}; resolves with a roomId
+       watchRoom(roomId, cb)         — every change to the room, live
+       playRound(roomId, uid, card)  — commit → wait → reveal → resolve
+       forfeitRoom(roomId, uid)      — the other player wins by default
+       recordMatchResult(uid, outcome, xp) — lifetime stats, once per room
+       getMatchHistory(uid)          — past rooms, newest first
+
+     The bridge is a module script and loads after this file. online() may
+     therefore be null for a moment at boot, and stays null for good when the
+     CDN cannot be reached — which is what "offline" means to this screen. */
+  const ONLINE_GAME = "pointaway";
+  const ONLINE_XP = { win: 25, draw: 10, loss: 5 };
+  const ONLINE_ROUNDS_TO_WIN = 5;       // mirrors the module's "first to 5"
+
+  function online() { return window.AEWAY_ONLINE || null; }
+  function onlineReady(ms) {
+    if (online()) return Promise.resolve(online());
+    return new Promise((resolve) => {
+      let t = null;
+      const done = () => { clearTimeout(t); window.removeEventListener("aeway-online-ready", done); resolve(online()); };
+      t = setTimeout(done, ms || 8000);
+      window.addEventListener("aeway-online-ready", done, { once: true });
+    });
+  }
+
+  /* The module's card is {side, power 1..5}. The five powers are the five
+     strengths of the local deck, so the faces the player already knows are
+     the faces they pick from here — power 5 is the Marubozu, 1 the Weak
+     Rejection — and pwCardHTML draws them. */
+  function pwOnlineCard(side, power) {
+    const t = pwTiers(side).find((x) => x.pts === power);
+    return { id: `on-${side}-${power}`, side, kind: "tier", type: t ? t.type : side, pts: power };
+  }
+
+  function pwOnlineNew() {
+    return {
+      stage: "auth",      // auth | finding | match
+      me: null,           // {uid, displayName, photoURL} as entered into the queue
+      profile: null,
+      mm: null,           // the quickMatch handle, so Cancel can reach it
+      roomId: null,
+      room: null,
+      unsub: null,
+      waiting: false,     // our card is committed, the opponent's is not
+      picked: null,       // the card we committed this round
+      err: null,          // offline | signin | profile | matchmaking | <message>
+      timedOut: false,    // playRound's 60s wait expired
+      confirmForfeit: false,
+      recorded: false,
+      history: null,      // the rooms getMatchHistory returned, or null
+      histOpen: null,     // which of them is expanded
+    };
+  }
+
+  /* everything the online flow holds, dropped: the queue entry, the room
+     subscription, and — while a match is live — the match itself */
+  function pwOnlineLeave() {
+    const o = pw && pw.online;
+    if (!o) return;
+    const api = online();
+    if (o.mm) { try { o.mm.cancel(); } catch (e) { /* already stopped */ } }
+    if (o.unsub) { try { o.unsub(); } catch (e) { /* already gone */ } }
+    if (api && o.roomId && o.room && o.room.status === "active" && o.me) {
+      api.forfeitRoom(o.roomId, o.me.uid).catch(() => {});
+    }
+    pw.online = null;
+    /* the game object outlives the screen — openPointaeway keeps it — so a
+       phase that only makes sense with a live flow behind it has to go with
+       the flow, or coming back to the game would try to draw a room that no
+       longer exists */
+    if (pw.phase === "finding" || pw.phase === "online" || pw.phase === "onlinehistory") pw.phase = "hub";
+  }
+
+  async function pwOnlineStart() {
+    pwOnlineLeave();
+    pw.online = pwOnlineNew();
+    pw.phase = "finding";
+    renderPointaeway();
+    const o = pw.online;
+    const api = await onlineReady();
+    if (pw.online !== o) return;                       // left while waiting
+    if (!api) { o.err = "offline"; renderPointaeway(); return; }
+    let user;
+    try { user = await api.requireUser(); } catch (e) { user = null; }
+    if (pw.online !== o) return;
+    if (!user) { o.err = "signin"; renderPointaeway(); return; }
+    let profile;
+    try { profile = await api.getProfile(user.uid); } catch (e) { profile = null; }
+    if (pw.online !== o) return;
+    if (!profile) { o.err = "profile"; renderPointaeway(); return; }
+    o.profile = profile;
+    o.me = {
+      uid: user.uid,
+      displayName: profile.displayName || profileName() || "Trader",
+      photoURL: profile.photoURL || store.profilePhoto || "",
+    };
+    o.stage = "finding";
+    renderPointaeway();
+    const mm = api.quickMatch(o.me, { game: ONLINE_GAME });
+    o.mm = mm;
+    let roomId = null;
+    try { roomId = await mm.promise; } catch (e) { roomId = null; }
+    if (pw.online !== o || o.mm !== mm) return;        // cancelled
+    if (!roomId) { o.err = "matchmaking"; o.mm = null; renderPointaeway(); return; }
+    o.mm = null;
+    pwOnlineEnter(roomId);
+  }
+
+  function pwOnlineEnter(roomId) {
+    const api = online();
+    const o = pw.online;
+    o.roomId = roomId;
+    o.stage = "match";
+    o.room = null;
+    pw.phase = "online";
+    renderPointaeway();
+    o.unsub = api.watchRoom(roomId, (room) => {
+      if (pw.online !== o) return;
+      const prev = o.room;
+      o.room = room;
+      /* the round advanced: the candle for the last one has printed, and the
+         pick is open again */
+      if (!prev || room.round !== prev.round) { o.waiting = false; o.picked = null; o.timedOut = false; }
+      if (room.status === "finished") { o.waiting = false; pwOnlineRecord(room); }
+      renderPointaeway();
+    });
+  }
+
+  async function pwOnlinePlay(side, power) {
+    const api = online();
+    const o = pw.online;
+    if (!api || !o || !o.room || o.room.status !== "active" || o.waiting) return;
+    o.waiting = true;
+    o.picked = { side, power };
+    o.err = null;
+    o.timedOut = false;
+    renderPointaeway();
+    try {
+      await api.playRound(o.roomId, o.me.uid, { side, power });
+    } catch (e) {
+      if (pw.online !== o) return;
+      if (/timed out/i.test(e && e.message || "")) o.timedOut = true;
+      else if (!/already committed/i.test(e && e.message || "")) o.err = (e && e.message) || "That move did not go through.";
+      o.waiting = false;
+      renderPointaeway();
+    }
+    /* the happy path needs nothing here: watchRoom sees the candle print and
+       clears `waiting` itself */
+  }
+
+  /* ==> INTEGRATION: recordMatchResult, once per room. Guarded twice — on the
+     live object, and in the store — so a re-render, a second snapshot of the
+     finished room, or a reload onto the same room cannot count it again. */
+  function pwOnlineRecord(room) {
+    const o = pw.online;
+    if (!o || o.recorded || !o.me) return;
+    o.recorded = true;
+    if (!store.pwOnlineRecorded) store.pwOnlineRecorded = {};
+    if (store.pwOnlineRecorded[room.id]) return;
+    store.pwOnlineRecorded[room.id] = 1;
+    const keys = Object.keys(store.pwOnlineRecorded);
+    if (keys.length > 100) keys.slice(0, keys.length - 100).forEach((k) => { delete store.pwOnlineRecorded[k]; });
+    save();
+    const outcome = !room.winner ? "draw" : room.winner === o.me.uid ? "win" : "loss";
+    const api = online();
+    if (api) api.recordMatchResult(o.me.uid, outcome, ONLINE_XP[outcome]).catch(() => {});
+  }
+
+  /* the opponent's sixty seconds ran out. The room is stuck on our commit and
+     the module has no way to resume the wait, so the way on is out: the
+     absent player is the one who left, and forfeitRoom is told so. */
+  async function pwOnlineTimeoutLeave() {
+    const api = online();
+    const o = pw.online;
+    if (!api || !o || !o.room) return;
+    const opp = (o.room.players || []).find((p) => p !== o.me.uid);
+    if (opp && o.room.status === "active") {
+      try { await api.forfeitRoom(o.roomId, opp); } catch (e) { /* best effort */ }
+    }
+    if (pw.online !== o) return;
+    o.room = null;                  // nothing left to forfeit on the way out
+    pwOnlineStart();
+  }
+
+  async function pwOnlineForfeit() {
+    const api = online();
+    const o = pw.online;
+    if (!api || !o || !o.room || o.room.status !== "active") return;
+    o.confirmForfeit = false;
+    try { await api.forfeitRoom(o.roomId, o.me.uid); } catch (e) { if (pw.online === o) { o.err = "That did not go through — check your connection."; renderPointaeway(); } }
+    /* watchRoom delivers the finished room and the banner with it */
+  }
+
+  async function pwOnlineHistoryOpen() {
+    pwOnlineLeave();
+    pw.online = pwOnlineNew();
+    pw.online.stage = "history";
+    pw.phase = "onlinehistory";
+    renderPointaeway();
+    const o = pw.online;
+    const api = await onlineReady();
+    if (pw.online !== o) return;
+    if (!api) { o.err = "offline"; renderPointaeway(); return; }
+    let user;
+    try { user = await api.requireUser(); } catch (e) { user = null; }
+    if (pw.online !== o) return;
+    if (!user) { o.err = "signin"; renderPointaeway(); return; }
+    o.me = { uid: user.uid };
+    try { o.history = await api.getMatchHistory(user.uid); }
+    catch (e) { o.err = "That list could not be loaded — check your connection."; }
+    if (pw.online !== o) return;
+    renderPointaeway();
+  }
+
+  /* ---- pieces ---- */
+
+  const pwOnlineAvatar = (info, cls) => `
+    <span class="pw-on-ava ${cls || ""}">
+      <img src="${esc((info && info.photoURL) || "assets/nav-icons/icon-user@2x.png")}"
+           class="${info && info.photoURL ? "shot" : ""}" alt="" draggable="false">
+    </span>`;
+
+  /* The room's candles, as SVG. The module prints them around 100 rather than
+     on the local game's −25..+25 track, so the scale is the run's own low
+     and high, padded, and the width is one column per round however many
+     there are. Green when the close is above the open, red otherwise, a doji
+     grey. */
+  function pwOnlineChartSVG(candles, opts) {
+    const o = opts || {};
+    const W = 300, H = o.h || 120, PADX = 8, PADY = 8;
+    const rows = Array.isArray(candles) ? candles : [];
+    if (!rows.length) {
+      return `<svg class="pw-on-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+        <line x1="${PADX}" y1="${H / 2}" x2="${W - PADX}" y2="${H / 2}" class="pw-on-open"/>
+      </svg>`;
+    }
+    let lo = Infinity, hi = -Infinity;
+    rows.forEach((c) => {
+      lo = Math.min(lo, c.low != null ? c.low : Math.min(c.open, c.close));
+      hi = Math.max(hi, c.high != null ? c.high : Math.max(c.open, c.close));
+    });
+    const first = rows[0].open;
+    lo = Math.min(lo, first); hi = Math.max(hi, first);
+    if (hi - lo < 4) { hi += 2; lo -= 2; }
+    const y = (v) => PADY + ((hi - v) / (hi - lo)) * (H - PADY * 2);
+    const col = (W - PADX * 2) / Math.max(rows.length, 8);
+    const bw = Math.max(2, Math.min(14, col * 0.62));
+    const bars = rows.map((c, i) => {
+      const cx = PADX + col * i + col / 2;
+      const top = y(Math.max(c.open, c.close)), bot = y(Math.min(c.open, c.close));
+      const tone = c.close > c.open ? "bull" : c.close < c.open ? "bear" : "flat";
+      const h = Math.max(1.2, bot - top);
+      return `<line x1="${cx.toFixed(1)}" y1="${y(c.high != null ? c.high : Math.max(c.open, c.close)).toFixed(1)}"
+                    x2="${cx.toFixed(1)}" y2="${y(c.low != null ? c.low : Math.min(c.open, c.close)).toFixed(1)}"
+                    class="pw-on-wick ${tone}"/>
+              <rect x="${(cx - bw / 2).toFixed(1)}" y="${top.toFixed(1)}" width="${bw.toFixed(1)}" height="${h.toFixed(1)}"
+                    rx="1" class="pw-on-body ${tone}"/>`;
+    }).join("");
+    return `<svg class="pw-on-svg" viewBox="0 0 ${W} ${H}" preserveAspectRatio="none" aria-hidden="true">
+      <line x1="${PADX}" y1="${y(first).toFixed(1)}" x2="${W - PADX}" y2="${y(first).toFixed(1)}" class="pw-on-open"/>
+      ${bars}
+    </svg>`;
+  }
+
+  function pwOnlineErrorHTML(o) {
+    const back = `<button type="button" class="pw-over-pill" data-pw-online-back>
+        <img src="assets/nav-icons/icon-home@2x.png" alt=""><span>Back to Hub</span></button>`;
+    const retry = `<button type="button" class="pw-over-pill on" data-pw-online-retry><span>Try Again</span></button>`;
+    if (o.err === "offline") return `
+      <div class="pw-on-msg">
+        <b>You're offline</b>
+        <span>Playing online needs a connection. The computer is always ready — Start Match plays it.</span>
+      </div>
+      <div class="pw-over-row">${retry}${back}</div>`;
+    if (o.err === "signin") return `
+      <div class="pw-on-msg">
+        <b>Sign in to play online</b>
+        <span>Your account has to be signed in on this device for live matches and your online profile.</span>
+      </div>
+      <div class="pw-over-row">
+        <button type="button" class="pw-over-pill on" data-pw-online-signin><span>Sign In</span></button>
+        ${back}
+      </div>`;
+    if (o.err === "profile") return `
+      <div class="pw-on-msg"><b>Couldn't load your profile</b><span>Check your connection and try again.</span></div>
+      <div class="pw-over-row">${retry}${back}</div>`;
+    if (o.err === "matchmaking") return `
+      <div class="pw-on-msg"><b>Couldn't join the queue</b><span>Check your connection and try again.</span></div>
+      <div class="pw-over-row">${retry}${back}</div>`;
+    return `
+      <div class="pw-on-msg"><b>Something went wrong</b><span>${esc(o.err)}</span></div>
+      <div class="pw-over-row">${retry}${back}</div>`;
+  }
+
+  function pwFindingHTML() {
+    const o = pw.online;
+    const head = `
+      <div class="pw-lib-head">
+        <button type="button" class="pw-hub-back" data-pw-online-back aria-label="Back to Match Hub">
+          <img src="assets/nav-icons/icon-arrow-back@2x.png" alt="">
+        </button>
+        <span class="pw-lib-title">Play Online</span>
+      </div>`;
+    if (o.err) return `<div class="pw-on pw-finding">${head}${pwOnlineErrorHTML(o)}</div>`;
+    const me = o.me || { displayName: profileName(), photoURL: store.profilePhoto };
+    return `
+      <div class="pw-on pw-finding">
+        ${head}
+        <div class="pw-finding-body">
+          ${pwOnlineAvatar(me, "lg")}
+          <div class="pw-finding-name">${esc(me.displayName || "Trader")}</div>
+          <div class="pw-spinner" aria-hidden="true"></div>
+          <div class="pw-finding-cap" role="status">
+            ${o.stage === "auth" ? "Getting you ready…" : "Finding opponent…"}
+          </div>
+          <div class="pw-finding-sub">Pointæway 1v1 · first to ${ONLINE_ROUNDS_TO_WIN} rounds</div>
+        </div>
+        <button type="button" class="pw-over-pill pw-finding-cancel" data-pw-online-cancel>
+          <span>Cancel</span>
+        </button>
+      </div>`;
+  }
+
+  function pwOnlineHTML() {
+    const o = pw.online;
+    const room = o.room;
+    const head = `
+      <div class="pw-lib-head">
+        <button type="button" class="pw-hub-back" data-pw-online-back aria-label="Back to Match Hub">
+          <img src="assets/nav-icons/icon-arrow-back@2x.png" alt="">
+        </button>
+        <span class="pw-lib-title">Pointæway Online</span>
+      </div>`;
+    if (!room) {
+      return `<div class="pw-on">${head}
+        <div class="pw-finding-body"><div class="pw-spinner" aria-hidden="true"></div>
+        <div class="pw-finding-cap" role="status">Opening the room…</div></div></div>`;
+    }
+    const meId = o.me.uid;
+    const oppId = (room.players || []).find((p) => p !== meId) || "";
+    const info = room.playerInfo || {};
+    const meInfo = Object.assign({ displayName: o.me.displayName, photoURL: o.me.photoURL }, info[meId] || {});
+    const oppInfo = info[oppId] || { displayName: "Opponent", photoURL: "" };
+    const scores = room.scores || {};
+    const myScore = scores[meId] || 0, oppScore = scores[oppId] || 0;
+    const finished = room.status === "finished";
+    const candles = room.candles || [];
+    const last = candles[candles.length - 1];
+
+    const player = (inf, score, cls, tag) => `
+      <div class="pw-on-player ${cls}">
+        ${pwOnlineAvatar(inf, "")}
+        <span class="pw-on-pname">${esc(inf.displayName || "Trader")}</span>
+        <span class="pw-on-ptag">${tag}</span>
+        <b class="pw-on-score">${score}</b>
+      </div>`;
+
+    let body;
+    if (finished) {
+      const outcome = !room.winner ? "draw" : room.winner === meId ? "win" : "loss";
+      const line = outcome === "win" ? "You won" : outcome === "loss" ? "You lost" : "Draw";
+      body = `
+        <div class="pw-on-banner ${outcome}">
+          <b>${line}</b>
+          <span>${myScore} – ${oppScore} · ${candles.length} round${candles.length === 1 ? "" : "s"}</span>
+        </div>
+        <div class="pw-over-row">
+          <button type="button" class="pw-over-pill on" data-pw-online-again><span>Play Again</span></button>
+          <button type="button" class="pw-over-pill" data-pw-online-back>
+            <img src="assets/nav-icons/icon-home@2x.png" alt=""><span>Back to Hub</span>
+          </button>
+        </div>`;
+    } else if (o.timedOut) {
+      body = `
+        <div class="pw-on-msg">
+          <b>Opponent timed out</b>
+          <span>They didn't play a card in time. Leave this match and find another opponent.</span>
+        </div>
+        <div class="pw-over-row">
+          <button type="button" class="pw-over-pill on" data-pw-online-rematch><span>Find New Opponent</span></button>
+          <button type="button" class="pw-over-pill" data-pw-online-back>
+            <img src="assets/nav-icons/icon-home@2x.png" alt=""><span>Back to Hub</span>
+          </button>
+        </div>`;
+    } else if (o.waiting) {
+      const c = o.picked ? pwOnlineCard(o.picked.side, o.picked.power) : null;
+      body = `
+        <div class="pw-on-wait">
+          ${c ? `<div class="pw-on-picked">${pwCardHTML(c, { small: true })}</div>` : ""}
+          <div class="pw-spinner sm" aria-hidden="true"></div>
+          <div class="pw-finding-cap" role="status">Waiting for opponent…</div>
+          <div class="pw-finding-sub">Your card is locked in. It's revealed when theirs is.</div>
+        </div>
+        ${pwOnlineForfeitHTML(o)}`;
+    } else {
+      const row = (side) => `
+        <div class="pw-on-row ${side}">
+          <span class="pw-on-rowcap">${side === "bull" ? "Bull" : "Bear"}</span>
+          <div class="pw-on-cards">
+            ${[5, 4, 3, 2, 1].map((p) => `
+              <button type="button" class="pw-on-pick" data-pw-online-card="${side}:${p}"
+                      aria-label="${side === "bull" ? "Bull" : "Bear"} power ${p}">
+                ${pwCardHTML(pwOnlineCard(side, p), { small: true })}
+              </button>`).join("")}
+          </div>
+        </div>`;
+      body = `
+        <div class="pw-on-cap">Round ${room.round} · pick a card</div>
+        ${row("bull")}
+        ${row("bear")}
+        ${o.err ? `<div class="pw-on-err" role="alert">${esc(o.err)}</div>` : ""}
+        ${pwOnlineForfeitHTML(o)}`;
+    }
+
+    return `
+      <div class="pw-on">
+        ${head}
+        <div class="pw-on-head">
+          ${player(meInfo, myScore, "me", "You")}
+          <span class="pw-on-vs" aria-hidden="true">VS</span>
+          ${player(oppInfo, oppScore, "opp", "Opp")}
+        </div>
+        <div class="pw-on-chart">
+          ${pwOnlineChartSVG(candles)}
+          <div class="pw-on-chartcap">
+            <span>${candles.length ? `${candles.length} candle${candles.length === 1 ? "" : "s"}` : "No candles yet"}</span>
+            <span>${last ? `last close ${Number(last.close).toFixed(0)}` : `first to ${ONLINE_ROUNDS_TO_WIN}`}</span>
+          </div>
+        </div>
+        ${body}
+      </div>`;
+  }
+
+  function pwOnlineForfeitHTML(o) {
+    if (o.confirmForfeit) return `
+      <div class="pw-on-forfeit confirm">
+        <span>Forfeit this match? Your opponent takes the win.</span>
+        <button type="button" class="pw-count-btn on" data-pw-online-forfeit-yes>Forfeit</button>
+        <button type="button" class="pw-count-btn" data-pw-online-forfeit-no>Keep Playing</button>
+      </div>`;
+    return `
+      <div class="pw-on-forfeit">
+        <button type="button" class="pw-count-btn" data-pw-online-forfeit>Forfeit</button>
+      </div>`;
+  }
+
+  function pwOnlineHistoryHTML() {
+    const o = pw.online;
+    const head = `
+      <div class="pw-lib-head">
+        <button type="button" class="pw-hub-back" data-pw-online-back aria-label="Back to Match Hub">
+          <img src="assets/nav-icons/icon-arrow-back@2x.png" alt="">
+        </button>
+        <span class="pw-lib-title">Online History</span>
+      </div>`;
+    if (o.err) return `<div class="pw-on pw-oh">${head}${pwOnlineErrorHTML(o)}</div>`;
+    if (!o.history) return `<div class="pw-on pw-oh">${head}
+      <div class="pw-finding-body"><div class="pw-spinner sm" aria-hidden="true"></div>
+      <div class="pw-finding-cap" role="status">Loading your matches…</div></div></div>`;
+    if (!o.history.length) return `<div class="pw-on pw-oh">${head}
+      <div class="pw-hist-none">No online matches yet — your first one lands here.</div></div>`;
+    const meId = o.me.uid;
+    const rows = o.history.map((room) => {
+      const oppId = (room.players || []).find((p) => p !== meId) || "";
+      const opp = (room.playerInfo || {})[oppId] || { displayName: "Opponent", photoURL: "" };
+      const scores = room.scores || {};
+      const mine = scores[meId] || 0, theirs = scores[oppId] || 0;
+      const outcome = room.status !== "finished" ? "live"
+        : !room.winner ? "draw" : room.winner === meId ? "win" : "loss";
+      const label = { win: "Win", loss: "Loss", draw: "Draw", live: "In progress" }[outcome];
+      const when = room.createdAt && room.createdAt.seconds ? pwHubWhen(room.createdAt.seconds * 1000) : "";
+      const open = o.histOpen === room.id;
+      return `
+        <div class="pw-oh-row${open ? " open" : ""}">
+          <button type="button" class="pw-oh-btn" data-pw-oh-open="${esc(room.id)}" aria-expanded="${open}">
+            ${pwOnlineAvatar(opp, "")}
+            <span class="pw-oh-opp">vs ${esc(opp.displayName || "Opponent")}</span>
+            <span class="pw-oh-res ${outcome}">${label}</span>
+            <span class="pw-oh-score ${outcome}">${mine}–${theirs}</span>
+            <span class="pw-oh-when">${esc(when)}</span>
+          </button>
+          ${open ? `<div class="pw-oh-chart">${pwOnlineChartSVG(room.candles, { h: 110 })}
+            <div class="pw-on-chartcap"><span>${(room.candles || []).length} candles</span><span>${esc(label)}</span></div>
+          </div>` : ""}
+        </div>`;
+    }).join("");
+    return `<div class="pw-on pw-oh">${head}<div class="pw-oh-list">${rows}</div></div>`;
   }
 
   /* ---- the result screen ----
@@ -4773,6 +5276,25 @@
     if (pw.phase === "library") {
       cardScroll.innerHTML = pwLibraryHTML();
       cardScroll.scrollTop = 0;
+      return;
+    }
+    /* the live 1v1: the queue, the room, and the record of past rooms. All
+       three are ordinary scrollers — the room screen is two rows of five
+       cards under a chart and a header, and on a short phone that is more
+       than a view. */
+    if (pw.phase === "finding") { cardScroll.innerHTML = pwFindingHTML(); cardScroll.scrollTop = 0; return; }
+    if (pw.phase === "online") {
+      /* the pick rows keep their scroll position across the live re-renders
+         that every room change causes */
+      const keep = cardScroll.scrollTop;
+      cardScroll.innerHTML = pwOnlineHTML();
+      cardScroll.scrollTop = keep;
+      return;
+    }
+    if (pw.phase === "onlinehistory") {
+      const keep = cardScroll.scrollTop;
+      cardScroll.innerHTML = pwOnlineHistoryHTML();
+      cardScroll.scrollTop = keep;
       return;
     }
     /* A finished match read back off the record. Unlike the library this one
@@ -9567,6 +10089,8 @@
     return `
       ${profileHeaderHTML()}
 
+      ${profileOnlineHTML()}
+
       <div class="pr-sec">
         <div class="pr-sec-head">Market Focus</div>
         ${p.markets.length
@@ -9834,6 +10358,158 @@
     state.profileNotice = null;
     closeOverlay();
     render();
+    profileOnlineLoad();
+  }
+
+  /* ==================== Æway Online — the profile ====================
+     The account behind live play, as a section of the profile screen: the
+     name and photo the queue shows, a bio, a trading level, and the lifetime
+     record the matches write. Everything on it goes through profiles.js.
+
+     ==> INTEGRATION: requireUser() → getProfile(uid) on open; saveProfile on
+         Save; uploadProfilePhoto whenever the app's own photo cropper saves,
+         so the one picture is both the app's and the account's; the stats
+         are read only, written by recordMatchResult at the end of a match. */
+  const ONLINE_LEVELS = [
+    { id: "beginner", label: "Beginner" },
+    { id: "intermediate", label: "Intermediate" },
+    { id: "advanced", label: "Advanced" },
+  ];
+
+  function profileOnlineState() {
+    if (!state.online) state.online = { status: "idle", profile: null, draft: null, notice: null, uid: null };
+    return state.online;
+  }
+
+  async function profileOnlineLoad(force) {
+    const so = profileOnlineState();
+    if (so.status === "ready" && !force) { renderProfileOnlineInPlace(); return; }
+    so.status = "loading"; so.notice = null;
+    renderProfileOnlineInPlace();
+    const api = await onlineReady();
+    if (state.view !== "profile") return;
+    if (!api) { so.status = "offline"; renderProfileOnlineInPlace(); return; }
+    let user;
+    try { user = await api.requireUser(); } catch (e) { user = null; }
+    if (state.view !== "profile") return;
+    if (!user) { so.status = "signin"; renderProfileOnlineInPlace(); return; }
+    try {
+      const p = await api.getProfile(user.uid);
+      so.uid = user.uid;
+      so.profile = p;
+      so.draft = {
+        displayName: p.displayName || "",
+        bio: p.bio || "",
+        tradingLevel: ONLINE_LEVELS.some((l) => l.id === p.tradingLevel) ? p.tradingLevel : "beginner",
+      };
+      so.status = "ready";
+    } catch (e) {
+      so.status = "error";
+    }
+    if (state.view === "profile") renderProfileOnlineInPlace();
+  }
+
+  function profileOnlineReadDraft() {
+    const so = profileOnlineState();
+    if (!so.draft) return;
+    const n = $("prOnName"), b = $("prOnBio");
+    if (n) so.draft.displayName = n.value.trim().slice(0, 40);
+    if (b) so.draft.bio = b.value.trim().slice(0, PROFILE_BIO_MAX);
+  }
+
+  function profileOnlineSetLevel(id) {
+    const so = profileOnlineState();
+    if (!so.draft || !ONLINE_LEVELS.some((l) => l.id === id)) return;
+    profileOnlineReadDraft();
+    so.draft.tradingLevel = id;
+    renderProfileOnlineInPlace();
+  }
+
+  async function profileOnlineSave() {
+    const so = profileOnlineState();
+    const api = online();
+    if (!api || so.status !== "ready" || !so.uid) return;
+    profileOnlineReadDraft();
+    so.notice = { kind: "pending", text: "Saving…" };
+    renderProfileOnlineInPlace();
+    try {
+      await api.saveProfile(so.uid, so.draft);
+      so.profile = Object.assign({}, so.profile, so.draft);
+      so.notice = { kind: "ok", text: "Saved — this is what opponents see." };
+    } catch (e) {
+      so.notice = { kind: "err", text: "Couldn't save — check your connection and try again." };
+    }
+    if (state.view === "profile") renderProfileOnlineInPlace();
+  }
+
+  /* the app's cropper has just saved a photo; the account gets the same one.
+     A data URL is turned back into a File because that is what the module
+     takes — it downsizes it again to its own thumbnail on the way in. */
+  async function profileOnlinePhotoSync(dataUrl) {
+    const api = online();
+    if (!api || !dataUrl) return;
+    let user;
+    try { user = await api.requireUser(); } catch (e) { return; }
+    try {
+      const blob = await (await fetch(dataUrl)).blob();
+      const file = new File([blob], "profile.jpg", { type: blob.type || "image/jpeg" });
+      const url = await api.uploadProfilePhoto(user.uid, file);
+      const so = profileOnlineState();
+      if (so.profile) so.profile.photoURL = url;
+    } catch (e) { /* the app's own copy is saved; the account's follows next time */ }
+  }
+
+  /* the section is re-rendered on its own so the rest of the profile — and
+     the scroll position — stay put */
+  function renderProfileOnlineInPlace() {
+    const host = document.getElementById("prOnline");
+    if (host && state.view === "profile") host.outerHTML = profileOnlineHTML();
+  }
+
+  function profileOnlineHTML() {
+    const so = profileOnlineState();
+    const wrap = (inner) => `<div class="pr-sec pr-online" id="prOnline">
+        <div class="pr-sec-head">Æway Online</div>${inner}</div>`;
+    if (so.status === "idle" || so.status === "loading") {
+      return wrap(`<div class="pr-online-line"><span class="pw-spinner sm" aria-hidden="true"></span> Loading your account…</div>`);
+    }
+    if (so.status === "offline") {
+      return wrap(`<div class="pr-online-line">You're offline. Your online profile and match record show when you're back on a connection.</div>
+        <button type="button" class="ad-back" data-pr-online-retry>Try Again</button>`);
+    }
+    if (so.status === "signin") {
+      return wrap(`<div class="pr-online-line">Sign in to sync your name, photo and match record across devices and play live opponents.</div>
+        <button type="button" class="ad-save" data-pr-online-signin>Sign In</button>`);
+    }
+    if (so.status === "error") {
+      return wrap(`<div class="pr-online-line">Couldn't load your online profile.</div>
+        <button type="button" class="ad-back" data-pr-online-retry>Try Again</button>`);
+    }
+    const p = so.profile || {};
+    const d = so.draft;
+    const st = Object.assign({ xp: 0, wins: 0, losses: 0, draws: 0 }, p.stats || {});
+    const n = so.notice;
+    return wrap(`
+        <div class="pr-online-stats">
+          <div class="pr-online-stat"><b class="win">${st.wins}</b><span>Wins</span></div>
+          <div class="pr-online-stat"><b class="loss">${st.losses}</b><span>Losses</span></div>
+          <div class="pr-online-stat"><b>${st.draws}</b><span>Draws</span></div>
+          <div class="pr-online-stat"><b class="xp">${st.xp}</b><span>XP</span></div>
+        </div>
+        <div class="pr-sec-note">The name and photo below are what opponents see. The photo is your profile picture — tap it above to change it.</div>
+        <label class="mt-label">Display name
+          <input class="mt-input" id="prOnName" type="text" maxlength="40" placeholder="Trader"
+                 value="${esc(d.displayName)}" autocomplete="nickname"></label>
+        <label class="mt-label">Bio
+          <textarea class="mt-input pr-bio-input" id="prOnBio" rows="2" maxlength="${PROFILE_BIO_MAX}">${esc(d.bio)}</textarea></label>
+        <div class="mt-label">Trading level</div>
+        <div class="pr-checks pr-online-levels">
+          ${ONLINE_LEVELS.map((l) => `
+            <button type="button" class="bt-opt${d.tradingLevel === l.id ? " on" : ""}"
+                    data-pr-online-level="${l.id}" aria-pressed="${d.tradingLevel === l.id}">${l.label}</button>`).join("")}
+        </div>
+        <button type="button" class="ad-save" data-pr-online-save>Save Online Profile</button>
+        ${n ? `<div class="pr-notice ${esc(n.kind)}">${esc(n.text)}</div>` : ""}`);
   }
 
   /* notes — per-screen editor on learning screens, browsable list elsewhere.
@@ -10238,7 +10914,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-library],[data-pw-lib-back],[data-pw-lib-set],[data-pw-setup-back],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-pw-hub-start],[data-pw-hub-find],[data-pw-hub-all],[data-pw-hub-back],[data-pw-hub-open],[data-pw-saved-back],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-library],[data-pw-lib-back],[data-pw-lib-set],[data-pw-setup-back],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-pw-hub-start],[data-pw-hub-find],[data-pw-hub-all],[data-pw-hub-back],[data-pw-hub-open],[data-pw-saved-back],[data-pw-hub-history],[data-pw-online-cancel],[data-pw-online-back],[data-pw-online-retry],[data-pw-online-signin],[data-pw-online-card],[data-pw-online-forfeit],[data-pw-online-forfeit-yes],[data-pw-online-forfeit-no],[data-pw-online-again],[data-pw-online-rematch],[data-pw-oh-open],[data-pr-online-save],[data-pr-online-level],[data-pr-online-signin],[data-pr-online-retry],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -10591,7 +11267,42 @@
       pwAbort(); pw = pwNewGame(); pw.phase = "setup"; renderPointaeway();
     }
     else if (t.hasAttribute("data-pw-hub-start")) { pw.phase = "setup"; renderPointaeway(); }
-    else if (t.hasAttribute("data-pw-hub-find")) { pw.hubNote = !pw.hubNote; renderPointaeway(); }
+    /* ==> ONLINE: the pill on the hub, and everything that follows from it */
+    else if (t.hasAttribute("data-pw-hub-find")) pwOnlineStart();
+    else if (t.hasAttribute("data-pw-hub-history")) pwOnlineHistoryOpen();
+    else if (t.hasAttribute("data-pw-online-cancel") || t.hasAttribute("data-pw-online-back")) {
+      pwOnlineLeave(); pw.phase = "hub"; renderPointaeway();
+    }
+    else if (t.hasAttribute("data-pw-online-retry")) {
+      if (pw.phase === "onlinehistory") pwOnlineHistoryOpen(); else pwOnlineStart();
+    }
+    /* the SDK has no session for this account. The app's own sign-in is the
+       one place that mirrors into it, so the way there is the app's own way
+       out: the same path as the settings panel's Log Out. */
+    else if (t.hasAttribute("data-pw-online-signin") || t.hasAttribute("data-pr-online-signin")) {
+      pwOnlineLeave();
+      const lo = document.createElement("button");
+      lo.setAttribute("data-logout", "");
+      document.body.appendChild(lo); lo.click(); lo.remove();
+    }
+    else if (t.hasAttribute("data-pw-online-card")) {
+      const [side, power] = t.getAttribute("data-pw-online-card").split(":");
+      pwOnlinePlay(side, Number(power));
+    }
+    else if (t.hasAttribute("data-pw-online-forfeit")) { if (pw.online) { pw.online.confirmForfeit = true; renderPointaeway(); } }
+    else if (t.hasAttribute("data-pw-online-forfeit-no")) { if (pw.online) { pw.online.confirmForfeit = false; renderPointaeway(); } }
+    else if (t.hasAttribute("data-pw-online-forfeit-yes")) pwOnlineForfeit();
+    else if (t.hasAttribute("data-pw-online-again")) pwOnlineStart();
+    else if (t.hasAttribute("data-pw-online-rematch")) pwOnlineTimeoutLeave();
+    else if (t.hasAttribute("data-pw-oh-open")) {
+      const id = t.getAttribute("data-pw-oh-open");
+      if (pw.online) { pw.online.histOpen = pw.online.histOpen === id ? null : id; renderPointaeway(); }
+    }
+    else if (t.hasAttribute("data-pr-online-level")) {
+      profileOnlineSetLevel(t.getAttribute("data-pr-online-level"));
+    }
+    else if (t.hasAttribute("data-pr-online-save")) profileOnlineSave();
+    else if (t.hasAttribute("data-pr-online-retry")) profileOnlineLoad(true);
     else if (t.hasAttribute("data-pw-hub-all")) { pw.hubAll = !pw.hubAll; renderPointaeway(); }
     /* a history row opens the match it stands for. The chart starts closed —
        the round reveal belongs to whichever chart it was opened from, and this
@@ -10898,6 +11609,9 @@
     else if (t.hasAttribute("data-logout")) {
       stopAudio();
       if (window.FB) FB.signOut();
+      /* ==> ONLINE: and the SDK's session with it */
+      { const api = online(); if (api) api.signOut().catch(() => {}); }
+      state.online = null;
       store.authSeen = false;
       save();
       closeOverlay();
@@ -11029,6 +11743,10 @@
       }
       store.authSeen = true;
       save();
+      /* ==> ONLINE: the SDK behind the online modules keeps a session of its
+         own. Signed in beside the app's, best effort and never awaited — the
+         app's own login neither waits for it nor fails with it. */
+      onlineReady(4000).then((api) => { if (api) api.signIn(email, password).catch(() => {}); });
       await pullCloudAndMerge();   // resume progress/notes from other devices
       authScreen.classList.add("hidden");
       syncSessionClock();       // signing in is what puts the clock on screen
@@ -11557,6 +12275,21 @@
   window.addEventListener("pageshow", syncHeadHeight);
   window.addEventListener("resize", syncHeadHeight);
   window.addEventListener("orientationchange", syncHeadHeight);
+
+  /* ==> ONLINE: closing the tab or backgrounding the app mid-match forfeits
+     it — the opponent would otherwise sit through the module's sixty-second
+     wait for a card that is never coming. A queue entry is withdrawn the same
+     way. pagehide rather than unload: it is the one of the two that fires on
+     a phone. */
+  window.addEventListener("pagehide", () => {
+    const o = pw && pw.online;
+    const api = online();
+    if (!o || !api) return;
+    if (o.mm) { try { o.mm.cancel(); } catch (e) { /* stopped */ } }
+    if (o.roomId && o.room && o.room.status === "active" && o.me) {
+      api.forfeitRoom(o.roomId, o.me.uid).catch(() => {});
+    }
+  });
   // the battle chart repaints every animation frame; the replay chart is
   // static, so it needs a nudge when the viewport changes width
   window.addEventListener("resize", () => { if (state.view === "replay") mkPaintReplay(); });
