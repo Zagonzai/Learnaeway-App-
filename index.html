@@ -173,6 +173,11 @@
     <!-- ===================== MAIN CONTENT CARD ===================== -->
     <main class="card-outer" id="cardOuter">
       <div class="card" id="card">
+        <!-- a challenge that arrives while its recipient is anywhere in the
+             app lands here, at the top of whatever screen they are on. It is
+             part of the card rather than a layer over it: nothing in this app
+             opens on a dimmed background. -->
+        <div class="chal-bar" id="chalBar" hidden></div>
         <div class="card-scroll" id="cardScroll">
           <!-- view content injected by app.js -->
         </div>

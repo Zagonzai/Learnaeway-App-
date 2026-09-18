@@ -29,6 +29,12 @@ import {
   lookupPlayer, sendMatchInvite, watchInvite, watchIncomingInvites,
   acceptInvite, declineInvite, cancelInvite, INVITE_TTL_MS,
 } from './invites.js';
+import {
+  sendConnectionRequest, watchIncomingConnectionRequests, watchOutgoingConnectionRequests,
+  approveConnectionRequest, denyConnectionRequest, cancelConnectionRequest,
+  getMyConnections, watchConnectionCount, getConnectionState,
+} from './connections.js';
+import { sendMessage, watchMessages, watchMyConversations } from './messages.js';
 import { quickMatch } from './matchmaking.js';
 import { watchRoom, playRound, forfeitRoom, getMatchHistory } from './pointaway.js';
 import { saveJournalEntry, getJournalEntries, deleteJournalEntry } from './journal.js';
@@ -56,6 +62,21 @@ window.AEWAY_ONLINE = {
   declineInvite,
   cancelInvite,
   INVITE_TTL_MS,
+  /* connections.js — mutual connections, found the same way challenges are */
+  sendConnectionRequest,
+  watchIncomingConnectionRequests,
+  watchOutgoingConnectionRequests,
+  approveConnectionRequest,
+  denyConnectionRequest,
+  cancelConnectionRequest,
+  getMyConnections,
+  watchConnectionCount,
+  getConnectionState,
+  /* messages.js — 1:1 text between connected players. The module does NOT
+     check that the two are connected; firestore.rules does. */
+  sendMessage,
+  watchMessages,
+  watchMyConversations,
   /* matchmaking.js */
   quickMatch,
   /* pointaway.js */
