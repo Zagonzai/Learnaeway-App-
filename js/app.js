@@ -7695,7 +7695,8 @@
       </div>
       <input id="jCsvFile" class="j-file" type="file" accept=".csv,text/csv">
       <button class="j-cash" data-jcash>Deposit / Withdraw</button>
-      ${statRowHTML()}`;
+      ${statRowHTML()}
+      ${journalNotesHTML()}`;
     // Opening the journal starts at the top, but re-rendering it in place —
     // expanding the account panel, switching modes inside it — must not yank
     // the page back to the top under the user's finger.
@@ -8159,6 +8160,218 @@
     state.journalDelete = null;
     closeOverlay();
     render();
+    journalNotesLoad();
+  }
+
+  /* ==================== Trade Notes — synced ====================
+     A note and a screenshot per trade, kept on the account rather than on
+     the phone, so the same list is on every device the account signs in on.
+
+     This is NOT the journal's ledger. The accounts, the imports, the manual
+     trades and the calendar they add up to are structured records, and they
+     already follow the account through saveUserDoc. journal.js keeps a
+     different thing — free text and a picture — and that is exactly what the
+     manual-trade form has never had a place for. So it sits under the ledger
+     as its own feed, newest first, the way the module returns it.
+
+     ==> INTEGRATION POINTS (journal.js, through window.AEWAY_ONLINE):
+       getJournalEntries(uid)                       — the feed, on opening the journal
+       saveJournalEntry(uid, {text, imageFile, entryId}) — new, or edit when entryId is set;
+                                                      imageFile is downscaled by the module
+       deleteJournalEntry(uid, entryId)
+     Entries carry no day of their own — the module's shape is text, image and
+     the server's timestamps — so they are dated by when they were written. */
+  const JNOTE_MAX = 1000;
+
+  function jnotes() {
+    if (!state.jnotes) {
+      state.jnotes = { status: "idle", uid: null, entries: null, composer: null,
+                       confirmDel: null, open: null, notice: null, saving: false };
+    }
+    return state.jnotes;
+  }
+
+  async function journalNotesLoad(force) {
+    const jn = jnotes();
+    if (jn.status === "ready" && !force) { journalNotesPaint(); return; }
+    jn.status = "loading"; jn.notice = null;
+    journalNotesPaint();
+    const api = await onlineReady();
+    if (state.view !== "journal") return;
+    if (!api || !api.getJournalEntries) { jn.status = "offline"; journalNotesPaint(); return; }
+    let user;
+    try { user = await api.requireUser(); } catch (e) { user = null; }
+    if (state.view !== "journal") return;
+    if (!user) { jn.status = "signin"; journalNotesPaint(); return; }
+    jn.uid = user.uid;
+    try { jn.entries = await api.getJournalEntries(user.uid); jn.status = "ready"; }
+    catch (e) { jn.status = "error"; }
+    if (state.view === "journal") journalNotesPaint();
+  }
+
+  /* the composer's picture is a File until it is saved — the module takes a
+     File and does its own downscaling — and an object URL for the preview */
+  function journalNotesDropPreview() {
+    const c = jnotes().composer;
+    if (c && c.preview) { try { URL.revokeObjectURL(c.preview); } catch (e) { /* gone */ } c.preview = null; }
+  }
+  function journalNotesOpenComposer(entry) {
+    const jn = jnotes();
+    journalNotesDropPreview();
+    jn.composer = {
+      entryId: entry ? entry.id : null,
+      text: entry ? (entry.text || "") : "",
+      file: null, preview: null,
+      keepImage: !!(entry && entry.tradeImage),   // editing: the saved picture stays unless replaced
+    };
+    jn.confirmDel = null; jn.notice = null;
+    journalNotesPaint();
+    const ta = $("jnoteText");
+    if (ta) { ta.focus({ preventScroll: false }); }
+  }
+  function journalNotesReadComposer() {
+    const c = jnotes().composer;
+    const ta = $("jnoteText");
+    if (c && ta) c.text = ta.value.slice(0, JNOTE_MAX);
+  }
+  function journalNotesSetImage(file) {
+    const jn = jnotes();
+    if (!jn.composer) return;
+    journalNotesReadComposer();
+    journalNotesDropPreview();
+    if (file && /^image\//.test(file.type)) {
+      jn.composer.file = file;
+      jn.composer.preview = URL.createObjectURL(file);
+      jn.composer.keepImage = false;
+    }
+    journalNotesPaint();
+  }
+
+  async function journalNotesSave() {
+    const jn = jnotes();
+    const api = online();
+    const c = jn.composer;
+    if (!api || !c || jn.status !== "ready" || jn.saving) return;
+    journalNotesReadComposer();
+    const text = c.text.trim();
+    if (!text && !c.file && !c.keepImage) {
+      jn.notice = { kind: "err", text: "Write a note or attach a screenshot first." };
+      journalNotesPaint(); return;
+    }
+    jn.saving = true; jn.notice = null;
+    journalNotesPaint();
+    try {
+      await api.saveJournalEntry(jn.uid, { text, imageFile: c.file, entryId: c.entryId });
+      /* read back rather than patched in: the timestamps are the server's */
+      jn.entries = await api.getJournalEntries(jn.uid);
+      journalNotesDropPreview();
+      jn.composer = null;
+      jn.notice = { kind: "ok", text: c.entryId ? "Note updated." : "Saved — it's on every device you sign in on." };
+    } catch (e) {
+      jn.notice = { kind: "err", text: "Couldn't save — check your connection and try again." };
+    }
+    jn.saving = false;
+    if (state.view === "journal") journalNotesPaint();
+  }
+
+  async function journalNotesDelete(id) {
+    const jn = jnotes();
+    const api = online();
+    if (!api || jn.status !== "ready") return;
+    jn.confirmDel = null;
+    try {
+      await api.deleteJournalEntry(jn.uid, id);
+      jn.entries = (jn.entries || []).filter((e) => e.id !== id);
+      if (jn.open === id) jn.open = null;
+      jn.notice = { kind: "ok", text: "Note deleted." };
+    } catch (e) {
+      jn.notice = { kind: "err", text: "Couldn't delete — check your connection." };
+    }
+    if (state.view === "journal") journalNotesPaint();
+  }
+
+  /* the feed is repainted on its own so the ledger above it — and the scroll
+     position — stay put; the whole journal re-renders on its own schedule */
+  function journalNotesPaint() {
+    const host = document.getElementById("jNotes");
+    if (host && state.view === "journal") host.outerHTML = journalNotesHTML();
+  }
+
+  function journalNoteWhen(e) {
+    const s = e.createdAt && e.createdAt.seconds;
+    return s ? pwHubWhen(s * 1000) : "Just now";
+  }
+
+  function journalNotesHTML() {
+    const jn = jnotes();
+    const wrap = (inner) => `
+      <div class="jn" id="jNotes">
+        <div class="jn-head">
+          <span class="jn-title">Trade Notes</span>
+          <span class="jn-sub">Synced to your account</span>
+          ${jn.status === "ready" && !jn.composer
+            ? `<button type="button" class="jn-add" data-jnote-new>+ Note</button>` : ""}
+        </div>${inner}</div>`;
+    if (jn.status === "idle" || jn.status === "loading") {
+      return wrap(`<div class="jn-line"><span class="pw-spinner sm" aria-hidden="true"></span> Loading your notes…</div>`);
+    }
+    if (jn.status === "offline") {
+      return wrap(`<div class="jn-line">You're offline. Your notes and screenshots show when you're back on a connection.</div>
+        <button type="button" class="ad-back" data-jnote-retry>Try Again</button>`);
+    }
+    if (jn.status === "signin") {
+      return wrap(`<div class="jn-line">Sign in to keep trade notes and screenshots on your account, on every device.</div>
+        <button type="button" class="ad-save" data-jnote-signin>Sign In</button>`);
+    }
+    if (jn.status === "error") {
+      return wrap(`<div class="jn-line">Couldn't load your notes.</div>
+        <button type="button" class="ad-back" data-jnote-retry>Try Again</button>`);
+    }
+    const c = jn.composer;
+    const n = jn.notice;
+    const composer = c ? `
+      <div class="jn-composer">
+        <textarea class="mt-input jn-text" id="jnoteText" rows="3" maxlength="${JNOTE_MAX}"
+                  placeholder="What happened on this trade? Setup, entry, exit, what you'd do differently…">${esc(c.text)}</textarea>
+        ${c.preview
+          ? `<div class="jn-pic"><img src="${esc(c.preview)}" alt="Screenshot to attach">
+               <button type="button" class="jn-pic-x" data-jnote-img-clear aria-label="Remove screenshot">×</button></div>`
+          : c.keepImage
+            ? `<div class="jn-line small">Keeps the saved screenshot — attach a new one to replace it.</div>` : ""}
+        <div class="jn-row">
+          <button type="button" class="btn-secondary jn-attach" data-jnote-img>
+            ${c.preview || c.keepImage ? "Replace Screenshot" : "Attach Screenshot"}</button>
+          <button type="button" class="btn-primary jn-save" data-jnote-save${jn.saving ? " disabled" : ""}>
+            ${jn.saving ? "Saving…" : c.entryId ? "Update Note" : "Save Note"}</button>
+        </div>
+        <button type="button" class="jn-cancel" data-jnote-cancel>Cancel</button>
+      </div>` : "";
+    const list = (jn.entries || []);
+    const rows = list.length ? list.map((e) => {
+      const open = jn.open === e.id;
+      const ask = jn.confirmDel === e.id;
+      return `
+        <div class="jn-note${open ? " open" : ""}">
+          ${e.tradeImage ? `
+            <button type="button" class="jn-thumb" data-jnote-open="${esc(e.id)}"
+                    aria-expanded="${open}" aria-label="${open ? "Shrink" : "Show"} the screenshot">
+              <img src="${esc(e.tradeImage)}" alt="Trade screenshot" draggable="false">
+            </button>` : ""}
+          <div class="jn-body">
+            ${e.text ? `<div class="jn-note-text">${esc(e.text)}</div>` : `<div class="jn-note-text muted">Screenshot only</div>`}
+            <div class="jn-meta">
+              <span class="jn-when">${esc(journalNoteWhen(e))}</span>
+              ${ask ? `
+                <span class="jn-ask">Delete this note?</span>
+                <button type="button" class="jn-act danger" data-jnote-del-yes="${esc(e.id)}">Delete</button>
+                <button type="button" class="jn-act" data-jnote-del-no>Keep</button>` : `
+                <button type="button" class="jn-act" data-jnote-edit="${esc(e.id)}">Edit</button>
+                <button type="button" class="jn-act" data-jnote-del="${esc(e.id)}">Delete</button>`}
+            </div>
+          </div>
+        </div>`;
+    }).join("") : (c ? "" : `<div class="jn-line">No notes yet. Add one after a trade — a line on what happened, and the chart if you have it.</div>`);
+    return wrap(`${composer}${n ? `<div class="pr-notice ${esc(n.kind)}">${esc(n.text)}</div>` : ""}<div class="jn-list">${rows}</div>`);
   }
 
   /* The daily sections are one section as far as the chrome is concerned:
@@ -10910,11 +11123,16 @@
     readProfilePhoto(e.target.files && e.target.files[0]);
     e.target.value = "";     // same file twice in a row still fires change
   });
+  /* a trade screenshot for the note being written — kept whole, no cropper */
+  $("jnoteImg").addEventListener("change", (e) => {
+    journalNotesSetImage(e.target.files && e.target.files[0]);
+    e.target.value = "";
+  });
 
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-library],[data-pw-lib-back],[data-pw-lib-set],[data-pw-setup-back],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-pw-hub-start],[data-pw-hub-find],[data-pw-hub-all],[data-pw-hub-back],[data-pw-hub-open],[data-pw-saved-back],[data-pw-hub-history],[data-pw-online-cancel],[data-pw-online-back],[data-pw-online-retry],[data-pw-online-signin],[data-pw-online-card],[data-pw-online-forfeit],[data-pw-online-forfeit-yes],[data-pw-online-forfeit-no],[data-pw-online-again],[data-pw-online-rematch],[data-pw-oh-open],[data-pr-online-save],[data-pr-online-level],[data-pr-online-signin],[data-pr-online-retry],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-pr-share],[data-pr-request],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-library],[data-pw-lib-back],[data-pw-lib-set],[data-pw-setup-back],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-pw-hub-start],[data-pw-hub-find],[data-pw-hub-all],[data-pw-hub-back],[data-pw-hub-open],[data-pw-saved-back],[data-pw-hub-history],[data-pw-online-cancel],[data-pw-online-back],[data-pw-online-retry],[data-pw-online-signin],[data-pw-online-card],[data-pw-online-forfeit],[data-pw-online-forfeit-yes],[data-pw-online-forfeit-no],[data-pw-online-again],[data-pw-online-rematch],[data-pw-oh-open],[data-pr-online-save],[data-pr-online-level],[data-pr-online-signin],[data-pr-online-retry],[data-jnote-new],[data-jnote-cancel],[data-jnote-save],[data-jnote-img],[data-jnote-img-clear],[data-jnote-edit],[data-jnote-del],[data-jnote-del-yes],[data-jnote-del-no],[data-jnote-open],[data-jnote-retry],[data-jnote-signin],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -11035,7 +11253,40 @@
       openOverlay(panelHead("Add a Trade") + `
         <div class="notes-hint" style="margin:0 0 14px">How would you like to add trades?</div>
         <button class="btn-primary" data-jimport>Import Broker CSV</button>
-        <button class="btn-secondary" data-jmanual>Manually Enter Trade</button>`);
+        <button class="btn-secondary" data-jmanual>Manually Enter Trade</button>
+        <button class="btn-secondary" data-jnote-new>Add Trade Note + Screenshot</button>`);
+    }
+    /* ==> journal.js: the synced notes under the ledger */
+    else if (t.hasAttribute("data-jnote-new")) {
+      closeOverlay();
+      const jn = jnotes();
+      if (jn.status !== "ready") { journalNotesLoad(true); }
+      else {
+        journalNotesOpenComposer(null);
+        const host = document.getElementById("jNotes");
+        if (host) host.scrollIntoView({ block: "start", behavior: "smooth" });
+      }
+    }
+    else if (t.hasAttribute("data-jnote-cancel")) { journalNotesDropPreview(); jnotes().composer = null; journalNotesPaint(); }
+    else if (t.hasAttribute("data-jnote-save")) journalNotesSave();
+    else if (t.hasAttribute("data-jnote-img")) { journalNotesReadComposer(); $("jnoteImg").click(); }
+    else if (t.hasAttribute("data-jnote-img-clear")) { journalNotesReadComposer(); journalNotesDropPreview(); jnotes().composer.file = null; journalNotesPaint(); }
+    else if (t.hasAttribute("data-jnote-edit")) {
+      const e = (jnotes().entries || []).find((x) => x.id === t.getAttribute("data-jnote-edit"));
+      if (e) journalNotesOpenComposer(e);
+    }
+    else if (t.hasAttribute("data-jnote-del")) { jnotes().confirmDel = t.getAttribute("data-jnote-del"); journalNotesPaint(); }
+    else if (t.hasAttribute("data-jnote-del-no")) { jnotes().confirmDel = null; journalNotesPaint(); }
+    else if (t.hasAttribute("data-jnote-del-yes")) journalNotesDelete(t.getAttribute("data-jnote-del-yes"));
+    else if (t.hasAttribute("data-jnote-open")) {
+      const jn = jnotes(); const id = t.getAttribute("data-jnote-open");
+      jn.open = jn.open === id ? null : id; journalNotesPaint();
+    }
+    else if (t.hasAttribute("data-jnote-retry")) journalNotesLoad(true);
+    else if (t.hasAttribute("data-jnote-signin")) {
+      const lo = document.createElement("button");
+      lo.setAttribute("data-logout", "");
+      document.body.appendChild(lo); lo.click(); lo.remove();
     }
     else if (t.dataset.ci) {
       const id = t.dataset.ci, val = t.dataset.ciVal;
@@ -11612,6 +11863,7 @@
       /* ==> ONLINE: and the SDK's session with it */
       { const api = online(); if (api) api.signOut().catch(() => {}); }
       state.online = null;
+      state.jnotes = null;
       store.authSeen = false;
       save();
       closeOverlay();

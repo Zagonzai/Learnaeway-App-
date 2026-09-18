@@ -25,6 +25,7 @@ import {
 import { getProfile, saveProfile, uploadProfilePhoto, recordMatchResult } from './profiles.js';
 import { quickMatch } from './matchmaking.js';
 import { watchRoom, playRound, forfeitRoom, getMatchHistory } from './pointaway.js';
+import { saveJournalEntry, getJournalEntries, deleteJournalEntry } from './journal.js';
 
 window.AEWAY_ONLINE = {
   ready: true,
@@ -46,6 +47,10 @@ window.AEWAY_ONLINE = {
   playRound,
   forfeitRoom,
   getMatchHistory,
+  /* journal.js — trade notes with screenshots, synced across devices */
+  saveJournalEntry,
+  getJournalEntries,
+  deleteJournalEntry,
 };
 
 window.dispatchEvent(new CustomEvent('aeway-online-ready'));
