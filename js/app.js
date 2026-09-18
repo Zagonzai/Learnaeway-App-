@@ -3547,6 +3547,7 @@
       flipAnim: null,       // their card, on the render that reveals it
       showSeen: false,      // the opponent's per-tier breakdown, on demand
       showSpecials: false,  // the ten wilds and what they do, on demand
+      showChart: false,     // the live print, above the board
     };
   }
 
@@ -4474,6 +4475,7 @@
       board: null,        // the board read off the room — see pwOnlineBoard
       showSeen: false,    // the panel listing what the opponent has spent
       showSpecials: false,// the ten wilds, as a reference sheet
+      showChart: false,   // the live print, above the board
       err: null,          // offline | signin | profile | matchmaking | <message>
       timedOut: false,    // playRound's 60s wait expired
       confirmForfeit: false,
@@ -4889,6 +4891,7 @@
       ? "Waiting for theirs…"
       : theirs ? `${b.opp.side} · ${b.opp.deck} left` : "Awaiting play…";
 
+    const chartRows = o.showChart ? pwOnlineChartRows(b) : null;
     return `
       <div class="pw-on pw-on-board">
         ${/* The board's header is one row, not two. A local match spends
@@ -4911,6 +4914,10 @@
           ${player(oppInfo, oppScore, "opp", "Opp")}
         </div>
 
+        ${/* the live print, above the board, the same module a single-player
+              match opens from the same row */""}
+        ${o.showChart ? pwLiveChartHTML(chartRows) : ""}
+
         <div class="pw-counts">
           <span class="pw-count"><b>${b.me.deck}</b><i>Deck</i></span>
           ${/* a wild cannot cross the wire — see the note on pwOnlineBoard —
@@ -4918,6 +4925,7 @@
                 being left off the board */""}
           <span class="pw-count wild"><b>0</b><i>Wild</i></span>
           <span class="pw-count opp"><b>${b.opp.hand.length}</b><i>Opp</i></span>
+          ${pwChartToggleHTML(o.showChart, "data-pw-online-chart")}
           <span class="pw-counts-gap"></span>
           <button type="button" class="pw-count-btn${o.showSeen ? " on" : ""}" data-pw-online-seen
                   aria-pressed="${!!o.showSeen}"
@@ -5617,10 +5625,11 @@
   /* Takes the rounds rather than reading them: the live result screen hands it
      the match just played, the hub hands it one off the record, and neither
      knows the other exists. */
-  function pwMatchChartHTML(chart) {
+  function pwMatchChartHTML(chart, opts) {
+    const o = opts || {};
     const rows = chart || pw.chart;
     if (!rows.length) {
-      return `<div class="pw-chart-empty">No rounds to replay.</div>`;
+      return `<div class="pw-chart-empty">${esc(o.empty || "No rounds to replay.")}</div>`;
     }
     const span = PW_TARGET * 2;                 // -25 .. +25
     const pct = (v) => ((PW_TARGET - v) / span) * 100;   // 0% is the top
@@ -5661,7 +5670,7 @@
     return `
       <div class="pw-chart">
         <div class="pw-chart-head">
-          <span>Match Replay</span>
+          <span>${esc(o.title || "Match Replay")}</span>
           <span class="pw-chart-n">${rows.length} round${rows.length === 1 ? "" : "s"}</span>
         </div>
         ${/* the axis and the row's caption stay put; only the columns scroll,
@@ -5680,6 +5689,63 @@
         </div>
         ${sel ? pwRevealHTML(sel) : ""}
       </div>`;
+  }
+
+  /* ---- the live chart module ----
+     The same component the finished match is read back on, opened over the
+     board while the match is still being played: one more candle appears each
+     time a round resolves, and tapping one opens that round the way the
+     replay does. It is a panel above the counts row, and the button that
+     opens it sits in that row beside Seen.
+
+     It is the replay chart and not a second chart drawn for this screen — so
+     it takes the rounds the same way, and everything about how a candle and a
+     chip are drawn is decided in one place.
+
+     ==> the online board hands it rounds built from the room's candles, which
+     print around 100 rather than on the −25..+25 track; pwOnlineChartRows
+     moves them onto it. */
+  const PW_CHART_SVG =
+    `<svg viewBox="0 0 22 16" fill="none" aria-hidden="true" class="pw-chart-ico">
+       <path d="M4 3.5v9M4 5.5h0" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+       <rect x="2.4" y="5.5" width="3.2" height="5" rx="1" fill="currentColor"/>
+       <path d="M11 1.5v13" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+       <rect x="9.4" y="4" width="3.2" height="7" rx="1" fill="currentColor" opacity=".55"/>
+       <path d="M18 4v9" stroke="currentColor" stroke-width="1.5" stroke-linecap="round"/>
+       <rect x="16.4" y="6.5" width="3.2" height="4.5" rx="1" fill="currentColor"/>
+     </svg>`;
+
+  /* the button that opens and closes it, for whichever board is asking */
+  function pwChartToggleHTML(on, attr) {
+    return `<button type="button" class="pw-count-btn pw-chart-btn${on ? " on" : ""}"
+              ${attr} aria-pressed="${!!on}"
+              aria-label="${on ? "Hide the live chart" : "Show the live chart"}">
+      ${PW_CHART_SVG}
+    </button>`;
+  }
+
+  function pwLiveChartHTML(rows) {
+    return `<div class="pw-live">${pwMatchChartHTML(rows, {
+      title: "Live Print",
+      empty: "The print appears here as rounds resolve.",
+    })}</div>`;
+  }
+
+  /* the room's candles as chart rounds. They open and close around 100, so
+     both are moved onto the −25..+25 track the component draws, and clamped
+     to it — the module's win condition is five round wins, so a print can run
+     past the end of the track while the match goes on. */
+  function pwOnlineChartRows(board) {
+    if (!board) return [];
+    return (board.candles || []).map((c) => ({
+      round: c.round,
+      open: pwClamp(Math.round(Number(c.open) - 100)),
+      close: pwClamp(Math.round(Number(c.close) - 100)),
+      you: pwOnlineCard(board.me.side,
+        Number((c.cards && c.cards[board.me.uid] || {}).power) || 0),
+      opp: pwOnlineCard(board.opp.side,
+        Number((c.cards && c.cards[board.oppUid] || {}).power) || 0),
+    }));
   }
 
   /* ---- one round, opened up ----
@@ -6044,6 +6110,7 @@
       const o = pw.online;
       const live = !!(o && o.room && o.room.status === "active" && !o.timedOut);
       cardScroll.classList.toggle("pw-playing", live);
+      cardScroll.classList.toggle("pw-charting", live && !!o.showChart);
       /* the hand keeps its sideways position across the live re-renders that
          every room change causes */
       const keep = cardScroll.scrollTop;
@@ -6115,7 +6182,14 @@
        nothing scrolls vertically */
     cardScroll.classList.remove("pw-introing");
     cardScroll.classList.add("pw-playing");
+    /* with the chart open the board may want more than one view on a small
+       phone. It scrolls rather than crushing the table — the same bargain
+       .pw-revealing already strikes for the round reveal. */
+    cardScroll.classList.toggle("pw-charting", !!pw.showChart);
     cardScroll.innerHTML = `
+      ${/* the live print, above the board, per the reference */""}
+      ${pw.showChart ? pwLiveChartHTML(pw.chart) : ""}
+
       <div class="pw-counts">
           <span class="pw-count"><b>${ownCount}</b><i>Deck</i></span>
           <span class="pw-count wild"><b>${pw.special.length}</b><i>Wild</i></span>
@@ -6123,6 +6197,7 @@
                 of card backs in a box of its own, which is a lot of screen to
                 spend saying "six" */""}
           <span class="pw-count opp"><b>${pw.aiHand.length}</b><i>Opp</i></span>
+          ${pwChartToggleHTML(pw.showChart, "data-pw-chart")}
           <span class="pw-counts-gap"></span>
           <button type="button" class="pw-count-btn${pw.showSeen ? " on" : ""}" data-pw-seen
                   aria-pressed="${pw.showSeen}"
@@ -12267,7 +12342,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-open-connections],[data-conn-back],[data-conn-retry],[data-conn-list],[data-conn-find],[data-conn-add],[data-conn-cancel],[data-conn-approve],[data-conn-deny],[data-conn-msg],[data-conn-thread-close],[data-conn-send],[data-chal-bar-hide],[data-online-reconnect],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-library],[data-pw-lib-back],[data-pw-lib-set],[data-pw-setup-back],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-pw-hub-start],[data-pw-hub-find],[data-pw-hub-all],[data-pw-hub-back],[data-pw-hub-open],[data-pw-saved-back],[data-pw-hub-history],[data-pw-online-cancel],[data-pw-online-back],[data-pw-online-retry],[data-pw-online-signin],[data-pw-online-card],[data-pw-online-seen],[data-pw-online-specials],[data-pw-online-forfeit],[data-pw-online-forfeit-yes],[data-pw-online-forfeit-no],[data-pw-online-again],[data-pw-online-rematch],[data-pw-oh-open],[data-pr-online-save],[data-pr-online-level],[data-pr-online-signin],[data-pr-online-retry],[data-jnote-new],[data-jnote-cancel],[data-jnote-save],[data-jnote-img],[data-jnote-img-clear],[data-jnote-edit],[data-jnote-del],[data-jnote-del-yes],[data-jnote-del-no],[data-jnote-open],[data-jnote-retry],[data-jnote-signin],[data-pw-hub-challenge],[data-pw-chal-find],[data-pw-chal-send],[data-pw-chal-cancel],[data-pw-chal-again],[data-pw-oh-rematch],[data-pw-inv-accept],[data-pw-inv-decline],[data-pr-code-copy],[data-pr-code-share],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-open-connections],[data-conn-back],[data-conn-retry],[data-conn-list],[data-conn-find],[data-conn-add],[data-conn-cancel],[data-conn-approve],[data-conn-deny],[data-conn-msg],[data-conn-thread-close],[data-conn-send],[data-chal-bar-hide],[data-online-reconnect],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-library],[data-pw-lib-back],[data-pw-lib-set],[data-pw-setup-back],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-pw-hub-start],[data-pw-hub-find],[data-pw-hub-all],[data-pw-hub-back],[data-pw-hub-open],[data-pw-saved-back],[data-pw-hub-history],[data-pw-online-cancel],[data-pw-online-back],[data-pw-online-retry],[data-pw-online-signin],[data-pw-online-card],[data-pw-online-chart],[data-pw-chart],[data-pw-online-seen],[data-pw-online-specials],[data-pw-online-forfeit],[data-pw-online-forfeit-yes],[data-pw-online-forfeit-no],[data-pw-online-again],[data-pw-online-rematch],[data-pw-oh-open],[data-pr-online-save],[data-pr-online-level],[data-pr-online-signin],[data-pr-online-retry],[data-jnote-new],[data-jnote-cancel],[data-jnote-save],[data-jnote-img],[data-jnote-img-clear],[data-jnote-edit],[data-jnote-del],[data-jnote-del-yes],[data-jnote-del-no],[data-jnote-open],[data-jnote-retry],[data-jnote-signin],[data-pw-hub-challenge],[data-pw-chal-find],[data-pw-chal-send],[data-pw-chal-cancel],[data-pw-chal-again],[data-pw-oh-rematch],[data-pw-inv-accept],[data-pw-inv-decline],[data-pr-code-copy],[data-pr-code-share],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -12648,6 +12723,7 @@
     else if (t.hasAttribute("data-pw-draw")) pwChooseDraw(t.getAttribute("data-pw-draw"));
     else if (t.hasAttribute("data-pw-specials")) { pw.showSpecials = !pw.showSpecials; renderPointaeway(); }
     else if (t.hasAttribute("data-pw-seen")) { pw.showSeen = !pw.showSeen; renderPointaeway(); }
+    else if (t.hasAttribute("data-pw-chart")) { pw.showChart = !pw.showChart; renderPointaeway(); }
     /* The library is a place, not a panel: going there and coming back leaves
        the picker exactly as it was, because nothing about the picker is
        rebuilt — only the phase moves. */
@@ -12713,6 +12789,9 @@
       document.body.appendChild(lo); lo.click(); lo.remove();
     }
     else if (t.hasAttribute("data-pw-online-card")) pwOnlinePlayCard(t.getAttribute("data-pw-online-card"));
+    else if (t.hasAttribute("data-pw-online-chart")) {
+      if (pw.online) { pw.online.showChart = !pw.online.showChart; renderPointaeway(); }
+    }
     else if (t.hasAttribute("data-pw-online-seen")) {
       if (pw.online) { pw.online.showSeen = !pw.online.showSeen; pw.online.showSpecials = false; renderPointaeway(); }
     }
