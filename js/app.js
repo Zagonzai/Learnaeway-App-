@@ -381,6 +381,7 @@
     journalReplace: null,    // { batchId, acctId } — CSV picker open to replace a batch
     profileMode: "view",     // 'view' (what others would see) | 'edit'
     profileNotice: null,     // { kind, text } — transient line under a Connect action
+    contentsFrom: null,      // the page Course Contents was opened from
     connQuery: "",           // what's typed in the Connections lookup, kept across renders
     onlineReconnectErr: null,// why the last Æway Online reconnect was refused
     checkinResult: null,     // { go, noCount } — result shown in place of the rows
@@ -678,7 +679,18 @@
     cardScroll.innerHTML = `
       <div class="${anim}">
         <!-- AUDIO: ${scr.audio} -->
-        <img class="card-logo" src="assets/logo/logo-symbol-v2@3x.png" alt="">
+        ${/* The way out of the one-screen-at-a-time walk: the whole course as a
+              list, one tap away from every lesson. The mark keeps the middle —
+              the spacer on the left is what holds it there while the button
+              sits beside it. */""}
+        <div class="screen-head">
+          <span class="screen-head-pad" aria-hidden="true"></span>
+          <img class="card-logo" src="assets/logo/logo-symbol-v2@3x.png" alt="">
+          <button type="button" class="lesson-nav" data-contents
+                  aria-label="Course contents — jump to any page">
+            <img src="assets/nav-icons/icon-lesson-nav.png" alt="">
+          </button>
+        </div>
         <h1 class="screen-headline">${esc(scr.headline)}</h1>
         ${scr.subhead ? `<h2 class="screen-subhead">${esc(scr.subhead)}</h2>` : ""}
         ${scr.grid ? gridHTML(scr) : `
@@ -9329,6 +9341,7 @@
     else if (state.view === "replay") renderReplay();
     else if (state.view === "profile") renderProfile();
     else if (state.view === "connections") renderConnections();
+    else if (state.view === "contents") renderContents();
     else renderScreen();
 
     /* Last, so it takes the body over from whatever just wrote it. The view
@@ -9361,6 +9374,98 @@
     /* the live print belongs to one screen only, so every other one takes it
        down on the way in */
     syncChartPanel();
+  }
+
+  /* ==================== Course Contents ====================
+     Every section and every page of the course, in the order they are taught,
+     on one screen a lesson is one tap from. Before this the only way from one
+     page to another was the next arrow, one screen at a time, or the long way
+     back through the home outline.
+
+     It is a screen rather than a layer over one: nothing in this app opens on
+     a dimmed background, and 221 rows is a scroll, not a popup. The page it
+     was opened from is marked, and the list arrives already scrolled to it —
+     with a list this long, opening at the top would be the same problem in a
+     different shape. */
+
+  function openContents() {
+    stopAudio();
+    state.contentsFrom = state.view === "screen" ? state.current : null;
+    state.view = "contents";
+    state.slideDir = 0;
+    closeOverlay();
+    render();
+    /* the page it came from, brought into view rather than looked for */
+    const here = cardScroll.querySelector(".ct-row.here");
+    if (here) {
+      const top = here.offsetTop - Math.round(cardScroll.clientHeight / 2) + here.offsetHeight;
+      cardScroll.scrollTop = Math.max(0, top);
+    }
+  }
+
+  function closeContents() {
+    state.view = "screen";
+    state.slideDir = 0;
+    render();
+  }
+
+  function renderContents() {
+    barTitle.textContent = "Course Contents";
+    const ov = overallProgress();
+    progressLabel.textContent = `${ov.pct}%`;
+    progressFill.style.width = `${ov.pct}%`;
+    cardFooter.style.display = "none";
+
+    const hereId = state.contentsFrom != null && screens[state.contentsFrom]
+      ? screens[state.contentsFrom].scr.id : null;
+
+    /* the flat list already holds every page in teaching order with its
+       module, section and subsection on it, so the grouping is a walk rather
+       than a second traversal of the data */
+    let html = "";
+    let mod = null, sec = null;
+    screens.forEach((e, i) => {
+      if (e.mod !== mod) {
+        mod = e.mod; sec = null;
+        html += `<div class="ct-mod">Module ${e.mi + 1}<i>${esc(mod.title)}</i></div>`;
+      }
+      if (e.sec !== sec) {
+        sec = e.sec;
+        const p = secProgress(sec);
+        html += `
+          <div class="ct-sec">
+            <span class="ct-sec-title">${esc(sec.title)}</span>
+            <span class="pct-badge ${p.pct === 100 ? "done" : ""}" style="--pct:${p.pct}">${p.pct}%</span>
+          </div>`;
+      }
+      /* what to call a page: its own subhead where it has one, the
+         subsection's title where it does not, and the headline as the last
+         resort — the first page of a section carries no subhead at all */
+      const label = e.scr.subhead || e.sub.title || e.scr.headline;
+      const many = e.sub.screens.length > 1;
+      const here = e.scr.id === hereId;
+      html += `
+        <button type="button" class="ct-row${here ? " here" : ""}${store.visited[e.scr.id] ? " seen" : ""}"
+                data-screen="${esc(e.scr.id)}"${here ? ' aria-current="page"' : ""}>
+          <span class="ct-n">${i + 1}</span>
+          <span class="ct-label">${esc(label)}${many
+            ? `<i>Page ${e.ki + 1} of ${e.sub.screens.length}</i>` : ""}</span>
+          <span class="ct-go" aria-hidden="true">${here ? "●" : "›"}</span>
+        </button>`;
+    });
+
+    cardScroll.innerHTML = `
+      <div class="ct">
+        <div class="pw-lib-head">
+          <button type="button" class="pw-hub-back" data-contents-back
+                  aria-label="Back to the lesson">
+            <img src="assets/nav-icons/icon-arrow-back@2x.png" alt="">
+          </button>
+          <span class="pw-lib-title">Course Contents</span>
+        </div>
+        <div class="ct-cap">${screens.length} pages · tap any one to jump straight to it</div>
+        ${html}
+      </div>`;
   }
 
   /* ---------------- navigation ---------------- */
@@ -12378,7 +12483,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-open-connections],[data-conn-back],[data-conn-retry],[data-conn-list],[data-conn-find],[data-conn-add],[data-conn-cancel],[data-conn-approve],[data-conn-deny],[data-conn-msg],[data-conn-thread-close],[data-conn-send],[data-chal-bar-hide],[data-online-reconnect],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-library],[data-pw-lib-back],[data-pw-lib-set],[data-pw-setup-back],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-pw-hub-start],[data-pw-hub-find],[data-pw-hub-all],[data-pw-hub-back],[data-pw-hub-open],[data-pw-saved-back],[data-pw-hub-history],[data-pw-online-cancel],[data-pw-online-back],[data-pw-online-retry],[data-pw-online-signin],[data-pw-online-card],[data-pw-online-chart],[data-pw-chart],[data-pw-online-seen],[data-pw-online-specials],[data-pw-online-forfeit],[data-pw-online-forfeit-yes],[data-pw-online-forfeit-no],[data-pw-online-again],[data-pw-online-rematch],[data-pw-oh-open],[data-pr-online-save],[data-pr-online-level],[data-pr-online-signin],[data-pr-online-retry],[data-jnote-new],[data-jnote-cancel],[data-jnote-save],[data-jnote-img],[data-jnote-img-clear],[data-jnote-edit],[data-jnote-del],[data-jnote-del-yes],[data-jnote-del-no],[data-jnote-open],[data-jnote-retry],[data-jnote-signin],[data-pw-hub-challenge],[data-pw-chal-find],[data-pw-chal-send],[data-pw-chal-cancel],[data-pw-chal-again],[data-pw-oh-rematch],[data-pw-inv-accept],[data-pw-inv-decline],[data-pr-code-copy],[data-pr-code-share],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-contents],[data-contents-back],[data-open-connections],[data-conn-back],[data-conn-retry],[data-conn-list],[data-conn-find],[data-conn-add],[data-conn-cancel],[data-conn-approve],[data-conn-deny],[data-conn-msg],[data-conn-thread-close],[data-conn-send],[data-chal-bar-hide],[data-online-reconnect],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-library],[data-pw-lib-back],[data-pw-lib-set],[data-pw-setup-back],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-pw-hub-start],[data-pw-hub-find],[data-pw-hub-all],[data-pw-hub-back],[data-pw-hub-open],[data-pw-saved-back],[data-pw-hub-history],[data-pw-online-cancel],[data-pw-online-back],[data-pw-online-retry],[data-pw-online-signin],[data-pw-online-card],[data-pw-online-chart],[data-pw-chart],[data-pw-online-seen],[data-pw-online-specials],[data-pw-online-forfeit],[data-pw-online-forfeit-yes],[data-pw-online-forfeit-no],[data-pw-online-again],[data-pw-online-rematch],[data-pw-oh-open],[data-pr-online-save],[data-pr-online-level],[data-pr-online-signin],[data-pr-online-retry],[data-jnote-new],[data-jnote-cancel],[data-jnote-save],[data-jnote-img],[data-jnote-img-clear],[data-jnote-edit],[data-jnote-del],[data-jnote-del-yes],[data-jnote-del-no],[data-jnote-open],[data-jnote-retry],[data-jnote-signin],[data-pw-hub-challenge],[data-pw-chal-find],[data-pw-chal-send],[data-pw-chal-cancel],[data-pw-chal-again],[data-pw-oh-rematch],[data-pw-inv-accept],[data-pw-inv-decline],[data-pr-code-copy],[data-pr-code-share],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -12677,6 +12782,8 @@
       save();
       renderProfileInPlace();
     }
+    else if (t.hasAttribute("data-contents")) openContents();
+    else if (t.hasAttribute("data-contents-back")) closeContents();
     else if (t.hasAttribute("data-open-connections")) openConnections();
     /* ==> connections.js + messages.js: the whole screen */
     else if (t.hasAttribute("data-conn-back")) { connThreadClose(); openProfile(); }
