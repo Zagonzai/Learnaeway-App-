@@ -6415,10 +6415,23 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 }
 /* the well the frame draws is in the left border, so the icon is placed over
    it rather than laid out in the row */
+/* In flow, not out of it. It used to be position:absolute, and the nearest
+   positioned ancestor is .card — which sits OUTSIDE #cardScroll, the box that
+   actually scrolls. An absolutely positioned element inside a momentum
+   scroller whose containing block is an ancestor outside that scroller is
+   what lets an icon detach from its row and paint over the list on iOS; it
+   renders correctly on desktop, which is why it stood this long.
+
+   Staying in flow costs three numbers instead of one: the negative left
+   margin still pulls it over the well drawn in the row's left border, and the
+   right margin gives back exactly what the item's own width and the row's
+   4px gap would otherwise take from everything after it. Measured at 320,
+   375 and 393: every other child of the row is where it was. */
 .pw-hrow-ico {
-  position: absolute;
+  position: static;
+  flex: 0 0 auto;
   width: 23px; height: 23px;
-  margin-left: -32px;
+  margin: 0 5px 0 -32px;
   display: grid; place-items: center;
 }
 .pw-hrow-ico img { width: 100%; height: 100%; object-fit: contain; }
