@@ -5539,14 +5539,55 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 .pw-lib-list { display: grid; gap: 8px; }
 .pw-lib-row {
   display: flex; align-items: center; gap: 11px;
+  width: 100%;
   padding: 8px 10px;
   border: 1px solid var(--pw-line);
   border-radius: 12px;
   background: rgba(7,10,24,.7);
+  text-align: left;
+  -webkit-tap-highlight-color: transparent;
+  /* the gap closes as the picture takes the row, so the picture can reach the
+     far edge rather than stopping 11px short of it */
+  transition: gap .34s cubic-bezier(.2,.7,.2,1);
 }
 .pw-lib-row.wild { border-color: rgba(232,178,58,.38); }
-.pw-lib-face { flex: 0 0 auto; display: flex; --pw-card-h: clamp(58px, 19vw, 82px); }
-.pw-lib-text { display: flex; flex-direction: column; gap: 3px; min-width: 0; }
+/* ---- a card grown in place ----
+   The face is sized on WIDTH here, not on the height the rest of the game
+   sizes a card by, and that is the whole trick: one length animates, the
+   picture's own ratio gives the height, and the row's height follows it — so
+   every row after this one slides down as it grows and back up as it
+   shrinks, without a single number being measured in script.
+
+   Nothing opens over anything: the row is where it always was, in the list,
+   at the scroll position the reader left it at. */
+.pw-lib-face {
+  flex: 0 0 auto;
+  display: flex;
+  width: calc(clamp(58px, 19vw, 82px) * 304 / 460);
+  transition: width .34s cubic-bezier(.2,.7,.2,1);
+}
+.pw-lib-face .pw-card { width: 100%; height: auto; }
+.pw-lib-face .pw-card-art { width: 100%; height: auto; }
+.pw-lib-row.big { gap: 0; }
+.pw-lib-row.big .pw-lib-face { width: 100%; }
+/* the words step aside for the picture that already carries them */
+.pw-lib-text {
+  display: flex; flex-direction: column; gap: 3px;
+  flex: 1 1 auto; min-width: 0;
+  overflow: hidden;
+  transition: flex-grow .34s cubic-bezier(.2,.7,.2,1),
+              flex-basis .34s cubic-bezier(.2,.7,.2,1),
+              opacity .18s ease;
+}
+.pw-lib-row.big .pw-lib-text {
+  flex: 0 0 0;
+  opacity: 0;
+  pointer-events: none;
+}
+.pw-lib-row:active { filter: brightness(1.2); }
+@media (prefers-reduced-motion: reduce) {
+  .pw-lib-row, .pw-lib-face, .pw-lib-text { transition: none; }
+}
 .pw-lib-name {
   display: flex; align-items: center; gap: 7px; flex-wrap: wrap;
   font-size: calc(11.5px * var(--fs)); font-weight: 800; color: var(--text);

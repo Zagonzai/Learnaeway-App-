@@ -3560,6 +3560,7 @@
       showSeen: false,      // the opponent's per-tier breakdown, on demand
       showSpecials: false,  // the ten wilds and what they do, on demand
       showChart: false,     // the live print, above the board
+      libOpen: null,        // the Card Library row grown in place, "<set>:<type>"
     };
   }
 
@@ -6058,17 +6059,27 @@
   /* one row per face: the face itself, its name, and what it does. A candle
      says its strength and how many of it a deck holds; a wild says its
      effect, in the same words the wild sheet uses during a match. */
+  /* Every row is the way into its own card: tapping one grows the face to the
+     full width of the list, in place, and tapping it again puts it back. The
+     row is the target rather than the picture alone — enlarged, the row IS
+     the picture, and collapsed, a thumbnail this size is a small thing to
+     ask somebody to hit. */
   function pwLibRowHTML(set) {
+    const open = pw.libOpen;
+    const row = (key, cls, card, text) => {
+      const big = open === key;
+      return `<button type="button" class="pw-lib-row ${cls}${big ? " big" : ""}"
+                      data-pw-lib-card="${esc(key)}" aria-expanded="${big}">
+        <span class="pw-lib-face">${pwCardHTML(card, { small: true })}</span>
+        <span class="pw-lib-text">${text}</span>
+      </button>`;
+    };
     if (set === "special") {
       return PW_SPECIALS.map((s) => {
         const card = Object.assign({}, s, { id: `lib-${s.type}`, side: "special", kind: "special" });
-        return `<div class="pw-lib-row wild">
-          <div class="pw-lib-face">${pwCardHTML(card, { small: true })}</div>
-          <div class="pw-lib-text">
-            <span class="pw-lib-name">${esc(s.type)}</span>
-            <span class="pw-lib-desc">${esc(s.desc)}</span>
-          </div>
-        </div>`;
+        return row(`special:${s.type}`, "wild", card, `
+          <span class="pw-lib-name">${esc(s.type)}</span>
+          <span class="pw-lib-desc">${esc(s.desc)}</span>`);
       }).join("");
     }
     const sd = set === "bear" ? "bear" : "bull";
@@ -6077,15 +6088,68 @@
       const move = t.pts === 0
         ? "Moves the print nowhere."
         : `Moves the print ${t.pts} ${sd === "bull" ? "up" : "down"}, ${sd === "bull" ? "+" : "−"}${t.pts} your way.`;
-      return `<div class="pw-lib-row ${sd}">
-        <div class="pw-lib-face">${pwCardHTML(card, { small: true })}</div>
-        <div class="pw-lib-text">
-          <span class="pw-lib-name">${esc(t.type)}
-            <b class="pw-lib-pts ${sd}">Strength ${t.pts}</b></span>
-          <span class="pw-lib-desc">${esc(move)} ${PW_TIER_COPIES} in a deck.</span>
-        </div>
-      </div>`;
+      return row(`${sd}:${t.type}`, sd, card, `
+        <span class="pw-lib-name">${esc(t.type)}
+          <b class="pw-lib-pts ${sd}">Strength ${t.pts}</b></span>
+        <span class="pw-lib-desc">${esc(move)} ${PW_TIER_COPIES} in a deck.</span>`);
     }).join("");
+  }
+
+  /* ---- growing one in place ----
+     The class is toggled on the row that is already on screen rather than the
+     screen being drawn again: a re-render would replace the element and there
+     would be nothing left to animate. pw.libOpen carries the state so a later
+     re-render — switching sets, coming back to the screen — agrees with what
+     the DOM is showing. */
+  function pwLibToggle(key) {
+    const list = document.querySelector(".pw-lib-list");
+    if (!list) return;
+    const was = pw.libOpen;
+    pw.libOpen = was === key ? null : key;
+    /* only ever one: whatever was open closes, whether or not it is the one
+       being tapped */
+    list.querySelectorAll(".pw-lib-row.big").forEach((r) => {
+      r.classList.remove("big");
+      r.setAttribute("aria-expanded", "false");
+    });
+    if (!pw.libOpen) return;
+    const row = list.querySelector(`[data-pw-lib-card="${CSS.escape(pw.libOpen)}"]`);
+    if (!row) return;
+    row.classList.add("big");
+    row.setAttribute("aria-expanded", "true");
+    pwLibShow(row);
+  }
+
+  /* An enlarged card must not grow off the bottom of the screen. It is only
+     worth moving the view when it would, though — the whole point of growing
+     a card in place is that the page stays where it was. */
+  function pwLibShow(row) {
+    const reduce = window.matchMedia
+      && window.matchMedia("(prefers-reduced-motion: reduce)").matches;
+    const bring = () => {
+      if (!row.isConnected || !row.classList.contains("big")) return;
+      const r = row.getBoundingClientRect();
+      const s = cardScroll.getBoundingClientRect();
+      const under = r.bottom - (s.bottom - 6);
+      const over = (s.top + 6) - r.top;
+      let by = 0;
+      if (under > 0) by = Math.min(under, r.top - (s.top + 6));   // never push its head off
+      else if (over > 0) by = -over;
+      if (Math.abs(by) < 2) return;
+      cardScroll.scrollBy({ top: by, behavior: reduce ? "auto" : "smooth" });
+    };
+    if (reduce) { bring(); return; }
+    /* once the growth has finished, so the distance measured is the real one */
+    const face = row.querySelector(".pw-lib-face");
+    let done = false;
+    const fin = (e) => {
+      if (e && e.target !== face) return;
+      if (done) return; done = true;
+      face.removeEventListener("transitionend", fin);
+      bring();
+    };
+    face.addEventListener("transitionend", fin);
+    setTimeout(fin, 420);        // a transition that never fires still gets its scroll
   }
 
   /* One of the three is always open. A chooser with nothing chosen would leave
@@ -12483,7 +12547,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-contents],[data-contents-back],[data-open-connections],[data-conn-back],[data-conn-retry],[data-conn-list],[data-conn-find],[data-conn-add],[data-conn-cancel],[data-conn-approve],[data-conn-deny],[data-conn-msg],[data-conn-thread-close],[data-conn-send],[data-chal-bar-hide],[data-online-reconnect],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-library],[data-pw-lib-back],[data-pw-lib-set],[data-pw-setup-back],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-pw-hub-start],[data-pw-hub-find],[data-pw-hub-all],[data-pw-hub-back],[data-pw-hub-open],[data-pw-saved-back],[data-pw-hub-history],[data-pw-online-cancel],[data-pw-online-back],[data-pw-online-retry],[data-pw-online-signin],[data-pw-online-card],[data-pw-online-chart],[data-pw-chart],[data-pw-online-seen],[data-pw-online-specials],[data-pw-online-forfeit],[data-pw-online-forfeit-yes],[data-pw-online-forfeit-no],[data-pw-online-again],[data-pw-online-rematch],[data-pw-oh-open],[data-pr-online-save],[data-pr-online-level],[data-pr-online-signin],[data-pr-online-retry],[data-jnote-new],[data-jnote-cancel],[data-jnote-save],[data-jnote-img],[data-jnote-img-clear],[data-jnote-edit],[data-jnote-del],[data-jnote-del-yes],[data-jnote-del-no],[data-jnote-open],[data-jnote-retry],[data-jnote-signin],[data-pw-hub-challenge],[data-pw-chal-find],[data-pw-chal-send],[data-pw-chal-cancel],[data-pw-chal-again],[data-pw-oh-rematch],[data-pw-inv-accept],[data-pw-inv-decline],[data-pr-code-copy],[data-pr-code-share],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-contents],[data-contents-back],[data-open-connections],[data-conn-back],[data-conn-retry],[data-conn-list],[data-conn-find],[data-conn-add],[data-conn-cancel],[data-conn-approve],[data-conn-deny],[data-conn-msg],[data-conn-thread-close],[data-conn-send],[data-chal-bar-hide],[data-online-reconnect],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-library],[data-pw-lib-back],[data-pw-lib-set],[data-pw-lib-card],[data-pw-setup-back],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-pw-hub-start],[data-pw-hub-find],[data-pw-hub-all],[data-pw-hub-back],[data-pw-hub-open],[data-pw-saved-back],[data-pw-hub-history],[data-pw-online-cancel],[data-pw-online-back],[data-pw-online-retry],[data-pw-online-signin],[data-pw-online-card],[data-pw-online-chart],[data-pw-chart],[data-pw-online-seen],[data-pw-online-specials],[data-pw-online-forfeit],[data-pw-online-forfeit-yes],[data-pw-online-forfeit-no],[data-pw-online-again],[data-pw-online-rematch],[data-pw-oh-open],[data-pr-online-save],[data-pr-online-level],[data-pr-online-signin],[data-pr-online-retry],[data-jnote-new],[data-jnote-cancel],[data-jnote-save],[data-jnote-img],[data-jnote-img-clear],[data-jnote-edit],[data-jnote-del],[data-jnote-del-yes],[data-jnote-del-no],[data-jnote-open],[data-jnote-retry],[data-jnote-signin],[data-pw-hub-challenge],[data-pw-chal-find],[data-pw-chal-send],[data-pw-chal-cancel],[data-pw-chal-again],[data-pw-oh-rematch],[data-pw-inv-accept],[data-pw-inv-decline],[data-pr-code-copy],[data-pr-code-share],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -12870,12 +12934,14 @@
     /* The library is a place, not a panel: going there and coming back leaves
        the picker exactly as it was, because nothing about the picker is
        rebuilt — only the phase moves. */
-    else if (t.hasAttribute("data-pw-library")) { pw.phase = "library"; pw.libSet = "bull"; renderPointaeway(); }
+    else if (t.hasAttribute("data-pw-library")) { pw.phase = "library"; pw.libSet = "bull"; pw.libOpen = null; renderPointaeway(); }
     else if (t.hasAttribute("data-pw-lib-back")) { pw.phase = "setup"; renderPointaeway(); }
     else if (t.hasAttribute("data-pw-lib-set")) {
       const k = t.getAttribute("data-pw-lib-set");
-      if (k !== pw.libSet) { pw.libSet = k; renderPointaeway(); }
+      /* a different set is a different list, so nothing carries over open */
+      if (k !== pw.libSet) { pw.libSet = k; pw.libOpen = null; renderPointaeway(); }
     }
+    else if (t.hasAttribute("data-pw-lib-card")) pwLibToggle(t.getAttribute("data-pw-lib-card"));
     /* out of the pre-match flow and back to the record. The game object is
        kept: no match has started, so there is nothing in it to drop. */
     else if (t.hasAttribute("data-pw-setup-back")) { pw.phase = "hub"; renderPointaeway(); }
