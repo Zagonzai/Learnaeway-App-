@@ -253,12 +253,23 @@
 
     <!-- ===================== AUTH (pre-login entry, UI only) ===================== -->
     <div id="authScreen" class="auth-screen hidden">
-      <!-- the same clip the app header plays, so the way in looks like the way
-           around. app.js attaches the source only while this screen is up. The
-           still behind it shows if the video cannot play at all. -->
+      <!-- the same clip the app header plays, in the same panel the app header
+           is: the rules below .header-zone carry both boxes, so this is the
+           home screen's component rather than a likeness of it. app.js
+           attaches the source only while this screen is up.
+
+           Nothing else rides on the footage here. This screen is the gate, so
+           it offers no way into the app before a code is entered: no session,
+           clock or date, no hamburger, no grabber. The speaker is the one
+           control, in the header's own bottom-right corner and its own style
+           — .hdr-mute, the very class the home header's speaker wears. -->
       <div class="auth-wave">
         <video id="authVideo" class="auth-wave-video"
-               muted loop playsinline webkit-playsinline preload="none"></video>
+               loop playsinline webkit-playsinline preload="none"></video>
+        <button id="gateMute" class="hdr-mute" type="button"
+                aria-label="Turn sound on" aria-pressed="false">
+          <img src="assets/buttons-icon/speaker-muted@2x.png" alt="">
+        </button>
       </div>
 
       <!-- Desktop only, and only while this screen is up: the band the app's

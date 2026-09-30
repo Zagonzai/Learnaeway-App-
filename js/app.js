@@ -13880,29 +13880,151 @@
     showAuthStep();
   }
 
-  /* The gate's own copy of the header clip, behind the access gate and the
-     questionnaire. Its source is attached on the way in and the element is
+  /* ---------------- the gate's panel, and its sound ----------------
+     The gate's own copy of the header clip, in the gate's own copy of the
+     header panel. Its source is attached on the way in and the element is
      stopped on the way out, so once the user is through there is no second
-     decoder running on a screen nobody can see. Silent throughout: the hero
-     sound button does not reach this one. */
+     decoder running on a screen nobody can see.
+
+     Unlike the app's header, this one is meant to be heard. A browser will
+     refuse an UNMUTED autoplay until the page has been interacted with — iOS
+     always, desktop Chrome until the site has earned enough engagement — and
+     it refuses by rejecting play(), silently, which is why asking once and
+     hoping is not an implementation. So:
+
+       1. ask for sound: muted = false, play();
+       2. if that is refused, keep the picture and give up the sound — muted =
+          true, play() again, so the panel is never a still — and arm a
+          one-shot unlock;
+       3. the unlock fires on the first pointerdown, keydown or focusin
+          anywhere on the page. Tapping into First Name is one, and it is the
+          gesture the browser was waiting for, so the second attempt keeps its
+          audio. The listeners come off the moment they fire.
+
+     The speaker's own tap is deliberately NOT that gesture: the unlock ignores
+     anything inside the button, because a toggle that also unlocks would mute
+     and unmute in the same frame and look broken. The button's own handler
+     does the play() it needs.
+
+     A listener who mutes is remembered, and is never unmuted behind their
+     back: not by the unlock, and not on the next visit. */
+  const GATE_MUTE_KEY = "aeway_beta_audio_muted";
+  const GATE_UNLOCK_EVENTS = ["pointerdown", "keydown", "focusin"];
+  let gateMuteWanted = false;
+  try { gateMuteWanted = localStorage.getItem(GATE_MUTE_KEY) === "1"; } catch (e) {}
+  let gateUnlockArmed = false;
+
+  /* the button is a view of the element's real state, never of what we hoped
+     for: it repaints from v.muted on volumechange, so a refused unmute cannot
+     leave a speaker-with-waves over a silent clip */
+  function syncGateMute() {
+    const btn = $("gateMute");
+    if (!btn) return;
+    const v = $("authVideo");
+    const muted = !v || v.muted;
+    const img = btn.querySelector("img");
+    if (img) img.src = muted ? VOL_OFF : VOL_ON;
+    btn.setAttribute("aria-pressed", muted ? "false" : "true");
+    btn.setAttribute("aria-label", muted ? "Turn sound on" : "Turn sound off");
+  }
+
+  function gateUnlock(e) {
+    const t = e && e.target;
+    if (t && t.closest && t.closest("#gateMute")) return;   // the toggle is not the unlock
+    gateDisarmUnlock();
+    if (gateMuteWanted) return;
+    const v = $("authVideo");
+    if (!v) return;
+    v.muted = false;
+    Promise.resolve(v.play()).catch(() => { v.muted = true; }).then(syncGateMute);
+  }
+  /* capture, so a handler that stops propagation further down cannot swallow
+     the one gesture the sound is waiting for */
+  function gateArmUnlock() {
+    if (gateUnlockArmed) return;
+    gateUnlockArmed = true;
+    GATE_UNLOCK_EVENTS.forEach((t) => document.addEventListener(t, gateUnlock, true));
+  }
+  function gateDisarmUnlock() {
+    if (!gateUnlockArmed) return;
+    gateUnlockArmed = false;
+    GATE_UNLOCK_EVENTS.forEach((t) => document.removeEventListener(t, gateUnlock, true));
+  }
+
   function startAuthVideo() {
     const v = $("authVideo");
-    if (!v || v.querySelector("source")) return;
-    /* The wave behind the gate and the questionnaire. Desktop hides that band
+    if (!v) return;
+    /* The panel behind the gate and the questionnaire. Desktop hides it
        outright (.auth-wave is display:none past the breakpoint), so attaching
        a source here only ever fetched 1.6MB for an element nobody on this
        layout can see — the same bargain the header clip already makes. */
     if (window.matchMedia(DESKTOP_MQ).matches) return;
-    v.addEventListener("error", () => v.classList.add("hidden"));  // still shows through
-    const src = document.createElement("source");
-    src.src = "assets/video/header-loop.mp4";
-    src.type = "video/mp4";
-    v.appendChild(src);
-    v.muted = true;
-    v.load();
-    v.play().catch(() => {});
+    if (!v.querySelector("source")) {
+      v.addEventListener("error", () => v.classList.add("hidden"));  // panel stays black
+      ["volumechange", "play", "pause", "loadedmetadata"].forEach((t) =>
+        v.addEventListener(t, syncGateMute));
+      const src = document.createElement("source");
+      src.src = "assets/video/header-loop.mp4";
+      src.type = "video/mp4";
+      v.appendChild(src);
+      v.load();
+    }
+    gatePlay();
   }
+
+  function gatePlay() {
+    const v = $("authVideo");
+    if (!v) return;
+    v.muted = gateMuteWanted;
+    Promise.resolve(v.play())
+      .then(() => { if (!v.muted) gateDisarmUnlock(); })
+      .catch(() => {
+        v.muted = true;
+        Promise.resolve(v.play()).catch(() => {});
+        if (!gateMuteWanted) gateArmUnlock();
+      })
+      .then(syncGateMute);
+    syncGateMute();
+  }
+
+  function toggleGateSound() {
+    const v = $("authVideo");
+    if (!v) return;
+    /* whichever way this tap goes, it settles the question the unlock exists
+       to answer — so the unlock stands down either way */
+    gateDisarmUnlock();
+    const mute = !v.muted;                 // where this tap is trying to get to
+    v.muted = mute;
+    gateMuteWanted = mute;
+    try { localStorage.setItem(GATE_MUTE_KEY, mute ? "1" : "0"); } catch (e) {}
+    /* A tap is exactly the gesture the browser was holding out for, so an
+       unmute here nearly always takes. On the rare occasion it does not, the
+       clip goes back to silent playback rather than sitting paused under a
+       speaker claiming sound. */
+    Promise.resolve(v.play())
+      .catch(() => {
+        if (mute) return;
+        v.muted = true;
+        return Promise.resolve(v.play()).catch(() => {});
+      })
+      .then(syncGateMute);
+    syncGateMute();
+  }
+
+  /* Backgrounded, the clip is a decoder running for nobody. It comes back in
+     the state it left in — gatePlay() would re-ask for sound the listener may
+     have turned off, so this resumes the element rather than restarting it. */
+  document.addEventListener("visibilitychange", () => {
+    const v = $("authVideo"), screen = $("authScreen");
+    if (!v || !v.querySelector("source")) return;
+    if (!screen || screen.classList.contains("hidden")) return;
+    if (document.hidden) { v.pause(); return; }
+    if (screen.classList.contains("on-login")) return;   // the panel is not on this step
+    Promise.resolve(v.play()).catch(() => {}).then(syncGateMute);
+  });
+
   function stopAuthVideo() {
+    gateDisarmUnlock();
     const v = $("authVideo");
     if (v) v.pause();
     const l = $("loginVideo");
@@ -14522,6 +14644,12 @@
   $("hdrMute").addEventListener("click", toggleHeroSound);
   // crossing the breakpoint changes which video the button speaks for
   window.matchMedia(DESKTOP_MQ).addEventListener("change", syncMuteButton);
+  /* The gate panel's speaker — its own listener rather than a row in the
+     delegated dispatcher, the way the header's speaker is wired. It does not
+     need to stop the event: the unlock, which runs first and in capture,
+     already ignores anything inside this button. */
+  const gateMuteBtn = $("gateMute");
+  if (gateMuteBtn) gateMuteBtn.addEventListener("click", toggleGateSound);
 
   applyTextSize();
   syncVolume();

@@ -19,6 +19,14 @@
      fallback invalidates the whole declaration on anything that doesn't
      support it, so every inset in this file goes through these two. */
   --sat: env(safe-area-inset-top, 0px);
+  /* One per cent of the column the app is actually drawn in — which is not
+     what vh gives you. In Safari with its toolbars up, 100vh is the LARGE
+     viewport, a hundred-odd pixels taller than anything you can see, so a
+     screen laid out in vh overflows by exactly the toolbars. --vhpx is the
+     figure JS measures from innerHeight/clientHeight/visualViewport, which is
+     the visible column, and 100dvh is the fallback until it lands (one frame,
+     at boot). Used by anything that has to fit a viewport exactly. */
+  --vh1: calc(var(--vhpx, 100dvh) / 100);
   /* a title pill's height, named because the live chart panel takes over the
      header's and both pills' footprint and has to be exactly as tall */
   --bar-h: clamp(40px, 5.3vh, 48px);
@@ -142,21 +150,29 @@ img { user-select: none; -webkit-user-drag: none; }
    that runs, and it is what the measurement reproduces — so nothing moves when
    the variable arrives. A definite height is the point: it is the only form of
    this box that can be animated to the collapsed pill. */
-.header-zone {
+/* .auth-wave — the gate's copy of this panel — is on the selector rather than
+   in a rule of its own: the inset, the corner and the clip are what make this
+   the header panel, and the two boxes have to be able to drift only by the one
+   thing that actually differs between them, which is the height. */
+.header-zone,
+.auth-wave {
   position: relative;
   flex: 0 0 auto;
   /* the notch when there is one, a hairline when there is not — the frame has
      corners now, and a corner flush against the top of the screen reads as a
      rendering fault rather than as a design */
   margin: max(var(--sat), 6px) 4% 0;
-  aspect-ratio: 1080 / 455;
-  height: var(--head-h);
   border-radius: 23px;
   overflow: hidden;
 }
+.header-zone {
+  aspect-ratio: 1080 / 455;
+  height: var(--head-h);
+}
 /* the neon rounded rect, over the footage rather than behind it. No `fill`:
    the middle of this frame belongs to the video. */
-.header-zone::after {
+.header-zone::after,
+.auth-wave::after {
   content: "";
   position: absolute;
   inset: 0;
@@ -1137,27 +1153,40 @@ img { user-select: none; -webkit-user-drag: none; }
   bottom: auto;
   height: var(--kbvh, 100%);
 }
-.auth-screen.kb-open .auth-card { padding-bottom: 96px; }
+/* #gateStep is named as well as the bare class: the gate's own padding rule
+   further down is an id, so without this the keyboard clearance would be the
+   one thing on this screen that a focused field could not get. */
+.auth-screen.kb-open .auth-card,
+.auth-screen.kb-open #gateStep .auth-card { padding-bottom: 96px; }
 
-/* The band the clip plays in, which is also what drops the card below it. It
-   absorbs the top inset, so the card clears the notch while the footage behind
-   it does not. The still is the fallback underneath: anchored to its top,
-   which is where that asset's wave sits.
+/* The panel the clip plays in. Everything that makes it the header panel is on
+   the shared rule above — the 4% inset, the 23px corner, the clip, and the neon
+   frame drawn over it. What is left here is the part that differs.
 
-   The inset is a floor here, not an addition. Adding it outright made the band
-   grow by the full notch on every phone that has one — 62pt of extra band on a
-   Pro Max — when all it has to guarantee is that a decent amount of clip still
-   shows below the notch. max() gives it that guarantee and nothing more. */
+   It used to be a full-bleed band that ran behind the status bar and absorbed
+   the top inset for the card below. It does neither now: the panel sits below
+   the safe area like the home screen's does, and its own top margin is that
+   inset.
+
+   The height is the panel's, not the home header's: the home header takes its
+   shape from the clip's aspect, and there is a whole form under this one that
+   has to fit the same viewport. A fifth of the column — --vh1, the measured
+   one, not vh — floored and capped so it stays a panel on a very short screen
+   and does not become a banner on a very tall one.
+
+   isolation + the radial mask are the iOS rounded-clip fallback: a rounded
+   overflow:hidden box there sometimes fails to clip a <video> child and the
+   corners come back square. Same class of bug as the match-history icons. */
 .auth-wave {
-  position: relative;
-  flex: 0 0 auto;
-  height: max(clamp(96px, 15vh, 160px), calc(var(--sat) + 72px));
-  overflow: hidden;
+  height: clamp(120px, calc(18 * var(--vh1)), 170px);
   background: #000;
+  isolation: isolate;
+  -webkit-mask-image: -webkit-radial-gradient(white, black);
 }
-/* Same treatment the app header gives this clip: cropped to the band rather
-   than stretched, anchored to the bottom so the candlestick wave lands on the
-   band's bottom edge and only the empty top of the frame is lost. */
+/* Same treatment the app header gives this clip: cropped to the panel rather
+   than stretched, anchored to the bottom so the candlestick wave — and the
+   magenta wash under it — lands on the panel's bottom edge and only the empty
+   top of the frame is lost. */
 .auth-wave-video {
   position: absolute;
   inset: 0;
@@ -1165,6 +1194,7 @@ img { user-select: none; -webkit-user-drag: none; }
   height: 100%;
   object-fit: cover;
   object-position: center bottom;
+  background: #000;   /* no poster: the element's own ground, not a stale frame */
 }
 .auth-wave-video.hidden { display: none; }
 
@@ -1206,6 +1236,51 @@ img { user-select: none; -webkit-user-drag: none; }
 }
 
 .auth-card-outer.hidden { display: none; }
+
+/* ---- the gate, fitted to one viewport ----
+   No screen in this app scrolls, and the panel above takes room the old
+   full-bleed band did not. So the gate's vertical rhythm is measured against
+   --vh1 — the column the app is really drawn in, not the large viewport vh
+   reports — with a floor under every part of it: a 390x844 phone keeps very
+   nearly the spacing it has now, and a 375x667 one gives up the logo and the
+   gaps rather than the bottom of the form.
+
+   The order is the one the brief asks for — the logo first, then the gaps,
+   then the fields, and the fields only down to 48px, which is the tap target
+   and is not negotiable. Everything here is scoped to #gateStep: the
+   questionnaire and the way in are taller screens with their own bargains and
+   neither is part of this change. */
+/* four pixels back off the gap under the panel. Phone only: the desktop
+   layout sets this margin from the grid it shares with the side columns, and
+   an id would quietly outrank it there. */
+@media (max-width: 1199px) { #gateStep { margin-top: 10px; } }
+#gateStep .auth-card {
+  padding: clamp(6px, calc(1.6 * var(--vh1)), 28px) 26px clamp(10px, calc(2.2 * var(--vh1)), 34px);
+}
+/* width -> height, so the mark is bounded by the axis that is actually short.
+   The aspect ratio is the asset's, so nothing distorts. */
+#gateStep .auth-logo {
+  width: auto;
+  height: clamp(40px, calc(11.5 * var(--vh1)), 118px);
+  margin: 0 auto clamp(0px, calc(.5 * var(--vh1)), 6px);
+}
+#gateStep .auth-wordmark {
+  width: auto;
+  height: clamp(24px, calc(5 * var(--vh1)), 56px);
+  margin: 0 auto clamp(6px, calc(2.6 * var(--vh1)), 30px);
+}
+#gateStep .gate-title {
+  font-size: calc(clamp(14px, calc(2.1 * var(--vh1)), 17px) * var(--fs));
+  margin: 0 0 clamp(6px, calc(2 * var(--vh1)), 20px);
+}
+#gateStep .auth-input,
+#gateStep .auth-submit {
+  height: clamp(48px, calc(6.4 * var(--vh1)), 54px);
+  min-height: clamp(48px, calc(6.4 * var(--vh1)), 54px);
+  max-height: clamp(48px, calc(6.4 * var(--vh1)), 54px);
+  flex: 0 0 auto;
+}
+#gateStep .auth-submit { margin-top: clamp(4px, calc(1.2 * var(--vh1)), 10px); }
 
 /* ---------------- the way in ----------------
    The brand loop fills the centre column. Idle, the way in is a single pill
