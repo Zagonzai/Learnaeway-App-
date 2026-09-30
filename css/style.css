@@ -1253,34 +1253,39 @@ img { user-select: none; -webkit-user-drag: none; }
 /* four pixels back off the gap under the panel. Phone only: the desktop
    layout sets this margin from the grid it shares with the side columns, and
    an id would quietly outrank it there. */
-@media (max-width: 1199px) { #gateStep { margin-top: 10px; } }
+/* Four pixels back off the gap under the panel, and the card's own bottom
+   margin handed over to the dock: ENTER is the bottom pill now, and the pill's
+   zone already carries the clearance the card used to carry for itself. Phone
+   only — the desktop layout sets both margins from the grid it shares with the
+   side columns, and an id would quietly outrank it there. */
+@media (max-width: 1199px) {
+  #gateStep { margin-top: 10px; margin-bottom: 0; }
+}
 #gateStep .auth-card {
-  padding: clamp(6px, calc(1.6 * var(--vh1)), 28px) 26px clamp(10px, calc(2.2 * var(--vh1)), 34px);
+  padding: clamp(6px, calc(1.6 * var(--vh1)), 28px) 26px clamp(10px, calc(2.5 * var(--vh1)), 38px);
 }
 /* width -> height, so the mark is bounded by the axis that is actually short.
    The aspect ratio is the asset's, so nothing distorts. */
 #gateStep .auth-logo {
   width: auto;
-  height: clamp(40px, calc(11.5 * var(--vh1)), 118px);
+  height: clamp(40px, calc(12.2 * var(--vh1)), 126px);
   margin: 0 auto clamp(0px, calc(.5 * var(--vh1)), 6px);
 }
 #gateStep .auth-wordmark {
   width: auto;
   height: clamp(24px, calc(5 * var(--vh1)), 56px);
-  margin: 0 auto clamp(6px, calc(2.6 * var(--vh1)), 30px);
+  margin: 0 auto clamp(6px, calc(2.8 * var(--vh1)), 32px);
 }
 #gateStep .gate-title {
   font-size: calc(clamp(14px, calc(2.1 * var(--vh1)), 17px) * var(--fs));
   margin: 0 0 clamp(6px, calc(2 * var(--vh1)), 20px);
 }
-#gateStep .auth-input,
-#gateStep .auth-submit {
+#gateStep .auth-input {
   height: clamp(48px, calc(6.4 * var(--vh1)), 54px);
   min-height: clamp(48px, calc(6.4 * var(--vh1)), 54px);
   max-height: clamp(48px, calc(6.4 * var(--vh1)), 54px);
   flex: 0 0 auto;
 }
-#gateStep .auth-submit { margin-top: clamp(4px, calc(1.2 * var(--vh1)), 10px); }
 
 /* ---------------- the way in ----------------
    The brand loop fills the centre column. Idle, the way in is a single pill
@@ -1302,11 +1307,19 @@ img { user-select: none; -webkit-user-drag: none; }
   min-height: 0;
   margin: 0;
   border-radius: 0;
-  padding: 0;
+  /* Below the notch, not behind it. The clip used to start at y:0 and the
+     Dynamic Island sat on top of the composition's own top edge. The inset is
+     padding rather than margin on purpose: it comes out of the media box's
+     share of the column, so the panel gets shorter by exactly what the island
+     takes and the dock under it does not move a pixel. */
+  padding: calc(var(--sat) + 10px) 0 0;
   display: flex;
   flex-direction: column;
   background: #000;
+  /* the keyboard slide, above — the step moves as one piece, panel and dock */
+  transition: transform .22s cubic-bezier(.2, .8, .2, 1);
 }
+@media (prefers-reduced-motion: reduce) { .login-step { transition: none; } }
 .login-step::before { content: none; }   /* the card frame's glow is not wanted here */
 .login-media {
   position: relative;
@@ -1337,11 +1350,16 @@ img { user-select: none; -webkit-user-drag: none; }
   width: min(100%, 100cqh * 2160 / 3840);
   aspect-ratio: 2160 / 3840;
   pointer-events: none;             /* the clip's frame catches nothing */
+  /* The frame's own height as a length, which is what everything riding on
+     the composition has to be measured in: percentages of an auto-height box
+     do not resolve, and vh is the column, not the picture. Same arithmetic as
+     the width above, the other way round — whichever axis runs out first. */
+  --lf-h: min(100cqh, 100cqw * 3840 / 2160);
 }
 /* Without container units the frame cannot be derived, so it falls back to
    the media box. On a phone column the two are within a few percent. */
 @supports not (width: 1cqh) {
-  .login-frame { width: 100%; height: 100%; aspect-ratio: auto; }
+  .login-frame { width: 100%; height: 100%; aspect-ratio: auto; --lf-h: calc(70 * var(--vh1)); }
 }
 
 /* the dock under the clip. It is a place to stand, not a second shape: the
@@ -1351,7 +1369,16 @@ img { user-select: none; -webkit-user-drag: none; }
    someone is signed in, and the same one the desktop shell's pill takes. It
    holds a different control in each state and moves in none of them —
    including with the keyboard up, which covers it rather than shifting it. */
-.login-dock {
+/* ---- the bottom pill ----
+   One control in one place at the foot of every entry screen: LOGIN / SIGN UP
+   on the way in, LOGIN or SIGN UP once the form is open, ENTER on the access
+   gate. One box and one pill, so the five screens cannot drift apart.
+
+   The box is the landing screen's, which is the one that was right: the app's
+   own dock slot, the same side inset and the same clearance under it. The type
+   is the LOGIN pill's, which was the other one that was right: bold, upper
+   case, widely tracked, white. Nothing here is per-screen. */
+.bottom-dock {
   position: relative;
   flex: 0 0 auto;
   display: flex;
@@ -1360,61 +1387,179 @@ img { user-select: none; -webkit-user-drag: none; }
   margin: 10px 3.5% var(--gap-bottom);
   min-height: clamp(48px, 6.2vh, 58px);
 }
+.bottom-dock.hidden { display: none; }
 
-.login-open { width: 100%; max-width: 320px; height: 54px; }
-.auth-submit-dock {
+.bottom-pill {
+  width: 100%;
+  max-width: 320px;
+  height: 54px;
   font-size: calc(15px * var(--fs));
   font-weight: 800; letter-spacing: .22em; text-transform: uppercase;
   color: #EAF6FF;
 }
-.auth-submit-dock:active { filter: brightness(1.25); transform: scale(.98); }
-.auth-submit-dock.pending { color: var(--teal); filter: brightness(1.3); }
-.auth-submit-dock:disabled { opacity: .75; }
-.login-open.hidden { display: none; }
+.bottom-pill:active { filter: brightness(1.25); transform: scale(.98); }
+.bottom-pill.pending { color: var(--teal); filter: brightness(1.3); }
+.bottom-pill:disabled { opacity: .75; }
+.bottom-pill.hidden { display: none; }
 
-/* The fields, on the clip and at the weight of the one pill they replace:
-   the same 54px pills, capped at the same width.
+/* The fields, on the clip.
 
-   Anchored by their FOOT, not their middle. The globe sits low in the frame
-   and the constraint it imposes is a floor, so this line is the lowest the
-   group may reach; sign-up, which carries four fields to login's two, grows
-   upward from it rather than down onto the globe. One number moves the whole
-   group against the composition.
+   Anchored by their HEAD, not their foot. They used to hang from a line low in
+   the frame and grow upward, which is why sign-up's four fields climbed over
+   the logo and the wordmark: two more fields meant two more fields of height
+   taken off the top. The head is the fixed thing now. 48% is measured off the
+   clip itself — the tagline's last row is at 46.5% of the composition — so the
+   stack starts just under LEARN | DISCIPLINE | TRADE and everything a field is
+   added grows downward, onto the globe and the floor, which is empty.
 
-   The foot is the FIELDS' foot, not the whole group's: the way-across pill
-   hangs below it out of flow, so how tall that pill is cannot move the
-   fields. It could before — taking the submit out of this group and into the
-   dock shifted every field down by the submit's own height. */
+   The logo, the wordmark and the tagline are above that line in both states
+   and neither state moves them.
+
+   Everything below is measured in --lf-h, the picture's own height, so the
+   group keeps its place in the composition at any column shape. */
 .login-form {
   position: absolute;
   left: 50%;
-  bottom: calc(100% - var(--login-fields-foot, 68.5%));
+  top: var(--lf-head, 48%);
   transform: translateX(-50%);
   width: min(84%, 320px);
   pointer-events: auto;             /* but the fields themselves do */
+  /* the gap between the stack and whatever hangs under it */
+  --lf-bgap: clamp(6px, calc(.014 * var(--lf-h)), 14px);
 }
 .login-form.hidden { display: none; }
-.login-form #authForm { gap: 12px; }
-.login-form .auth-input { width: 100%; }
-/* the way across to the other mode: the same pill component either way,
-   smaller than the dock's so it reads as the second thing on the screen, and
-   out of flow so the fields above are anchored on their own */
-.auth-switch {
+.login-form #authForm {
+  /* The fields give up height and gap before anything else does, and only as
+     far as 44px, which is the tap target. A 375x667 column is the one that
+     actually spends this: a 390x844 one keeps the full 54. */
+  gap: clamp(4px, calc(.010 * var(--lf-h)), 12px);
+  --lf-fh: clamp(44px, calc(.067 * var(--lf-h)), 54px);
+}
+.login-form .field-pill {
+  width: 100%;
+  height: var(--lf-fh);
+  flex: 0 0 auto;
+}
+/* the field itself is only the text now — the pill around it is the wrapper,
+   because an <input> has no ::before to hang a gradient ring on */
+.login-form .field-pill .auth-input {
   position: absolute;
-  top: 100%;
-  left: 50%;
-  transform: translateX(-50%);
+  inset: 0;
+  width: 100%;
+  height: 100%;
+  min-height: 0;
+  max-height: none;
+  border: 0;
+  border-radius: 999px;
+  background: none;
+}
+/* The two buttons under the fields in the login state — the inline Login and
+   the way across to sign-up — and the way back from sign-up, which is the same
+   pill in a different place. Smaller than the dock's so they read as the
+   second thing on the screen. */
+.auth-switch {
   display: block;
   width: 62%;
-  height: 40px;
-  margin: 10px 0 0;
+  text-align: center;
+  height: clamp(34px, calc(.058 * var(--lf-h)), 40px);
+  flex: 0 0 auto;
+  margin: clamp(2px, calc(.008 * var(--lf-h)), 8px) 0 0;
   padding: 0 14px;
   font-size: calc(11.5px * var(--fs));
   font-weight: 700;
   letter-spacing: .1em;
   color: #C7D9EF;
 }
-.auth-switch:active { filter: brightness(1.35); transform: translateX(-50%) scale(.97); }
+.auth-switch:active { filter: brightness(1.35); transform: scale(.97); }
+/* Back to Login, down on the reflective floor rather than tucked under the
+   last field. The floor runs from the horizon at 76% of the composition to the
+   footer type at 90%, and .305 puts the button at 78.5% — clear of both.
+
+   max(), because on a short column the four fields reach that line by
+   themselves: there the button takes the first term and sits just under the
+   stack, which is still on the floor and still above the footer. The stack is
+   never moved up over the logo to make room. */
+.login-form .auth-floor {
+  position: absolute;
+  left: 50%;
+  top: max(calc(100% + var(--lf-bgap)), calc(.305 * var(--lf-h)));
+  transform: translateX(-50%);
+  margin: 0;
+}
+.login-form .auth-floor:active { transform: translateX(-50%) scale(.97); }
+
+/* ---- .entry-pill: the pills inside the panel ----
+   Every field and inline button on the way in, translucent so the artwork and
+   its animation carry on behind them.
+
+   The delivered nine-slice cannot do this. button-pill-standard is opaque
+   across its edge slices, and those slices are 25 and 28 pixels deep on a pill
+   barely 48 tall — the dark interior IS the border image, not a middle band
+   under it, so there is nothing there to make see-through. The pill is drawn
+   instead, which is also the shape the mockups ask for: a thin gradient
+   outline rather than the heavy plate.
+
+   The ring is a pseudo-element, not a gradient background clipped to the
+   border box. That was the first thing tried and it is wrong: a border-box
+   gradient covers the middle of the pill too, and a 45% fill over it leaves
+   the interior washed cyan-to-pink instead of showing the clip through it.
+   ::before paints the gradient, then masks its own middle out — content box
+   XOR padding box — so only the two pixels of ring survive. An <input> has no
+   ::before, which is why each field is wrapped.
+
+   The fill is 45% of #02040E and the blur is 2px, deliberately light: the
+   point of this is to watch the animation move behind the pill, and a heavy
+   blur would hide exactly what it is there to show. The ring and its glow are
+   untouched by any of it — only the fill gives way. */
+.entry-pill {
+  position: relative;
+  isolation: isolate;
+  display: block;
+  border: 0;
+  border-radius: 999px;
+  background: rgba(2, 4, 14, .45);
+  -webkit-backdrop-filter: blur(2px);
+  backdrop-filter: blur(2px);
+  box-shadow: 0 0 12px rgba(61, 223, 255, .28), 0 0 12px rgba(255, 61, 154, .24);
+  color: #EAF6FF;
+  font-family: inherit;
+  /* the globe and the candles are the brightest thing this type ever sits on */
+  text-shadow: 0 1px 4px rgba(0, 0, 0, .8);
+}
+.entry-pill::before {
+  content: "";
+  position: absolute;
+  inset: 0;
+  z-index: 1;
+  border-radius: inherit;
+  padding: 2px;
+  background: linear-gradient(95deg, var(--cyan) 0%, #3E6BFF 52%, var(--magenta) 100%);
+  -webkit-mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+  -webkit-mask-composite: xor;
+          mask: linear-gradient(#000 0 0) content-box, linear-gradient(#000 0 0);
+          mask-composite: exclude;
+  pointer-events: none;
+}
+/* the field is transparent over the wrapper, so the focus ring belongs to the
+   pill rather than to the box inside it */
+.entry-pill:focus-within {
+  box-shadow: 0 0 16px rgba(61, 223, 255, .55), 0 0 16px rgba(255, 61, 154, .3);
+}
+.login-form .auth-input {
+  color: #EAF6FF;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, .8);
+}
+.login-form .auth-input:focus { filter: none; }
+.login-form .auth-input::placeholder {
+  color: #CBDAEE;
+  text-shadow: 0 1px 4px rgba(0, 0, 0, .85);
+}
+/* autofill insists on painting its own ground; keep it dark and legible
+   rather than translucent, which is the one place the fill gives way */
+.login-form .auth-input:-webkit-autofill {
+  -webkit-box-shadow: 0 0 0 1000px rgba(2, 4, 14, .92) inset;
+  border-radius: 999px;
+}
 
 .gate-title {
   font-size: calc(17px * var(--fs));
@@ -5060,8 +5205,9 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   }
 
   /* One way in, not two. The pill in the dock below is the control now; the
-     form it opens still rides on the clip, so nothing else moves. */
-  .login-dock { display: none; }
+     form it opens still rides on the clip, so nothing else moves. Scoped to
+     the way in: the gate's dock is the centre ENTER here and stays. */
+  .login-step .bottom-dock { display: none; }
 
   /* The way in is this column's panel, so it carries the frame the signed-in
      card carries and fills the slot exactly as the two beside it do.
@@ -5140,8 +5286,15 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   }
 
   /* sits in the centre column's dock slot, matching the real dock's pill and
-     placement so the swap reads as the same object */
-  .intro-dock {
+     placement so the swap reads as the same object.
+
+     #gateDock is on the same rule for the same reason: on a phone the gate's
+     ENTER is the shared bottom pill, but here the row it has to join is the
+     desktop one — the two .dt-lower bars either side of it — and that row's
+     shape is this dock's, not the pill's. Same box, same bar, same line, so
+     the three bottom pills sit level and read as one component. */
+  .intro-dock,
+  #gateDock {
     display: flex;
     position: absolute;
     /* the same box the app's own dock has, so the three bottom pills across
@@ -5150,12 +5303,28 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
     right: 3.5%;
     bottom: var(--gap-bottom);
     height: var(--dt-dock);
+    min-height: 0;
+    margin: 0;
     align-items: center;
     justify-content: center;
     border-radius: 999px;
     isolation: isolate;
   }
-  .intro-dock::before {
+  #gateDock.hidden { display: none; }
+  /* the pill's own nine-slice would be a pill inside a pill here: the dock is
+     the shape at this width, so ENTER is the type on it and nothing else */
+  #gateDock .bottom-pill {
+    width: auto;
+    max-width: none;
+    height: auto;
+    border: 0;
+    border-image: none;
+    padding: 8px 22px;
+    font-size: calc(13px * var(--fs));
+    letter-spacing: .14em;
+  }
+  .intro-dock::before,
+  #gateDock::before {
     content: "";
     position: absolute;
     inset: 0;
