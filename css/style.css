@@ -7311,12 +7311,121 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 .pw-inv-act:active { filter: brightness(1.35); transform: scale(.96); }
 .pw-inv-busy { flex: 0 0 auto; display: grid; place-items: center; width: 60px; }
 
-/* the hub's third pill — the same frame as Find Match, since it is the same
-   kind of thing: another way into a live room */
+/* the hub's third pill — the same frame as the other two, since it is the
+   same kind of thing: another way into a match */
 .pw-hub-pill.chal {
   width: 100%;
   margin-top: 8px;
   border-image-source: url("../assets/pointaeway/hub/pill-find.png");
+}
+/* the whole of Play Local for now: one line under the pill that asked for it */
+.pw-local-note { margin: 10px 2px 2px; }
+
+/* ---- Create Match ----
+   Two questions and a button. Each question is a caption, a line of why it
+   matters, and the answers as pressable tiles — the point targets four across
+   because they are numbers, the specialty settings stacked because they are
+   sentences. Nothing here opens over anything: the screen changes to the join
+   form and back, as every other flow in this app does. */
+.pw-create { padding: 0 2px 14px; }
+.pw-cm-group {
+  margin: 0 2px 16px;
+  padding: 12px 12px 14px;
+  border: 1px solid var(--pw-line);
+  border-radius: 14px;
+  background: rgba(7,10,24,.62);
+}
+.pw-cm-cap {
+  font-size: calc(10px * var(--fs)); font-weight: 800;
+  letter-spacing: .16em; text-transform: uppercase;
+  color: #9FD9FF;
+}
+.pw-cm-sub {
+  margin: 5px 0 11px;
+  font-size: calc(10.5px * var(--fs)); line-height: 1.5;
+  color: var(--pw-muted);
+}
+.pw-cm-opts { display: grid; gap: 7px; }
+.pw-cm-opts.pts { grid-template-columns: repeat(4, 1fr); }
+.pw-cm-opts.spec { grid-template-columns: 1fr; }
+.pw-cm-opt {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 3px;
+  min-height: 56px;
+  padding: 8px 6px;
+  border: 1px solid var(--pw-line);
+  border-radius: 11px;
+  background: rgba(4,8,20,.72);
+  text-align: center;
+  transition: border-color .16s ease, background .16s ease;
+}
+.pw-cm-opt.wide { flex-direction: column; align-items: flex-start; text-align: left; min-height: 0; }
+.pw-cm-opt-t {
+  font-size: calc(14px * var(--fs)); font-weight: 800; color: var(--text);
+  line-height: 1.1;
+}
+.pw-cm-opt.wide .pw-cm-opt-t { font-size: calc(12.5px * var(--fs)); }
+.pw-cm-opt-s {
+  font-size: calc(9px * var(--fs)); line-height: 1.35; color: var(--pw-muted);
+}
+.pw-cm-opt.on {
+  border-color: rgba(61,223,255,.7);
+  background: rgba(10,34,60,.85);
+  box-shadow: 0 0 12px rgba(61,223,255,.22) inset;
+}
+.pw-cm-opt.on .pw-cm-opt-t { color: var(--cyan); }
+.pw-cm-opt:active { filter: brightness(1.3); transform: scale(.985); }
+.pw-cm-note {
+  margin: 10px 0 0;
+  font-size: calc(10px * var(--fs)); line-height: 1.5;
+  color: #7FA8CC;
+}
+.pw-cm-go { width: calc(100% - 4px); margin: 2px 2px 4px; justify-content: center; }
+
+/* the code, once it exists: the biggest thing on the screen, because reading
+   it out to somebody is the only job it has */
+.pw-cm-code-wrap { display: flex; flex-direction: column; align-items: center; gap: 8px; }
+.pw-cm-code {
+  padding: 10px 18px;
+  border: 1px solid rgba(61,223,255,.5);
+  border-radius: 14px;
+  background: rgba(6,16,34,.8);
+  font-size: calc(30px * var(--fs)); font-weight: 800;
+  letter-spacing: .22em; text-indent: .22em;
+  color: var(--cyan);
+  text-shadow: 0 0 16px rgba(61,223,255,.5);
+}
+.pw-cm-code-acts { display: flex; gap: 8px; }
+
+/* what the joiner is shown before committing to it */
+.pw-cm-preview { margin: 14px 2px 0; }
+.pw-cm-sum {
+  display: flex; flex-direction: column;
+  border: 1px solid var(--pw-line);
+  border-radius: 12px;
+  background: rgba(7,10,24,.7);
+  overflow: hidden;
+}
+.pw-cm-sum-row {
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  padding: 9px 12px;
+  font-size: calc(11.5px * var(--fs));
+  color: var(--pw-muted);
+}
+.pw-cm-sum-row + .pw-cm-sum-row { border-top: 1px solid var(--pw-line); }
+.pw-cm-sum-row b { font-weight: 800; color: var(--text); text-align: right; }
+.pw-cm-lock {
+  margin: 9px 2px 11px;
+  font-size: calc(10px * var(--fs)); line-height: 1.5;
+  color: #6E86A6;
+  text-align: center;
+}
+.pw-cm-preview .pw-over-pill { width: 100%; justify-content: center; }
+.pw-sheet-none {
+  padding: 16px 12px;
+  text-align: center;
+  font-size: calc(11.5px * var(--fs));
+  color: var(--pw-muted);
 }
 
 /* ---- the challenge screen ---- */
