@@ -292,9 +292,20 @@
             <input class="g-pill auth-input" name="phone" type="tel" placeholder="Phone Number">
             <input class="g-pill auth-input" name="passcode" type="password" placeholder="Access Code">
             <div id="gateError" class="gate-error hidden">Invalid passcode — access denied.</div>
-            <button type="submit" class="g-pill auth-submit">Enter</button>
           </form>
         </div>
+      </div>
+
+      <!-- The gate's ENTER, in the dock rather than in the card: the same
+           bottom pill the way in carries, in the same box, so every entry
+           screen ends on one control in one place.
+
+           Outside the form and naming it instead. That is what makes it the
+           form's default button, so a Go/Enter keypress in Access Code submits
+           exactly as a tap here does — a form with five fields and no submit
+           button inside it has no implicit submission at all. -->
+      <div id="gateDock" class="bottom-dock hidden">
+        <button type="submit" form="gateForm" id="gateEnter" class="g-pill bottom-pill">Enter</button>
       </div>
 
       <!-- Step 1.5: beta intake questionnaire — replaces the standalone Google
@@ -360,10 +371,10 @@
              carries no frame of its own: the pill is the shape. -->
         <!-- the same dock, in the same place, whatever state the screen is
              in: the way in, then the way through. Its box never moves. -->
-        <div class="login-dock">
-          <button type="button" id="loginOpenBtn" class="g-pill login-open">Login / Sign Up</button>
+        <div class="bottom-dock">
+          <button type="button" id="loginOpenBtn" class="g-pill bottom-pill">Login / Sign Up</button>
           <button type="submit" form="authForm" id="loginSubmit"
-                  class="g-pill login-open auth-submit-dock hidden"></button>
+                  class="g-pill bottom-pill hidden"></button>
         </div>
       </div>
 

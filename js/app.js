@@ -13383,14 +13383,27 @@
   function renderAuthForm() {
     const login = authMode === "login";
     authForm.innerHTML =
+      /* Each field is wrapped because the pill around it is translucent now
+         and the gradient ring that draws it is a ::before — which an <input>
+         does not have. The wrapper is the pill; the input is the text in it. */
       AUTH_FIELDS[authMode].map((f) =>
-        `<input class="g-pill auth-input" name="${f.name}" type="${f.type}" placeholder="${f.placeholder}" autocomplete="off">`
+        `<span class="entry-pill field-pill"><input class="auth-input" name="${f.name}" type="${f.type}" placeholder="${f.placeholder}" autocomplete="off"></span>`
       ).join("") +
       `<div id="authError" class="gate-error hidden"></div>` +
-      /* the way across is a pill of its own now, not a line of underlined
-         text — and the submit is not here at all: it is the dock */
-      `<button type="button" class="g-pill auth-switch" data-auth-mode="${login ? "signup" : "login"}">${
-        login ? "Sign Up" : "Back to Login"}</button>`;
+      /* Login carries its own submit again, inline under the fields and the
+         same pill as the way across beside it. It is a plain submit button in
+         this form, so it and the pill in the dock are one control with one
+         handler — there is no second path to write or to keep in step — and a
+         Go keypress in Password reaches it as the form's default button.
+
+         Sign-up has no inline submit: its own submit is the dock's pill, which
+         names this form from outside it and is its default button instead. */
+      (login ? `<button type="submit" class="entry-pill auth-switch">Login</button>` : "") +
+      /* the way across, or the way back. Same pill either way; in sign-up it
+         carries .auth-floor, which takes it out of the stack and down onto the
+         reflective floor. */
+      `<button type="button" class="entry-pill auth-switch${login ? "" : " auth-floor"}" data-auth-mode="${
+        login ? "signup" : "login"}">${login ? "Sign Up" : "Back to Login"}</button>`;
     syncAuthDocks();
   }
 
@@ -13416,9 +13429,13 @@
     });
   }
 
-  /* whichever dock is on screen holds it; the form no longer does */
+  /* whichever dock is on screen holds it; the form no longer does. Named
+     rather than selected by class: the phone's is the shared bottom pill now
+     and the desktop's is the centre dock's, and the two wear nothing in
+     common besides being this form's submit. */
   const authSubmitBtn = () =>
-    [...document.querySelectorAll(".auth-submit-dock")]
+    [$("loginSubmit"), $("introSubmit")]
+      .filter(Boolean)
       .find((e) => !e.classList.contains("hidden") && e.offsetParent !== null) ||
     $("loginSubmit");
 
@@ -13487,7 +13504,10 @@
     } finally {
       btn.disabled = false;
       btn.classList.remove("pending");
-      btn.textContent = authMode === "login" ? "Log In" : "Sign Up";
+      /* not a literal: the dock's label has one owner, and spelling it again
+         here is how the pill came back from a failed attempt reading LOG IN
+         while every other screen said LOGIN */
+      syncAuthDocks();
     }
   });
 
@@ -13575,6 +13595,8 @@
     const past = !onGate && !onSurvey;
     if (onSurvey && !surveyRendered) { surveyStep = 0; renderSurveyStep(); surveyRendered = true; }
     $("gateStep").classList.toggle("hidden", !onGate);
+    // ENTER lives in the dock now, so it comes and goes with the gate card
+    $("gateDock").classList.toggle("hidden", !onGate);
     $("surveyStep").classList.toggle("hidden", !onSurvey);
     $("introStep").classList.add("hidden");
     $("loginStep").classList.toggle("hidden", !past);
@@ -14245,14 +14267,12 @@
      the password field scrolled the whole centre column, header video and all.
      Measured 0 -> 38 -> 108px of .app scrollTop before this guard. */
   const isTouchLayout = () => !window.matchMedia(DESKTOP_MQ).matches;
-  /* The login step is exempt. This handling exists for the gate and the
-     questionnaire, whose forms are long enough that a field can end up behind
-     the keyboard — it shrinks the screen to the visual viewport and scrolls
-     the field to the middle of what is left. On the login step that is the
-     bug: the fields already sit above the keyboard, and the shrink-and-scroll
-     drags the whole composition up, taking the dock out of its fixed place
-     and into the middle of the panel. Here the keyboard simply covers what it
-     covers, and nothing above it moves. */
+  /* The login step is exempt from the shrink. This handling exists for the
+     gate and the questionnaire, whose forms are long enough that a field can
+     end up behind the keyboard — it shrinks the screen to the visual viewport
+     and scrolls the field to the middle of what is left. On the login step
+     that is the bug: shrink-and-scroll drags the whole composition up, taking
+     the dock out of its fixed place and into the middle of the panel. */
   const onLoginStep = () => authScreen.classList.contains("on-login");
   function applyKbHeight() {
     if (!kbFocused || !vv) return;
@@ -14261,9 +14281,48 @@
   function scrollFocusedIntoView() {
     if (kbFocused) kbFocused.scrollIntoView({ block: "center", behavior: "smooth" });
   }
+
+  /* What the login step gets instead. The exemption used to rest on the fields
+     sitting above the keyboard whatever happened, and that stopped being true
+     when sign-up's stack was anchored by its head: four fields reach the
+     bottom third of the composition now, and the last of them is behind the
+     keyboard on any phone.
+
+     So the step slides, by exactly the overlap and not a pixel more, and
+     slides back when the keyboard goes. One transform on and one transform
+     off — the composition is never scrolled, so there is no scroll position
+     left behind to restore and nothing can end up displaced. */
+  let kbShiftEl = null;
+  function syncLoginKbShift() {
+    const step = $("loginStep");
+    if (!step) return;
+    if (!kbShiftEl || !vv || !onLoginStep()) { step.style.transform = ""; return; }
+    /* Where the field WOULD be with the step at rest — not where it is.
+       getBoundingClientRect() reports the transform, and mid-transition it
+       reports a value part of the way through one, so measuring the field
+       against the viewport directly makes this function fight itself: the
+       first call slides the field clear, the second sees it already clear and
+       takes the slide straight back off. Measured off two things a transform
+       cannot touch instead — the field's offset inside the step, and the
+       step's own offsetTop — it computes the same answer however many times
+       it runs, and whenever it runs. */
+    const sr = step.getBoundingClientRect();
+    const within = kbShiftEl.getBoundingClientRect().bottom - sr.top;
+    const rest = authScreen.getBoundingClientRect().top + step.offsetTop + within;
+    const over = rest + 14 - vv.height;
+    step.style.transform = over > 1 ? `translateY(${-Math.round(over)}px)` : "";
+  }
+
   authScreen.addEventListener("focusin", (e) => {
-    if (!isTouchLayout() || onLoginStep()) return;
+    if (!isTouchLayout()) return;
     if (!e.target.classList || !e.target.classList.contains("auth-input")) return;
+    if (onLoginStep()) {
+      kbShiftEl = e.target;
+      syncLoginKbShift();
+      // again once the keyboard and its toolbar have finished coming up
+      setTimeout(syncLoginKbShift, 320);
+      return;
+    }
     kbFocused = e.target;
     authScreen.classList.add("kb-open");
     applyKbHeight();
@@ -14271,17 +14330,20 @@
     setTimeout(() => { applyKbHeight(); scrollFocusedIntoView(); }, 320);
   });
   authScreen.addEventListener("focusout", (e) => {
-    if (!isTouchLayout() || onLoginStep()) return;
+    if (!isTouchLayout()) return;
     if (!e.target.classList || !e.target.classList.contains("auth-input")) return;
     setTimeout(() => {
       if (authScreen.contains(document.activeElement) &&
           document.activeElement.classList.contains("auth-input")) return;
       kbFocused = null;
+      kbShiftEl = null;
       authScreen.classList.remove("kb-open");
+      syncLoginKbShift();             // back where it started
     }, 60);
   });
   if (vv) vv.addEventListener("resize", () => {
-    if (!isTouchLayout() || onLoginStep()) return;
+    if (!isTouchLayout()) return;
+    if (onLoginStep()) { syncLoginKbShift(); return; }
     applyKbHeight(); scrollFocusedIntoView();
   });
 
