@@ -6566,7 +6566,67 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
    stroke would go with them. Sliced, only the flat middle moves, and the ends
    the artwork put things in (the row's icon well, the row's chevron, the
    pills' glyph) keep their shape. */
-.pw-hub { padding: 0 2px 6px; }
+/* The hub is a column of a fixed height, not a page that grows. Everything on
+   it has a job and a size except the match history, which is the one part that
+   can give — so it takes what is left and its own list scrolls inside its own
+   frame when there is less of it than there are matches. The screen itself
+   never scrolls, which is the rule, and on a short phone the history is a
+   shorter list rather than the reason the buttons are off the bottom.
+
+   (It did not fit a 375x667 screen before this: 127px over, with the overflow
+   landing on the bottom nav. The two reference buttons made that worse, and
+   this is what makes both sizes right.) */
+.pw-hub {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex;
+  flex-direction: column;
+  padding: 0 2px 6px;
+}
+.pw-hub > * { flex: 0 0 auto; }
+/* and everything on it is measured against the column it is really drawn in,
+   the same --vh1 the entry screens use: a 390x844 phone keeps the sizes it
+   has, a 375x667 one gives a few pixels back everywhere rather than losing
+   the buttons off the bottom */
+.pw-hub .pw-hub-stats { margin-bottom: clamp(3px, calc(.8 * var(--vh1)), 8px); }
+/* the tile's own height, not a floor under it: the nine-slice's 13px border
+   and the caption underneath are what make it 96 tall, and both come down */
+.pw-hub .pw-hub-stats { align-items: stretch; }
+.pw-hub .pw-stat {
+  height: clamp(62px, calc(11.4 * var(--vh1)), 96px);
+  padding: clamp(2px, calc(.6 * var(--vh1)), 5px) 1px;
+  border-width: clamp(9px, calc(1.6 * var(--vh1)), 13px);
+  border-image-width: clamp(9px, calc(1.6 * var(--vh1)), 13px);
+}
+.pw-hub .pw-stat-ico {
+  width: clamp(12px, calc(1.9 * var(--vh1)), 16px);
+  height: clamp(12px, calc(1.9 * var(--vh1)), 16px);
+}
+.pw-hub .pw-stat-n { font-size: calc(clamp(13px, calc(1.9 * var(--vh1)), 16px) * var(--fs)); }
+.pw-hub .pw-hub-banner { max-width: clamp(128px, calc(23 * var(--vh1)), 208px); }
+.pw-hub .pw-hub-link { padding: clamp(4px, calc(.83 * var(--vh1)), 7px) 4px; }
+.pw-hub .pw-hist {
+  flex: 1 1 auto;
+  min-height: clamp(30px, calc(5.4 * var(--vh1)), 72px);
+  margin-bottom: clamp(3px, calc(.8 * var(--vh1)), 8px);
+  display: flex;
+  flex-direction: column;
+}
+.pw-hub .pw-hub-pill { height: clamp(44px, calc(6.4 * var(--vh1)), 54px); }
+.pw-hub .pw-hub-pill.chal { margin-top: clamp(3px, calc(.8 * var(--vh1)), 8px); }
+.pw-hub .pw-hub-pill.mini { height: clamp(31px, calc(4.5 * var(--vh1)), 38px); }
+.pw-hub .pw-hub-acts.second { margin-top: clamp(3px, calc(.8 * var(--vh1)), 8px); }
+.pw-hub .pw-hub-link {
+  min-height: clamp(20px, calc(3.1 * var(--vh1)), 26px);
+  margin-top: clamp(3px, calc(.8 * var(--vh1)), 8px);
+}
+.pw-hub .pw-hub-head { margin-bottom: clamp(3px, calc(.7 * var(--vh1)), 6px); }
+.pw-hub .pw-hist-list {
+  flex: 1 1 auto;
+  min-height: 0;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
 
 .pw-hub-head {
   position: relative;
@@ -7421,6 +7481,59 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   text-align: center;
 }
 .pw-cm-preview .pw-over-pill { width: 100%; justify-content: center; }
+/* ---- a YOLO's two cards in one slot ----
+   Fanned rather than stacked: both have to be readable, and the total they
+   come to is the thing that actually fought, so it sits over the join where
+   neither card can hide it. The slot's own height is the card's, so the two
+   are scaled to fit it rather than overflowing the arena. */
+.pw-yolo-fan {
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  height: 100%;
+  /* one card's width, not two: the slot is a seat in a three-column arena and
+     a pair at full size runs out of it and over the print meter. The two are
+     scaled to share the one slot instead. */
+  width: calc(var(--pw-card-h) * 303 / 460);
+}
+.pw-yolo-card {
+  display: block;
+  height: 66%;
+}
+.pw-yolo-card .pw-card { height: 100%; width: auto; }
+.pw-yolo-card .pw-card-art { height: 100%; width: auto; }
+.pw-yolo-card.i0 { transform: rotate(-11deg) translateX(26%); transform-origin: bottom center; z-index: 1; }
+.pw-yolo-card.i1 { transform: rotate(11deg) translateX(-26%); transform-origin: bottom center; z-index: 2; }
+.pw-yolo-total {
+  position: absolute;
+  left: 50%; bottom: 2%;
+  transform: translateX(-50%);
+  z-index: 3;
+  padding: 2px 10px;
+  border: 1px solid rgba(214,232,255,.6);
+  border-radius: 999px;
+  background: rgba(3,6,16,.92);
+  font-size: calc(15px * var(--fs)); font-weight: 800;
+  letter-spacing: .04em;
+  color: #EAF6FF;
+  white-space: nowrap;
+}
+.pw-yolo-total.bull { border-color: rgba(0,220,160,.7); color: var(--pw-bull); }
+.pw-yolo-total.bear { border-color: rgba(255,77,109,.7); color: var(--pw-bear); }
+@media (prefers-reduced-motion: no-preference) {
+  .pw-seat-slot.sub .pw-yolo-card.i0 { animation: pwFanL .5s cubic-bezier(.2,.8,.2,1); }
+  .pw-seat-slot.sub .pw-yolo-card.i1 { animation: pwFanR .5s cubic-bezier(.2,.8,.2,1) .08s backwards; }
+}
+@keyframes pwFanL {
+  from { transform: rotate(0deg) translateX(0) scale(.86); opacity: .2; }
+  to   { transform: rotate(-11deg) translateX(26%); opacity: 1; }
+}
+@keyframes pwFanR {
+  from { transform: rotate(0deg) translateX(0) scale(.86); opacity: .2; }
+  to   { transform: rotate(11deg) translateX(-26%); opacity: 1; }
+}
+
 /* ---- the slot's substitution badge ----
    YOLO and Diamond Hands put a different card in the slot than the one that
    was tapped, so the slot has to say so: the card that stepped aside, and what
@@ -7683,6 +7796,280 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
    chart simply takes all of it — either way the screen ends where the card
    does, at any round count. */
 .card-scroll.pw-savedscreen { display: flex; flex-direction: column; overflow: hidden; }
+/* One page, by rule. The screen is a column of a fixed height and whatever is
+   inside it shares that height out — nothing here scrolls, on any phone. */
+.card-scroll.pw-fixed { display: flex; flex-direction: column; overflow: hidden; }
+.card-scroll.pw-fixed > * { flex: 1 1 auto; min-height: 0; display: flex; flex-direction: column; }
+
+/* ---- the Card Library ----
+   Three tabs over a grid that is sized BY its box rather than sizing the box:
+   the rows share what is left and the faces scale into them, so twelve
+   specials fit a 375x667 screen the same way six candles fit a 390x844 one.
+   That is why there is no paging — the grid cannot outgrow the page it is on. */
+.pw-lib-tabs {
+  flex: 0 0 auto;
+  display: grid; grid-template-columns: repeat(3, 1fr); gap: 6px;
+  margin: 0 2px 10px;
+}
+.pw-lib-tab {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 7px 4px;
+  border: 1px solid var(--pw-line);
+  border-radius: 11px;
+  background: rgba(5,9,22,.72);
+  transition: border-color .16s ease, background .16s ease;
+}
+.pw-lib-tab b {
+  font-size: calc(12px * var(--fs)); font-weight: 800; color: var(--text);
+  letter-spacing: .04em;
+}
+.pw-lib-tab i {
+  font-size: calc(8.5px * var(--fs)); font-style: normal; color: var(--pw-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+.pw-lib-tab.on { background: rgba(10,30,56,.9); }
+.pw-lib-tab.on.bull { border-color: rgba(0,220,160,.7); }
+.pw-lib-tab.on.bull b { color: var(--pw-bull); }
+.pw-lib-tab.on.bear { border-color: rgba(255,77,109,.7); }
+.pw-lib-tab.on.bear b { color: var(--pw-bear); }
+.pw-lib-tab.on.special { border-color: rgba(214,232,255,.65); }
+.pw-lib-tab:active { filter: brightness(1.3); }
+
+.pw-lib-grid {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: grid;
+  grid-template-columns: repeat(var(--pw-lg-cols, 3), 1fr);
+  grid-auto-rows: 1fr;
+  gap: 7px;
+  padding: 0 2px;
+  align-content: stretch;
+}
+.pw-lib-cell {
+  min-height: 0;
+  display: flex; align-items: center; justify-content: center;
+  padding: 0;
+  background: none;
+  border: 0;
+}
+.pw-lib-cell .pw-card { height: 100%; width: auto; max-width: 100%; }
+.pw-lib-cell .pw-card-art { height: 100%; width: auto; max-width: 100%; }
+.pw-lib-cell:active { filter: brightness(1.3); transform: scale(.96); }
+.pw-lib-foot {
+  flex: 0 0 auto;
+  margin: 9px 2px 0;
+  text-align: center;
+  font-size: calc(10px * var(--fs)); color: var(--pw-muted);
+}
+
+/* ---- one card, full size ---- */
+.pw-lib-big {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex; align-items: center; justify-content: center; gap: 6px;
+  padding: 2px;
+}
+.pw-lib-bigcard { height: 100%; display: flex; align-items: center; justify-content: center; }
+.pw-lib-bigcard .pw-card { height: 100%; width: auto; }
+.pw-lib-bigcard .pw-card-art { height: 100%; width: auto; }
+.pw-lib-step {
+  flex: 0 0 auto;
+  width: 34px; height: 54px;
+  display: grid; place-items: center;
+  border: 1px solid var(--pw-line);
+  border-radius: 10px;
+  background: rgba(5,9,22,.7);
+  font-size: calc(22px * var(--fs)); line-height: 1;
+  color: #9FD9FF;
+}
+.pw-lib-step[disabled] { opacity: .28; }
+.pw-lib-step:active:not([disabled]) { filter: brightness(1.4); transform: scale(.94); }
+.pw-lib-info {
+  flex: 0 0 auto;
+  display: flex; flex-direction: column; align-items: center; gap: 4px;
+  margin: 10px 4px 0;
+  text-align: center;
+}
+.pw-lib-meta {
+  font-size: calc(9.5px * var(--fs)); font-weight: 800;
+  letter-spacing: .16em; text-transform: uppercase;
+  color: #9FD9FF;
+}
+.pw-lib-meta.bull { color: var(--pw-bull); }
+.pw-lib-meta.bear { color: var(--pw-bear); }
+.pw-lib-detail-name {
+  font-size: calc(16px * var(--fs)); font-weight: 800; color: var(--text);
+}
+.pw-lib-detail-text {
+  font-size: calc(11.5px * var(--fs)); line-height: 1.5; color: var(--pw-muted);
+  max-width: 34ch;
+}
+.pw-lib-dots {
+  flex: 0 0 auto;
+  display: flex; justify-content: center; gap: 5px; flex-wrap: wrap;
+  margin: 10px 0 2px;
+}
+.pw-lib-dots i {
+  width: 5px; height: 5px; border-radius: 999px;
+  background: rgba(159,217,255,.3);
+}
+.pw-lib-dots i.on { background: var(--cyan); box-shadow: 0 0 7px rgba(61,223,255,.7); }
+
+/* ---- How to Play ----
+   Eight pages, one rule each, and the page is a column that shares its height
+   between the picture and the words rather than running past the bottom. */
+.pw-ht { padding: 0 2px 10px; text-align: left; }
+.pw-ht-page {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex; flex-direction: column; align-items: center;
+  text-align: center;
+}
+.pw-ht-step {
+  flex: 0 0 auto;
+  font-size: calc(9.5px * var(--fs)); font-weight: 800;
+  letter-spacing: .18em; text-transform: uppercase;
+  color: #7FA8CC;
+}
+.pw-ht-title {
+  flex: 0 0 auto;
+  margin: 4px 0 10px;
+  font-size: calc(19px * var(--fs)); font-weight: 800;
+  letter-spacing: .02em;
+  color: var(--text);
+}
+.pw-ht-art {
+  flex: 1 1 auto;
+  min-height: 0;
+  width: 100%;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px;
+}
+.pw-ht-text {
+  flex: 0 0 auto;
+  margin: 12px 6px 0;
+  font-size: calc(12.5px * var(--fs)); line-height: 1.55;
+  color: #C7D9EF;
+  max-width: 38ch;
+}
+.pw-ht-link { margin-top: 12px; justify-content: center; }
+
+.pw-ht-cards {
+  display: flex; align-items: center; justify-content: center; gap: 12px;
+  height: 100%;
+  min-height: 0;
+}
+.pw-ht-cards .pw-card, .pw-ht-cards .pw-back { height: 100%; width: auto; max-height: 100%; }
+.pw-ht-cards .pw-card-art { height: 100%; width: auto; }
+.pw-ht-cards.win .pw-card:first-child { filter: drop-shadow(0 0 14px rgba(0,220,160,.6)); }
+.pw-ht-tags { display: flex; gap: 58px; font-size: calc(10px * var(--fs)); font-weight: 800; letter-spacing: .14em; }
+.pw-ht-tags .bull { color: var(--pw-bull); }
+.pw-ht-tags .bear { color: var(--pw-bear); }
+.pw-ht-delta {
+  font-size: calc(12px * var(--fs)); font-weight: 800; letter-spacing: .06em;
+  color: var(--pw-bull);
+}
+.pw-ht-delta.flat { color: var(--pw-muted); font-weight: 700; }
+
+.pw-ht-goal { display: flex; align-items: center; justify-content: center; gap: 16px; }
+.pw-ht-arrow { display: flex; flex-direction: column; align-items: center; gap: 3px; }
+.pw-ht-arrow b { font-size: calc(17px * var(--fs)); font-weight: 800; }
+.pw-ht-arrow span { font-size: calc(9.5px * var(--fs)); font-weight: 800; letter-spacing: .16em; }
+.pw-ht-arrow.bull, .pw-ht-arrow.bull b, .pw-ht-arrow.bull span { color: var(--pw-bull); }
+.pw-ht-arrow.bear, .pw-ht-arrow.bear b, .pw-ht-arrow.bear span { color: var(--pw-bear); }
+.pw-ht-print {
+  display: flex; flex-direction: column; align-items: center; gap: 2px;
+  padding: 12px 18px;
+  border: 1px solid var(--pw-line); border-radius: 13px;
+  background: rgba(5,9,22,.75);
+}
+.pw-ht-print i { font-style: normal; font-size: calc(30px * var(--fs)); font-weight: 800; color: var(--text); }
+.pw-ht-print span { font-size: calc(8.5px * var(--fs)); font-weight: 800; letter-spacing: .16em; color: var(--pw-muted); }
+
+.pw-ht-piles { display: flex; gap: 26px; align-items: flex-end; }
+.pw-ht-pile { display: flex; flex-direction: column; align-items: center; gap: 6px; }
+.pw-ht-pile i { font-style: normal; font-size: calc(10px * var(--fs)); color: var(--pw-muted); }
+.pw-ht-stack {
+  width: 54px; height: 80px;
+  border-radius: 9px;
+  border: 1px solid rgba(214,232,255,.4);
+  background: rgba(8,14,32,.9);
+  box-shadow: 3px 3px 0 -1px rgba(8,14,32,.9), 3px 3px 0 0 rgba(214,232,255,.3),
+              6px 6px 0 -1px rgba(8,14,32,.9), 6px 6px 0 0 rgba(214,232,255,.22);
+}
+.pw-ht-stack.bull { border-color: rgba(0,220,160,.6); }
+.pw-ht-stack.bear { border-color: rgba(255,77,109,.6); }
+
+.pw-ht-ladder {
+  display: flex; flex-direction: column; gap: 3px;
+  width: 100%; height: 100%; min-height: 0;
+  padding: 0 6px;
+}
+.pw-ht-rung {
+  flex: 1 1 0;
+  min-height: 0;
+  display: flex; align-items: center; gap: 9px;
+}
+.pw-ht-rung .pw-card { height: 100%; width: auto; }
+.pw-ht-rung .pw-card-art { height: 100%; width: auto; }
+.pw-ht-rung b {
+  flex: 1 1 auto; min-width: 0;
+  text-align: left;
+  font-size: calc(11px * var(--fs)); font-weight: 700; color: #C7D9EF;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pw-ht-rung i {
+  flex: 0 0 auto;
+  font-style: normal;
+  font-size: calc(14px * var(--fs)); font-weight: 800; color: var(--pw-bull);
+}
+
+.pw-ht-nav {
+  flex: 0 0 auto;
+  display: flex; align-items: center; justify-content: space-between; gap: 10px;
+  margin-top: 10px;
+}
+.pw-ht-arrowbtn {
+  flex: 0 0 auto;
+  width: 38px; height: 38px;
+  display: grid; place-items: center;
+  border: 1px solid var(--pw-line); border-radius: 11px;
+  background: rgba(5,9,22,.7);
+  font-size: calc(21px * var(--fs)); line-height: 1; color: #9FD9FF;
+}
+.pw-ht-arrowbtn[disabled] { opacity: .28; }
+.pw-ht-arrowbtn:active:not([disabled]) { filter: brightness(1.4); transform: scale(.94); }
+.pw-ht-dots { display: flex; gap: 7px; }
+.pw-ht-dots button {
+  width: 7px; height: 7px; padding: 0;
+  border: 0; border-radius: 999px;
+  background: rgba(159,217,255,.3);
+}
+.pw-ht-dots button.on { background: var(--cyan); box-shadow: 0 0 8px rgba(61,223,255,.75); }
+
+/* ---- the hub's second row ----
+   The same pill, shorter: these are the way to read the rules, not the way to
+   start a game, and they should not read as equals of the row above them. */
+.pw-hub-acts.second { margin-top: 8px; }
+.pw-hub-pill.mini {
+  /* about seventy per cent of the row above, which is what makes them read as
+     the second thing on the screen rather than two more ways to start a game.
+     The nine-slice's end caps come down with it or the glyph would be taller
+     than the pill it is drawn in. */
+  height: 38px;
+  align-items: center;
+  justify-content: center;
+  text-align: center;
+  padding: 0 4px;
+  /* the app's plain neon pill rather than the match row's nine-slice. The
+     match row's art carries a multiplayer glyph baked into its left end, and
+     a 9-slice cannot leave one slice out — so matching that pill exactly would
+     have put "two people" on How to Play and on Card Library. Same family,
+     same glow, no glyph. */
+  border-width: 2px;
+  border-image: url("../assets/buttons-pill/button-pill-standard@2x.png") 78 86 fill / 13px 18px stretch;
+}
+.pw-hub-pill.mini .pw-hub-pill-t { font-size: calc(12px * var(--fs)); }
 .pw-saved {
   padding: 0 2px 6px;
   flex: 1 1 auto;
