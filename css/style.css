@@ -6588,12 +6588,12 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
    the same --vh1 the entry screens use: a 390x844 phone keeps the sizes it
    has, a 375x667 one gives a few pixels back everywhere rather than losing
    the buttons off the bottom */
-.pw-hub .pw-hub-stats { margin-bottom: clamp(3px, calc(.8 * var(--vh1)), 8px); }
+.pw-hub .pw-hub-stats { margin-bottom: clamp(3px, calc(.55 * var(--vh1)), 8px); }
 /* the tile's own height, not a floor under it: the nine-slice's 13px border
    and the caption underneath are what make it 96 tall, and both come down */
 .pw-hub .pw-hub-stats { align-items: stretch; }
 .pw-hub .pw-stat {
-  height: clamp(62px, calc(11.4 * var(--vh1)), 96px);
+  height: clamp(56px, calc(10.2 * var(--vh1)), 96px);
   padding: clamp(2px, calc(.6 * var(--vh1)), 5px) 1px;
   border-width: clamp(9px, calc(1.6 * var(--vh1)), 13px);
   border-image-width: clamp(9px, calc(1.6 * var(--vh1)), 13px);
@@ -6607,18 +6607,18 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 .pw-hub .pw-hub-link { padding: clamp(4px, calc(.83 * var(--vh1)), 7px) 4px; }
 .pw-hub .pw-hist {
   flex: 1 1 auto;
-  min-height: clamp(30px, calc(5.4 * var(--vh1)), 72px);
-  margin-bottom: clamp(3px, calc(.8 * var(--vh1)), 8px);
+  min-height: clamp(30px, calc(4.5 * var(--vh1)), 72px);
+  margin-bottom: clamp(3px, calc(.55 * var(--vh1)), 8px);
   display: flex;
   flex-direction: column;
 }
 .pw-hub .pw-hub-pill { height: clamp(44px, calc(6.4 * var(--vh1)), 54px); }
-.pw-hub .pw-hub-pill.chal { margin-top: clamp(3px, calc(.8 * var(--vh1)), 8px); }
+.pw-hub .pw-hub-pill.chal { margin-top: clamp(3px, calc(.55 * var(--vh1)), 8px); }
 .pw-hub .pw-hub-pill.mini { height: clamp(31px, calc(4.5 * var(--vh1)), 38px); }
-.pw-hub .pw-hub-acts.second { margin-top: clamp(3px, calc(.8 * var(--vh1)), 8px); }
+.pw-hub .pw-hub-acts.second { margin-top: clamp(3px, calc(.55 * var(--vh1)), 8px); }
 .pw-hub .pw-hub-link {
   min-height: clamp(20px, calc(3.1 * var(--vh1)), 26px);
-  margin-top: clamp(3px, calc(.8 * var(--vh1)), 8px);
+  margin-top: clamp(3px, calc(.55 * var(--vh1)), 8px);
 }
 .pw-hub .pw-hub-head { margin-bottom: clamp(3px, calc(.7 * var(--vh1)), 6px); }
 .pw-hub .pw-hist-list {
@@ -6627,6 +6627,31 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   overflow-y: auto;
   -webkit-overflow-scrolling: touch;
 }
+/* The history box is the one that gives, so it is also the one that has to
+   clip: squeezed to its floor it would otherwise spill its empty-state line
+   out from behind the buttons below it. */
+.pw-hub .pw-hist {
+  overflow: hidden;
+  padding: clamp(4px, calc(1.1 * var(--vh1)), 8px) 7px;
+}
+.pw-hub .pw-hist-head { margin-bottom: clamp(2px, calc(.7 * var(--vh1)), 6px); }
+/* On a column this short (an iPhone SE), the decoration is what pays for the
+   history rows, and the pill subtitles do not fit a 44px pill once the title
+   wraps. The titles alone say what the buttons do. */
+.short-vh .pw-hub .pw-hub-banner { max-width: 104px; }
+.short-vh .pw-hub .pw-hub-pill-s { display: none; }
+/* and with one line left in the pill, it should be one line: "Create Match"
+   wrapping while "Start Match" did not is what reads as broken */
+.short-vh .pw-hub .pw-hub-pill-t {
+  font-size: calc(11.5px * var(--fs));
+  white-space: nowrap;
+}
+/* the empty history still has to say what it is in the room it has left */
+.short-vh .pw-hub .pw-hist-none { padding: 2px 6px; font-size: calc(10.5px * var(--fs)); }
+/* Losing the subtitle must not take the pill under a thumb's worth of height.
+   It needs the flex too: .pw-hub-pill sets flex: 1 1 0 for the side-by-side
+   rows, and as a child of the hub column that makes this one stretchy. */
+.short-vh .pw-hub .pw-hub-pill.chal { flex: 0 0 auto; height: 44px; }
 
 .pw-hub-head {
   position: relative;

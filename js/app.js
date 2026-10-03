@@ -14954,6 +14954,11 @@
   function syncViewportHeight() {
     const h = viewportHeight();
     if (h > 0) document.documentElement.style.setProperty("--vhpx", h + "px");
+    /* A measured flag rather than a height media query, for the same reason
+       --vhpx exists: the query reads the large viewport, which is the number
+       that lies by about a toolbar. Screens that have to drop a line to fit a
+       short column hang off this. */
+    if (h > 0) document.documentElement.classList.toggle("short-vh", h < 700);
   }
   syncViewportHeight();
   syncHeadHeight();
