@@ -7421,6 +7421,50 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   text-align: center;
 }
 .pw-cm-preview .pw-over-pill { width: 100%; justify-content: center; }
+/* ---- the slot's substitution badge ----
+   YOLO and Diamond Hands put a different card in the slot than the one that
+   was tapped, so the slot has to say so: the card that stepped aside, and what
+   it put there. It sits over the foot of the card rather than under the seat,
+   because the caption under the seat already has a job. */
+.pw-sub-badge {
+  flex: 0 0 auto;
+  display: flex;
+  flex-direction: column;
+  align-items: center;
+  gap: 1px;
+  max-width: 100%;
+  margin-top: 2px;
+  padding: 2px 7px;
+  border: 1px solid rgba(214,232,255,.4);
+  border-radius: 8px;
+  background: rgba(3,6,16,.8);
+  text-align: center;
+  pointer-events: none;
+}
+.pw-sub-badge b {
+  font-size: calc(8px * var(--fs)); font-weight: 800;
+  letter-spacing: .12em; text-transform: uppercase;
+  color: #E6F2FF;
+  white-space: nowrap;
+}
+.pw-sub-badge i {
+  font-size: calc(7.5px * var(--fs)); font-style: normal; line-height: 1.2;
+  color: #9FD9FF;
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis; max-width: 100%;
+}
+/* the flipped card arrives with a short turn of its own — under the 600ms the
+   brief asks for, and the same curve the opponent's reveal uses */
+.pw-sub-badge.yolo { border-color: rgba(61,223,255,.5); }
+.pw-sub-badge.dh { border-color: rgba(255,61,154,.45); }
+.pw-seat-slot.sub .pw-card { animation: pwSubIn .42s cubic-bezier(.2,.8,.2,1); }
+@keyframes pwSubIn {
+  from { transform: rotateY(84deg) scale(.94); opacity: .25; }
+  to   { transform: none; opacity: 1; }
+}
+@media (prefers-reduced-motion: reduce) {
+  .pw-seat-slot.sub .pw-card { animation: none; }
+}
+
 .pw-sheet-none {
   padding: 16px 12px;
   text-align: center;

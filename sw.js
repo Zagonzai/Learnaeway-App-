@@ -3,7 +3,7 @@
  * deploys show up immediately; only falls back to cache when offline.
  * Heavy binary assets (images) are cache-first since they rarely change.
  */
-const CACHE = "learnaeway-v207";
+const CACHE = "learnaeway-v209";
 
 const SHELL = [
   "./",
@@ -142,8 +142,8 @@ const SHELL = [
    screen that a signed-in visitor never sees again. /assets/ is cache-first,
    so it is kept from the first time it is played and costs nothing after.
 
-   assets/pointaeway/cards/ is absent on the same grounds: twenty-two card
-   faces come to 2.3MB, and they are wanted on one screen of one of three games.
+   assets/pointaeway/cards/ is absent on the same grounds: twenty-four card
+   faces come to 2.9MB, and they are wanted on one screen of one of three games.
    Cache-first keeps each one from the first time it is dealt, so a player who
    opens Pointæway pays once and nobody else pays at all.
 
