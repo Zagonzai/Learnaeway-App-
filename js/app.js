@@ -3350,11 +3350,26 @@
      this group contributes whatever exists — one card today, three when they
      land, with nothing here to change when they do. */
   const PW_SPEC_COLOURS = [
-    { k: "yellow", name: "Yellow", cards: ["Canceled Order", "FOMO", "Take Profit"] },
-    { k: "blue",   name: "Blue",   cards: ["Stop Loss", "Momentum", "Market News"] },
-    { k: "purple", name: "Purple", cards: ["Liquidated", "Reversal", "Discipline"] },
     { k: "white",  name: "White",  cards: ["Volatility Spike", "YOLO", "Diamond Hands"] },
+    { k: "purple", name: "Purple", cards: ["Liquidated", "Reversal", "Discipline"] },
+    { k: "blue",   name: "Blue",   cards: ["Stop Loss", "Market News", "Momentum"] },
+    { k: "yellow", name: "Yellow", cards: ["Canceled Order", "FOMO", "Take Profit"] },
   ];
+  /* ---- and the order the twelve are shown in ----
+     The grid is four columns of three, one colour per column, so the order to
+     read them in is down each column: the table above, flattened. It is this
+     array and not PW_SPECIALS that the Library's grid, its swipe and its dots
+     follow, and the reference sheet with them.
+
+     PW_SPECIALS itself is deliberately left where it is. A finished match
+     stores each wild as its index in that array, so reordering it would make
+     every replay already on a player's phone name the wrong cards. The order
+     cards are shown in is a different thing from the order they are numbered
+     in, and this is the one that may move. */
+  const PW_SPECIALS_SHOWN = PW_SPEC_COLOURS
+    .reduce((all, c) => all.concat(c.cards), [])
+    .map((t) => PW_SPEC[t])
+    .filter(Boolean);
   const PW_SPEC_PER_COLOUR = [0, 1, 2, 3];   // 0 is "not playable"
   const PW_DEFAULT_SETTINGS = { points: 25, perColour: 3 };
 
@@ -4311,7 +4326,12 @@
       : card.side === "special"
         ? PW_SPECIAL_ART[card.type]
         : (PW_TIER_ART[card.side] || {})[card.type];
-    return n ? `${PW_ART}${n}.png` : null;
+    /* WebP, not the PNG beside it. The faces are the same pictures at the
+       same 307x460 — padded to an exact 2:3 while they were re-encoded, so
+       the shape the card CSS states is now the shape of the file as well —
+       and the set went from 2.75MB to 0.99MB with nothing visible lost. The
+       PNGs stay in the repository as the source they are. */
+    return n ? `${PW_ART}${n}.webp` : null;
   }
   /* The face is a picture, so everything it says has to be said again here or
      it is said to no one. */
@@ -4359,7 +4379,8 @@
        being chosen, and View Specials holds them all in one list. */
     return `<${tag} class="pw-card ${sideCls}${size}${anim}${o.dim ? " dim" : ""}"${attrs}${note}>
       ${art
-        ? `<img class="pw-card-art" src="${art}" alt="${esc(pwCardAlt(card))}${o.note ? " " + esc(o.note) : ""}" draggable="false">`
+        ? `<img class="pw-card-art" src="${art}" alt="${esc(pwCardAlt(card))}${o.note ? " " + esc(o.note) : ""}"
+                draggable="false" decoding="async"${o.lazy ? ` loading="lazy"` : ""}>`
         : `<span class="pw-card-alt">${esc(card.type)}</span>`}
       ${left != null
         ? `<span class="pw-card-left" title="${left} of this candle left in your deck"
@@ -4373,6 +4394,12 @@
      only two things that decide it: which side the player took and who won.
      The list is capped; the counters are not — see the note in load(). */
   const PW_HISTORY_MAX = 60;
+
+  /* ---- Play Local, off the hub ----
+     Asked for as "hide it, keep the code", so this is the whole of it: the
+     button is not drawn, and the screen behind it, its handler, its note and
+     its place in the router are untouched. One word turns it back on. */
+  const PW_SHOW_LOCAL = false;
 
   function pwRecord() {
     if (!store.pwStats) store.pwStats = { played: 0, won: 0, lost: 0, drawn: 0, bull: 0, bear: 0 };
@@ -4617,10 +4644,16 @@
             <span class="pw-hub-pill-s">Set the rules · play a friend</span>
           </button>
         </div>
+        ${/* Play Local is off the hub for now, by the switch above: the screen,
+              its handler and its note are all still here and turning it back
+              on is one word. The row it sat in is simply not drawn, so the
+              space it had goes back to the match history rather than being
+              left as a gap. */""}
+        ${PW_SHOW_LOCAL ? `
         <button type="button" class="pw-hub-pill chal" data-pw-hub-local>
           <span class="pw-hub-pill-t">Play Local</span>
           <span class="pw-hub-pill-s">With a physical deck</span>
-        </button>
+        </button>` : ""}
         ${/* the two reference screens, directly under the match buttons and
               shorter than them, because that is what they are: the way to read
               the rules rather than the way to start a game */""}
@@ -6234,6 +6267,10 @@
     }).join("");
 
     const sel = open != null ? rows.find((r) => r.round === open) : null;
+    /* what the chart on screen is drawn from, for the scrubber below: only one
+       is ever on screen, and it needs the rounds without knowing which screen
+       handed them over */
+    pwChartShown = rows;
     return `
       <div class="pw-chart">
         <div class="pw-chart-head">
@@ -6256,6 +6293,99 @@
         </div>
         ${sel ? pwRevealHTML(sel) : ""}
       </div>`;
+  }
+
+  /* ==================== scrubbing the replay ====================
+     Tapping a candle opens its round, and that has not changed. Holding and
+     dragging now moves the selection with the finger: the nearest candle to
+     wherever the finger is wins, the reveal underneath follows it live, and
+     letting go leaves the last one open.
+
+     Two things make it feel like scrubbing rather than like a list of taps.
+
+     The first is that a move repaints two things and not the screen: the
+     class on the candle and its chip, and the reveal panel's innerHTML. A
+     renderPointaeway() per candle would rebuild the chart under the finger
+     thirty times a second, and the chart is the one thing that must not move
+     while it is being read.
+
+     The second is that the drag is not allowed to be anything else. The plot
+     takes the pointer with setPointerCapture, so the gesture stays ours after
+     it leaves the box, and the chart area is touch-action: none, so the panel
+     underneath does not scroll and the page does not swipe while a finger is
+     travelling across it. */
+  let pwChartShown = [];
+  let pwScrub = null;
+  let pwScrubbedAt = 0;
+
+  const pwScrubCandles = () =>
+    Array.prototype.slice.call(document.querySelectorAll(".pw-chart-bars .pw-cndl"));
+
+  /* the nearest candle to an x, which is also the whole of the edge rule:
+     past either end the nearest one is the end one */
+  function pwScrubRoundAt(x) {
+    let best = null, bestD = Infinity;
+    pwScrubCandles().forEach((el) => {
+      const r = el.getBoundingClientRect();
+      const d = x < r.left ? r.left - x : x > r.right ? x - r.right : 0;
+      if (d < bestD) { bestD = d; best = el; }
+    });
+    return best ? Number(best.getAttribute("data-pw-round")) : null;
+  }
+
+  /* select a round without redrawing the screen. Returns whether it moved,
+     which is what the haptic tick is for. */
+  function pwScrubSelect(n) {
+    if (n == null || pw.showRound === n) return false;
+    pw.showRound = n;
+    document.querySelectorAll("[data-pw-round]").forEach((el) => {
+      const on = Number(el.getAttribute("data-pw-round")) === n;
+      el.classList.toggle("on", on);
+      el.setAttribute("aria-pressed", String(on));
+    });
+    const chart = document.querySelector(".pw-chart");
+    const row = pwChartShown.find((r) => r.round === n);
+    if (chart && row) {
+      const old = chart.querySelector(".pw-reveal");
+      if (old) old.outerHTML = pwRevealHTML(row);
+      else chart.insertAdjacentHTML("beforeend", pwRevealHTML(row));
+      /* the one layout class the reveal owns, kept in step so a scrub ends in
+         the same state a tap would have left behind */
+      cardScroll.classList.add("pw-revealing");
+    }
+    return true;
+  }
+
+  function pwScrubDown(e) {
+    const host = e.target.closest && e.target.closest(".pw-chart-plot, .pw-chip-row");
+    if (!host || !pwScrubCandles().length) return;
+    /* No selection and no capture yet: an unmoved press is still a tap, and a
+       tap on the open round still closes it. Capture retargets the click that
+       follows to whatever took the pointer, so taking it here would mean the
+       click never names the candle it landed on. */
+    pwScrub = { id: e.pointerId, moved: false, host };
+  }
+  function pwScrubMove(e) {
+    if (!pwScrub || e.pointerId !== pwScrub.id) return;
+    const n = pwScrubRoundAt(e.clientX);
+    if (n == null) return;
+    /* now it is a drag, so the gesture is ours until it ends — including the
+       part of it that happens outside the plot */
+    if (!pwScrub.moved) {
+      try { pwScrub.host.setPointerCapture(e.pointerId); } catch (err) {}
+    }
+    pwScrub.moved = true;
+    if (e.cancelable) e.preventDefault();
+    if (pwScrubSelect(n) && navigator.vibrate) { try { navigator.vibrate(5); } catch (err) {} }
+  }
+  function pwScrubUp(e) {
+    if (!pwScrub || e.pointerId !== pwScrub.id) return;
+    const was = pwScrub;
+    pwScrub = null;
+    try { was.host.releasePointerCapture(e.pointerId); } catch (err) {}
+    /* a drag ends with the last candle open, so the click that follows it
+       must not toggle that same round shut again */
+    if (was.moved) pwScrubbedAt = Date.now();
   }
 
   /* ---- the live chart module ----
@@ -6538,7 +6668,8 @@
      the sheet is the full reference it has always been. */
   function pwSpecialsSheetHTML() {
     const only = pw && pw.specialTypes;
-    const list = only ? PW_SPECIALS.filter((s) => only.indexOf(s.type) >= 0) : PW_SPECIALS;
+    const list = only ? PW_SPECIALS_SHOWN.filter((s) => only.indexOf(s.type) >= 0)
+                      : PW_SPECIALS_SHOWN;
     return `<div class="pw-sheet" id="pwSheet">
       <div class="pw-sheet-cap">
         <span>Special cards${only && only.length !== PW_SPECIALS.length
@@ -6666,11 +6797,13 @@
   /* the counts are the running match's, since a 10-point match holds two of
      each candle rather than five — outside a match they read as the default */
   const pwLibSets = () => {
-    const n = pwCopies();
     const wilds = (pw && pw.specialTypes) || PW_SPECIALS.map((s) => s.type);
+    /* The tab says what the tab holds. How many of each are dealt is the
+       match's business, not the Library's — it is 30 only at 25 points, and
+       a tab that says so while a 15-point match is being set up is wrong. */
     return [
-      { k: "bull",    name: "Bull Cards",    sub: `6 candles · ${6 * n} in deck` },
-      { k: "bear",    name: "Bear Cards",    sub: `6 candles · ${6 * n} in deck` },
+      { k: "bull",    name: "Bull Cards",    sub: "6 candles" },
+      { k: "bear",    name: "Bear Cards",    sub: "6 candles" },
       { k: "special", name: "Special Cards", sub: `${wilds.length} effect${wilds.length === 1 ? "" : "s"} · 1 each` },
     ];
   };
@@ -6682,7 +6815,8 @@
      place and the Library changes with it. */
   function pwLibCards(set) {
     if (set === "special") {
-      return PW_SPECIALS.map((sp) => ({
+      /* in the order the grid lays them out: down each colour's column */
+      return PW_SPECIALS_SHOWN.map((sp) => ({
         key: `special:${sp.type}`,
         card: Object.assign({}, sp, { id: `lib-${sp.type}`, side: "special", kind: "special" }),
         name: sp.type,
@@ -6720,6 +6854,14 @@
   };
   const pwSpecCard = (type) =>
     Object.assign({}, PW_SPEC[type], { id: `ht-${type}`, side: "special", kind: "special" });
+  /* ---- the one way a card is drawn off the table ----
+     .pw-cardfit is the rule (see the comment on it in style.css): the face
+     keeps its 2:3 shape and takes the smaller of the room it is given across
+     and down. Everything outside gameplay goes through here — How to Play,
+     the Library's grid, the open card — so there is one place to change if
+     the shape of a card ever changes. */
+  const pwFitHTML = (card, opts) =>
+    `<span class="pw-cardfit">${pwCardHTML(card, Object.assign({ lazy: true }, opts))}</span>`;
 
   function pwHowToPages() {
     const t = pwTarget();
@@ -6741,23 +6883,23 @@
 
       { title: "Reveal", body: `
         <div class="pw-ht-cards two">
-          ${pwCardHTML(pwTierCard("bull", 4), { small: true })}
-          ${pwCardHTML(pwTierCard("bear", 2), { small: true })}
+          ${pwFitHTML(pwTierCard("bull", 4))}
+          ${pwFitHTML(pwTierCard("bear", 2))}
         </div>`,
         text: "Both cards are revealed at the same time." },
 
       { title: "Win the Round", body: `
         <div class="pw-ht-cards two win">
-          ${pwCardHTML(pwTierCard("bull", 5), { small: true })}
-          ${pwCardHTML(pwTierCard("bear", 2), { small: true })}
+          ${pwFitHTML(pwTierCard("bull", 5))}
+          ${pwFitHTML(pwTierCard("bear", 2))}
         </div>
         <div class="pw-ht-delta bull">+5 → the Print</div>`,
         text: "The stronger card wins the round and pushes the Print its full strength toward its side." },
 
       { title: "If It Ties", body: `
         <div class="pw-ht-cards two">
-          ${pwCardHTML(pwTierCard("bull", 3), { small: true })}
-          ${pwCardHTML(pwTierCard("bear", 3), { small: true })}
+          ${pwFitHTML(pwTierCard("bull", 3))}
+          ${pwFitHTML(pwTierCard("bear", 3))}
         </div>
         <div class="pw-ht-delta flat">The Print does not move</div>`,
         text: "If the cards tie, the Print does not move and both cards go to the discard pile." },
@@ -6769,22 +6911,29 @@
         </div>`,
         text: "The player who lost the round draws a new card, choosing from their own deck or the wild pile." },
 
+      /* Six tiers, strongest first, three across and two down. It was a
+         column of rungs with the names elided to "Mar…" and "Ha…", which is
+         the one thing a page about which card beats which cannot do. The
+         faces come from the same table the Library reads, so a picture here
+         can only be missing if it is missing there too. */
       { title: "Card Strength", body: `
         <div class="pw-ht-ladder">
-          ${[5, 4, 3, 2, 1, 0].map((n, i) => `
-            <div class="pw-ht-rung">
-              ${pwCardHTML(pwTierCard("bull", n), { small: true })}
-              <b>${pwTiers("bull").find((x) => x.pts === n).type.replace("Bullish ", "")}${
-                n === 4 ? " / Shooting Star" : ""}</b>
-              <i>${n}</i>
+          ${[5, 4, 3, 2, 1, 0].map((n) => `
+            <div class="pw-ht-tier">
+              ${pwFitHTML(pwTierCard("bull", n))}
+              <span class="pw-ht-tname">
+                <b>${esc(pwTiers("bull").find((x) => x.pts === n).type.replace("Bullish ", "")
+                  + (n === 4 ? " / Shooting Star" : ""))}</b>
+                <i>${n}</i>
+              </span>
             </div>`).join("")}
         </div>`,
         text: "Marubozu (5) beats Hammer or Shooting Star (4), then Standard (3), Spinning Top (2), Weak Rejection (1) and Null (0)." },
 
       { title: "Special Cards & Match End", body: `
         <div class="pw-ht-cards two">
-          ${pwCardHTML(pwSpecCard("Volatility Spike"), { small: true })}
-          ${pwCardHTML(pwSpecCard("Market News"), { small: true })}
+          ${pwFitHTML(pwSpecCard("Volatility Spike"))}
+          ${pwFitHTML(pwSpecCard("Market News"))}
         </div>`,
         text: "Special cards bend the rules, so read each card before you play it. If a player has no point cards left in their hand or deck, the match ends, and whichever side the Print is leaning toward wins.",
         link: true },
@@ -6880,7 +7029,7 @@
           <div class="pw-lib-big">
             <button type="button" class="pw-lib-step prev" data-pw-lib-step="-1"
                     aria-label="Previous card"${i === 0 ? " disabled" : ""}>‹</button>
-            <div class="pw-lib-bigcard">${pwCardHTML(c.card, {})}</div>
+            <div class="pw-lib-bigcard pw-cardfit">${pwCardHTML(c.card, {})}</div>
             <button type="button" class="pw-lib-step next" data-pw-lib-step="1"
                     aria-label="Next card"${i === cards.length - 1 ? " disabled" : ""}>›</button>
           </div>
@@ -6914,11 +7063,13 @@
             </button>`).join("")}
         </div>
 
-        <div class="pw-lib-grid ${esc(open)}" style="--pw-lg-cols:${cards.length > 6 ? 4 : 3}">
+        <div class="pw-lib-grid ${esc(open)}"
+             style="--pw-lg-cols:${cards.length > 6 ? 4 : 3};--pw-lg-rows:${
+               Math.ceil(cards.length / (cards.length > 6 ? 4 : 3))}">
           ${cards.map((c, n) => `
-            <button type="button" class="pw-lib-cell" data-pw-lib-card="${n}"
+            <button type="button" class="pw-lib-cell pw-cardfit" data-pw-lib-card="${n}"
                     aria-label="${esc(c.name)}, ${esc(c.meta)}">
-              ${pwCardHTML(c.card, { small: true })}
+              ${pwCardHTML(c.card, { small: true, lazy: true })}
             </button>`).join("")}
         </div>
         <div class="pw-lib-foot">${esc(set.name)} · tap a card to read it</div>
@@ -7509,6 +7660,16 @@
     paPointerTapAt = performance.now();
     paTap(t.getAttribute("data-pa-tap"));
   });
+
+  /* The replay chart's scrubber. On the document, not on the card panel: the
+     same chart is drawn in three places — the live panel above the board, the
+     result screen and a saved match off the hub — and only two of them are
+     inside cardScroll. Move and up go on the window, because a drag that
+     leaves the plot is still the same drag. */
+  document.addEventListener("pointerdown", pwScrubDown);
+  window.addEventListener("pointermove", pwScrubMove, { passive: false });
+  window.addEventListener("pointerup", pwScrubUp);
+  window.addEventListener("pointercancel", pwScrubUp);
 
   function paTap(dir) {
     if (!pa) return;
@@ -13260,6 +13421,17 @@
   }
   const hdrFold = $("hdrFold");
   if (hdrFold) hdrFold.addEventListener("click", () => { headCollapsed = !headCollapsed; syncHead(); });
+  /* and the same reasoning one step out: a clip nobody is looking at is a
+     clip nobody should be decoding. Folded away was already covered; this is
+     the app in the background, or the screen locked. */
+  document.addEventListener("visibilitychange", () => {
+    const v = $("waveVideo");
+    if (!v) return;
+    if (document.hidden) { try { v.pause(); } catch (e) {} }
+    else if (!headCollapsed && v.querySelector("source")) {
+      const p = v.play(); if (p && p.catch) p.catch(() => {});
+    }
+  });
   $("btnSettings").addEventListener("click", () => togglePanel("settings"));
   $("btnProfile").addEventListener("click", () => { state.homeTab = "sections"; goHome(); });
   $("btnHeart").addEventListener("click", toggleLike);
@@ -13839,6 +14011,9 @@
        round, tapping the open one closes it, and opening another closes the
        first because only the selected round is ever rendered */
     else if (t.hasAttribute("data-pw-round")) {
+      /* the click at the end of a scrub is the drag's own shadow: the round
+         it lands on is already open, and toggling would shut it */
+      if (Date.now() - pwScrubbedAt < 400) return;
       const n = Number(t.getAttribute("data-pw-round"));
       pw.showRound = pw.showRound === n ? null : n;
       renderPointaeway();

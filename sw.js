@@ -3,8 +3,27 @@
  * deploys show up immediately; only falls back to cache when offline.
  * Heavy binary assets (images) are cache-first since they rarely change.
  */
-const CACHE = "learnaeway-v212";
+const CACHE = "learnaeway-v214";
 
+/* ---- two caches, on purpose ----
+ * CACHE is the code: HTML, CSS, JS, course data. Its name carries the
+ * deploy's number, so a new version drops the old copy and the next load
+ * fetches fresh — which is what network-first is for.
+ *
+ * ASSETS is the pictures, the clip and the icons, and its name does NOT
+ * carry the deploy's number. It used to: every version bump threw away every
+ * cached image, so an update cost the phone another twenty megabytes of art
+ * that had not changed since the last one. That is most of what "the app got
+ * slow" is, and it happened on every deploy.
+ *
+ * ==> So: bump ASSETS only when a file under /assets/ actually changes.
+ * Deploys that only touch code leave it alone, and a returning player pays
+ * for the code and nothing else.
+ */
+const ASSETS = "learnaeway-assets-v1";
+
+/* What is worth having before it is asked for. It is one list because it is
+   one decision; install sorts it into the two caches by path. */
 const SHELL = [
   "./",
   "./index.html",
@@ -93,10 +112,6 @@ const SHELL = [
   "./assets/nav-icons/icon-game-pickaeway@2x.png",
   "./assets/nav-icons/icon-game-pointaeway@2x.png",
   "./assets/nav-icons/icon-chevron-down@2x.png",
-  "./assets/desktop/bar@2x.png",
-  "./assets/desktop/square@2x.png",
-  "./assets/desktop/chart@2x.png",
-  "./assets/desktop/wide@2x.png",
   "./assets/dropdown/panel@2x.png",
   "./assets/dropdown/logo-box@2x.png",
   "./assets/dropdown/check-on@2x.png",
@@ -122,7 +137,16 @@ const SHELL = [
   "./assets/pwa/icon-512.png",
 ];
 
-/* assets/pointaeway/flank-bull.png and flank-bear.png leave this list with
+/* assets/desktop/ leaves this list for exactly the reason assets/landing/ is
+   absent below, and it is the most expensive instance of it: bar@2x,
+   square@2x, chart@2x and wide@2x are the desktop layout's four panel frames,
+   every one of them named only inside @media (min-width: 1200px), and
+   together they are 5.2MB. Every phone that installed this app was paying for
+   five megabytes of pictures its screen is too narrow to ever draw. They stay
+   on disk and /assets/ is cache-first, so a desktop visitor pays for each one
+   once, the first time it is shown.
+
+   assets/pointaeway/flank-bull.png and flank-bear.png leave this list with
    the same reasoning as info-bar below: the two animals that stood behind the
    match table are off the board, so nothing fetches them and every install was
    paying for them. The files stay on disk.
@@ -164,19 +188,34 @@ const SHELL = [
    and cache-first keeps each from the first time it is shown. Nobody who
    never opens Gameæway pays for any of them. */
 
+const CACHE_FIRST = /\/assets\//;
+
+/* The list above is one list because it is one decision — what is worth
+ * having before it is asked for — but the two halves of it live in different
+ * caches, for the reason at the top of this file. */
 self.addEventListener("install", (e) => {
-  e.waitUntil(caches.open(CACHE).then((c) => c.addAll(SHELL)).then(() => self.skipWaiting()));
+  const shell = SHELL.filter((u) => !CACHE_FIRST.test(u));
+  const art = SHELL.filter((u) => CACHE_FIRST.test(u));
+  e.waitUntil(Promise.all([
+    caches.open(CACHE).then((c) => c.addAll(shell)),
+    /* one at a time and only what is missing: addAll fetches every entry
+       whether the cache holds it or not, so an install that reused the asset
+       cache by name would still have paid for all of it over the wire. This
+       is the difference between an update costing a phone the code and an
+       update costing it the whole app again. */
+    caches.open(ASSETS).then((c) =>
+      Promise.all(art.map((u) => c.match(u).then((hit) => hit || c.add(u))))),
+  ]).then(() => self.skipWaiting()));
 });
 
 self.addEventListener("activate", (e) => {
   e.waitUntil(
     caches.keys()
-      .then((keys) => Promise.all(keys.filter((k) => k !== CACHE).map((k) => caches.delete(k))))
+      .then((keys) => Promise.all(
+        keys.filter((k) => k !== CACHE && k !== ASSETS).map((k) => caches.delete(k))))
       .then(() => self.clients.claim())
   );
 });
-
-const CACHE_FIRST = /\/assets\//;
 
 self.addEventListener("fetch", (e) => {
   if (e.request.method !== "GET") return;
@@ -186,7 +225,7 @@ self.addEventListener("fetch", (e) => {
   if (CACHE_FIRST.test(url.pathname)) {
     e.respondWith(
       caches.match(e.request).then((hit) => hit || fetch(e.request).then((res) => {
-        if (res.ok) caches.open(CACHE).then((c) => c.put(e.request, res.clone()));
+        if (res.ok) caches.open(ASSETS).then((c) => c.put(e.request, res.clone()));
         return res;
       }))
     );
