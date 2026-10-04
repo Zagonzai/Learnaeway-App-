@@ -83,6 +83,9 @@ button {
   border: none;
   cursor: pointer;
   -webkit-tap-highlight-color: transparent;
+  /* a tap is a tap: nothing here is double-tap-to-zoom, and waiting to find
+     out is the delay between pressing a button and the button answering */
+  touch-action: manipulation;
 }
 
 img { user-select: none; -webkit-user-drag: none; }
@@ -6334,6 +6337,60 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   -webkit-user-drag: none;
   user-select: none;
 }
+/* ---- .pw-cardfit: one card, the right shape, everywhere off the table ----
+   A card face is 2:3, and the only thing that was ever wrong with the pages
+   that show one was that they sized it from one axis. `height: 100%` on a
+   panel that grows — because the video header folded away, or the title bars
+   did — makes the card grow with it, and since its width follows its height
+   it leaves the panel sideways. The Library did the same thing the other way
+   round and stretched the picture to the cell.
+
+   So the shape is stated, not inferred, and the box is allowed to be smaller
+   than the space it is given in either direction: max-width and max-height
+   together mean the card takes the smaller of the two, which is the whole of
+   "fits inside its container, never clipped, never off-screen". object-fit
+   keeps the picture honest inside that box whatever the file's own pixels
+   are, and the aspect-ratio holds the space before the picture has loaded,
+   so nothing jumps when it does.
+
+   Used by: How to Play (the card pairs and the strength ladder), the Card
+   Library grid, the open card in Card Detail. Gameplay is not on this rule
+   and does not need to be — a hand is sized from --pw-card-h, a number, which
+   is why it was never the thing that stretched. */
+.pw-cardfit {
+  min-width: 0; min-height: 0;
+  display: flex; align-items: center; justify-content: center;
+  container-type: size;
+}
+/* First the floor, for an engine with no container units: the picture does
+   its own fitting and cannot leave the box, whatever shape the box took. */
+.pw-cardfit .pw-card {
+  flex: 0 1 auto;
+  width: auto; height: auto;
+  max-width: 100%; max-height: 100%;
+}
+.pw-cardfit .pw-card-art {
+  width: auto; height: auto;
+  max-width: 100%; max-height: 100%;
+  aspect-ratio: 2 / 3;
+  object-fit: contain;
+}
+/* Then the rule itself. A width that is the smaller of the room across and
+   the room down turned back into a width is the whole idea in one line, and
+   it needs the container's height, which is what the unit is for. The card
+   and its picture are then the same 2:3 rectangle rather than a picture
+   centred in a box of some other shape. */
+@supports (width: 1cqh) {
+  .pw-cardfit .pw-card {
+    width: min(100%, calc(100cqh * 2 / 3));
+    height: auto;
+    aspect-ratio: 2 / 3;
+  }
+  .pw-cardfit .pw-card-art { width: 100%; height: 100%; }
+}
+/* and the stand-in, when a picture will not load, is the same shape */
+.pw-cardfit .pw-card-alt { width: auto; height: auto; aspect-ratio: 2 / 3; max-height: 100%; }
+
 /* a name for the card if its picture will not load */
 .pw-card-alt {
   display: flex; align-items: center; justify-content: center;
@@ -7772,6 +7829,10 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 .pw-lib-tab.on.special { border-color: rgba(214,232,255,.65); }
 .pw-lib-tab:active { filter: brightness(1.3); }
 
+/* The grid takes the room it is given and hands each cell an equal share of
+   it; the card inside takes the smaller of that cell's two dimensions and
+   keeps its shape. A taller panel therefore means more space around the
+   cards, not taller cards — which is the whole of the stretching bug. */
 .pw-lib-grid {
   flex: 1 1 auto;
   min-height: 0;
@@ -7780,17 +7841,38 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   grid-auto-rows: 1fr;
   gap: 7px;
   padding: 0 2px;
-  align-content: stretch;
+  align-content: center;
+  justify-content: center;
+}
+/* The specials are a colour per column, so the grid fills downwards and the
+   cells are in the order the cards are read in — which is the order the open
+   card steps through and the order its dots count in. One order, one array,
+   three places reading it. */
+.pw-lib-grid.special {
+  grid-auto-flow: column;
+  grid-template-rows: repeat(var(--pw-lg-rows, 3), 1fr);
+  grid-auto-columns: 1fr;
+}
+/* and the surplus goes around the grid rather than between its rows: the
+   cards are as tall as their own width allows, the grid is no taller than
+   its cards, and whatever height is left over is margin above and below.
+   The height a row wants is the column's width in 2:3, which is what the
+   container unit is here to say. */
+@supports (height: 1cqw) {
+  .pw-lib { container-type: inline-size; }
+  .pw-lib-grid {
+    --pw-lg-cell: calc((100cqw - 4px - (var(--pw-lg-cols, 3) - 1) * 7px) / var(--pw-lg-cols, 3));
+    max-height: calc(var(--pw-lg-cell) * 1.5 * var(--pw-lg-rows, 2)
+                     + (var(--pw-lg-rows, 2) - 1) * 7px);
+    margin-block: auto;
+  }
 }
 .pw-lib-cell {
   min-height: 0;
-  display: flex; align-items: center; justify-content: center;
   padding: 0;
   background: none;
   border: 0;
 }
-.pw-lib-cell .pw-card { height: 100%; width: auto; max-width: 100%; }
-.pw-lib-cell .pw-card-art { height: 100%; width: auto; max-width: 100%; }
 .pw-lib-cell:active { filter: brightness(1.3); transform: scale(.96); }
 .pw-lib-foot {
   flex: 0 0 auto;
@@ -7806,9 +7888,11 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   display: flex; align-items: center; justify-content: center; gap: 6px;
   padding: 2px;
 }
-.pw-lib-bigcard { height: 100%; display: flex; align-items: center; justify-content: center; }
-.pw-lib-bigcard .pw-card { height: 100%; width: auto; }
-.pw-lib-bigcard .pw-card-art { height: 100%; width: auto; }
+/* The open card is centred in the panel, not in whatever is left over after
+   the two arrows: the arrows take a fixed column each side and the card has
+   the middle, so it sits on the panel's centre line at every size and in
+   every panel state. */
+.pw-lib-bigcard { flex: 1 1 auto; min-width: 0; height: 100%; }
 .pw-lib-step {
   flex: 0 0 auto;
   width: 34px; height: 54px;
@@ -7891,14 +7975,19 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 }
 .pw-ht-link { margin-top: 12px; justify-content: center; }
 
+/* A pair of cards gets half the width each and all of the height, and each
+   card takes the smaller of the two — so the pair is centred, inside the
+   panel and the same shape whether the header above it is open or folded. */
 .pw-ht-cards {
   display: flex; align-items: center; justify-content: center; gap: 12px;
-  height: 100%;
+  width: 100%; height: 100%;
   min-height: 0;
 }
-.pw-ht-cards .pw-card, .pw-ht-cards .pw-back { height: 100%; width: auto; max-height: 100%; }
-.pw-ht-cards .pw-card-art { height: 100%; width: auto; }
-.pw-ht-cards.win .pw-card:first-child { filter: drop-shadow(0 0 14px rgba(0,220,160,.6)); }
+.pw-ht-cards > .pw-cardfit { flex: 1 1 0; min-width: 0; height: 100%; }
+/* the face-down pair on page 2 is drawn rather than photographed, so it is
+   sized the same way by hand */
+.pw-ht-cards .pw-back { height: auto; width: auto; max-width: 100%; max-height: 100%; aspect-ratio: 2 / 3; }
+.pw-ht-cards.win .pw-cardfit:first-child .pw-card { filter: drop-shadow(0 0 14px rgba(0,220,160,.6)); }
 .pw-ht-tags { display: flex; gap: 58px; font-size: calc(10px * var(--fs)); font-weight: 800; letter-spacing: .14em; }
 .pw-ht-tags .bull { color: var(--pw-bull); }
 .pw-ht-tags .bear { color: var(--pw-bear); }
@@ -7937,28 +8026,34 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 .pw-ht-stack.bull { border-color: rgba(0,220,160,.6); }
 .pw-ht-stack.bear { border-color: rgba(255,77,109,.6); }
 
+/* the strength ladder: three across, two down, strongest first */
 .pw-ht-ladder {
-  display: flex; flex-direction: column; gap: 3px;
+  display: grid;
+  grid-template-columns: repeat(3, 1fr);
+  grid-template-rows: repeat(2, 1fr);
+  gap: 4px 6px;
   width: 100%; height: 100%; min-height: 0;
-  padding: 0 6px;
+  padding: 0 2px;
 }
-.pw-ht-rung {
-  flex: 1 1 0;
-  min-height: 0;
-  display: flex; align-items: center; gap: 9px;
+/* the card takes the room the row has and the name sits directly under it,
+   not at the far bottom of the cell */
+.pw-ht-tier {
+  min-height: 0; min-width: 0;
+  display: grid; grid-template-rows: 1fr auto;
+  gap: 3px;
 }
-.pw-ht-rung .pw-card { height: 100%; width: auto; }
-.pw-ht-rung .pw-card-art { height: 100%; width: auto; }
-.pw-ht-rung b {
-  flex: 1 1 auto; min-width: 0;
-  text-align: left;
-  font-size: calc(11px * var(--fs)); font-weight: 700; color: #C7D9EF;
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+.pw-ht-tier .pw-cardfit { min-height: 0; width: 100%; align-items: flex-end; }
+/* the names are written out: "Mar…" on a page about which card beats which
+   is the one abbreviation that cannot be made */
+.pw-ht-tname {
+  display: block;
+  text-align: center;
+  font-size: calc(9.5px * var(--fs)); line-height: 1.2;
 }
-.pw-ht-rung i {
-  flex: 0 0 auto;
+.pw-ht-tname b { font-weight: 700; color: #C7D9EF; }
+.pw-ht-tname i {
   font-style: normal;
-  font-size: calc(14px * var(--fs)); font-weight: 800; color: var(--pw-bull);
+  font-size: calc(11px * var(--fs)); font-weight: 800; color: var(--pw-bull);
 }
 
 .pw-ht-nav {
@@ -8363,6 +8458,9 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 .pw-chart-track::-webkit-scrollbar { display: none; }
 .pw-chart-plot {
   position: relative;
+  /* the chart area is scrubbed, so a finger travelling across it belongs to
+     the chart: no panning, no page swipe, no double-tap zoom under it */
+  touch-action: none;
   /* no preferred height of its own: the plot is whatever the chart has left
      after the chip row, and the floor below is how far it may give when a
      reveal opens underneath */
@@ -8393,7 +8491,7 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   width: 100%;
 }
 .pw-chart-bars { position: relative; height: 100%; }
-.pw-chip-row { flex: 0 0 var(--pw-row-h); padding: 6px 8px 0; align-items: stretch; }
+.pw-chip-row { flex: 0 0 var(--pw-row-h); padding: 6px 8px 0; align-items: stretch; touch-action: none; }
 /* The one number both rows are laid out on. They compress rather than scroll:
    the whole point of the chart is the whole match at a glance, and a long one
    pushed half of itself off the edge. The columns get thin instead, and the
