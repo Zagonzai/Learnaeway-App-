@@ -7046,8 +7046,7 @@
         <div class="pw-ht-cards two">
           ${pwFitHTML(pwSpecCard("Volatility Spike"))}
           ${pwFitHTML(pwSpecCard("Market News"))}
-        </div>
-        <div class="pw-ht-cap"></div>`,
+        </div>`,
         /* tightened from the first draft of this page: it is the only page
            carrying two rules and a button, and every line of it is a line the
            two cards above do not get on a short screen */
