@@ -6457,7 +6457,11 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   width: auto; height: auto;
   max-width: 100%; max-height: 100%;
 }
-.pw-cardfit .pw-card-art {
+/* .pw-back is the face-down card, which is a picture rather than a frame with
+   a picture in it — so it is both the box and the art, and it takes both
+   halves of this rule. */
+.pw-cardfit .pw-card-art,
+.pw-cardfit > .pw-back {
   width: auto; height: auto;
   max-width: 100%; max-height: 100%;
   aspect-ratio: 2 / 3;
@@ -6469,7 +6473,8 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
    and its picture are then the same 2:3 rectangle rather than a picture
    centred in a box of some other shape. */
 @supports (width: 1cqh) {
-  .pw-cardfit .pw-card {
+  .pw-cardfit .pw-card,
+  .pw-cardfit > .pw-back {
     width: min(100%, calc(100cqh * 2 / 3));
     height: auto;
     aspect-ratio: 2 / 3;
@@ -6478,6 +6483,16 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 }
 /* and the stand-in, when a picture will not load, is the same shape */
 .pw-cardfit .pw-card-alt { width: auto; height: auto; aspect-ratio: 2 / 3; max-height: 100%; }
+/* A face that has not arrived yet is an empty rectangle the right size, with
+   the frame drawn on it, rather than a hole where a card should be. It takes
+   no space of its own and nothing moves when the picture lands — the box is
+   already the box. */
+.pw-cardfit .pw-card-art:not(.ready),
+.pw-cardfit > .pw-back:not(.ready) {
+  border-radius: 10px;
+  background: rgba(8,14,32,.55);
+  box-shadow: inset 0 0 0 1px rgba(61,223,255,.22);
+}
 
 /* a name for the card if its picture will not load */
 .pw-card-alt {
@@ -8040,10 +8055,15 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   letter-spacing: .18em; text-transform: uppercase;
   color: #7FA8CC;
 }
+/* The title and the copy are measured against the column they are drawn in,
+   the same --vh1 the hub and the entry screens use: on a tall phone they are
+   what they were, and on a short one they give their pixels to the cards
+   rather than squeezing them to thumbnails. */
 .pw-ht-title {
   flex: 0 0 auto;
-  margin: 4px 0 10px;
-  font-size: calc(19px * var(--fs)); font-weight: 800;
+  margin: 4px 0 clamp(4px, calc(1.2 * var(--vh1)), 10px);
+  font-size: calc(clamp(15px, calc(2.25 * var(--vh1)), 19px) * var(--fs));
+  font-weight: 800;
   letter-spacing: .02em;
   color: var(--text);
 }
@@ -8056,26 +8076,69 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 }
 .pw-ht-text {
   flex: 0 0 auto;
-  margin: 12px 6px 0;
-  font-size: calc(12.5px * var(--fs)); line-height: 1.55;
+  margin: clamp(6px, calc(1.4 * var(--vh1)), 12px) 6px 0;
+  font-size: calc(clamp(10.5px, calc(1.5 * var(--vh1)), 12.5px) * var(--fs));
+  line-height: 1.5;
   color: #C7D9EF;
   max-width: 38ch;
 }
-.pw-ht-link { margin-top: 12px; justify-content: center; }
+/* The Card Library link on page 8. .pw-over-pill is flex: 1 1 0 because the
+   row it was written for lays two of them out side by side; as a child of
+   this column that meant it grew to fill whatever height was left, which is
+   how an ordinary pill became a tall black box and the two specials above it
+   became thumbnails. It is a pill of a pill's height here, and the height it
+   is not taking goes to the pair. */
+/* Two classes, same specificity, and .pw-over-pill is written later in this
+   file — so it has to be beaten on its own terms rather than by coming
+   after it. */
+.pw-over-pill.pw-ht-link {
+  flex: 0 0 auto;
+  align-self: center;
+  width: auto;
+  height: clamp(34px, calc(4.6 * var(--vh1)), 40px);
+  padding: 0 16px;
+  margin-top: clamp(6px, calc(1.4 * var(--vh1)), 12px);
+  justify-content: center;
+}
 
-/* A pair of cards gets half the width each and all of the height, and each
-   card takes the smaller of the two — so the pair is centred, inside the
-   panel and the same shape whether the header above it is open or folded. */
+/* ---- .pw-ht-cards: the pair, and the only pair ----
+   Five of the eight pages show two cards side by side — the two face-down
+   backs on Lock In, the three fought rounds, and the two specials on the last
+   page — and they are all this one layout. Each side is half the width and
+   all of the height, each card takes the smaller of the two through
+   .pw-cardfit, and the gap between them is one number written once. The
+   backs on page 2 went through none of this before and ran off both edges of
+   the panel, which is what happens when the one shared rule has an exception
+   in it. */
 .pw-ht-cards {
-  display: flex; align-items: center; justify-content: center; gap: 12px;
+  display: flex; align-items: center; justify-content: center;
+  gap: var(--ht-pair-gap, 12px);
   width: 100%; height: 100%;
   min-height: 0;
 }
-.pw-ht-cards > .pw-cardfit { flex: 1 1 0; min-width: 0; height: 100%; }
-/* the face-down pair on page 2 is drawn rather than photographed, so it is
-   sized the same way by hand */
-.pw-ht-cards .pw-back { height: auto; width: auto; max-width: 100%; max-height: 100%; aspect-ratio: 2 / 3; }
+.pw-ht-cards > * { flex: 1 1 0; min-width: 0; height: 100%; }
+/* Half the width each is right only while the cards are as wide as their
+   half; on a short panel they are sized by height instead, and two cards
+   centred in two half-width columns stand apart with a hole between them —
+   which is what "spaced far apart" on page 8 was. So each side is only as
+   wide as the card it holds, and the gap between them is the gap. */
+@supports (width: 1cqh) {
+  .pw-ht-cards { container-type: size; }
+  .pw-ht-cards > * {
+    flex: 0 1 auto;
+    width: min(calc(50% - var(--ht-pair-gap, 12px) / 2), calc(100cqh * 2 / 3));
+  }
+}
 .pw-ht-cards.win .pw-cardfit:first-child .pw-card { filter: drop-shadow(0 0 14px rgba(0,220,160,.6)); }
+/* The line under the pair — BULL / BEAR, "+5 → the Print", "The Print does
+   not move" — and on the two pages that have nothing to say there, the space
+   it would have taken. Reserved on all five, so the cards above it are the
+   same size whether the page has a caption or not. */
+.pw-ht-cap {
+  flex: 0 0 auto;
+  min-height: clamp(13px, calc(1.9 * var(--vh1)), 17px);
+  display: flex; align-items: center; justify-content: center;
+}
 .pw-ht-tags { display: flex; gap: 58px; font-size: calc(10px * var(--fs)); font-weight: 800; letter-spacing: .14em; }
 .pw-ht-tags .bull { color: var(--pw-bull); }
 .pw-ht-tags .bear { color: var(--pw-bear); }
@@ -8085,26 +8148,40 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 }
 .pw-ht-delta.flat { color: var(--pw-muted); font-weight: 700; }
 
-.pw-ht-goal { display: flex; align-items: center; justify-content: center; gap: 16px; }
+/* The two pages that draw a diagram rather than a card — the Print on page 1
+   and the two decks on page 6 — were fixed pixel sizes sitting in the middle
+   of whatever space the panel had, which on a folded header is most of the
+   screen. They scale with the box now, the way the cards do. */
+.pw-ht-art { container-type: size; }
+.pw-ht-goal {
+  display: flex; align-items: center; justify-content: center;
+  gap: clamp(12px, 5cqw, 30px);
+}
 .pw-ht-arrow { display: flex; flex-direction: column; align-items: center; gap: 3px; }
-.pw-ht-arrow b { font-size: calc(17px * var(--fs)); font-weight: 800; }
+.pw-ht-arrow b { font-size: calc(clamp(15px, 4cqh, 28px) * var(--fs)); font-weight: 800; }
 .pw-ht-arrow span { font-size: calc(9.5px * var(--fs)); font-weight: 800; letter-spacing: .16em; }
 .pw-ht-arrow.bull, .pw-ht-arrow.bull b, .pw-ht-arrow.bull span { color: var(--pw-bull); }
 .pw-ht-arrow.bear, .pw-ht-arrow.bear b, .pw-ht-arrow.bear span { color: var(--pw-bear); }
 .pw-ht-print {
   display: flex; flex-direction: column; align-items: center; gap: 2px;
-  padding: 12px 18px;
+  padding: clamp(10px, 3cqh, 26px) clamp(14px, 5cqw, 34px);
   border: 1px solid var(--pw-line); border-radius: 13px;
   background: rgba(5,9,22,.75);
 }
-.pw-ht-print i { font-style: normal; font-size: calc(30px * var(--fs)); font-weight: 800; color: var(--text); }
+.pw-ht-print i {
+  font-style: normal;
+  font-size: calc(clamp(26px, 7cqh, 54px) * var(--fs));
+  font-weight: 800; color: var(--text);
+}
 .pw-ht-print span { font-size: calc(8.5px * var(--fs)); font-weight: 800; letter-spacing: .16em; color: var(--pw-muted); }
 
-.pw-ht-piles { display: flex; gap: 26px; align-items: flex-end; }
+.pw-ht-piles { display: flex; gap: clamp(16px, 7cqw, 44px); align-items: flex-end; }
 .pw-ht-pile { display: flex; flex-direction: column; align-items: center; gap: 6px; }
 .pw-ht-pile i { font-style: normal; font-size: calc(10px * var(--fs)); color: var(--pw-muted); }
 .pw-ht-stack {
-  width: 54px; height: 80px;
+  height: clamp(80px, 52cqh, 300px);
+  width: auto;
+  aspect-ratio: 2 / 3;
   border-radius: 9px;
   border: 1px solid rgba(214,232,255,.4);
   background: rgba(8,14,32,.9);
@@ -8277,6 +8354,21 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   height: 54px;
   padding: 0 4px 0 2px;
   text-align: left;
+  /* ==> What a pill looks like when its picture does not arrive.
+     These are nine-slices: border-style: solid plus a border-image. If the
+     image fails — one flaky fetch is enough, and /assets/ is cache-first with
+     nothing to retry it — the border falls back to a solid one in the
+     inherited colour, which is the text's near-white. That is a 43px white
+     frame around a dark label, which is exactly what Create Match turned into
+     on the phone and is reproduced here by serving that one file a 503.
+
+     So the border has no colour of its own to fall back to, and underneath
+     the art sits a painted pill of the same shape in the same hue. With the
+     picture there it is covered by it; without one, the button is still a
+     button in the right colour. */
+  border-radius: 999px;
+  /* and no colour of its own to fall back to */
+  border-color: transparent;
   border-style: solid;
   /* the left end carries the glyph the artwork drew, the right end the
      rounded cap and its own chevron */
@@ -8287,6 +8379,30 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 }
 .pw-hub-pill.start { border-image-source: url("../assets/pointaeway/hub/pill-start.png"); }
 .pw-hub-pill.find  { border-image-source: url("../assets/pointaeway/hub/pill-find.png"); }
+
+/* The painted pill, for a session where the art did not arrive. app.js asks
+   for the two files itself at boot and sets this class if either refuses, so
+   nothing here is paid for by the normal case: with the pictures present not
+   one of these declarations exists. The four buttons then read as one family
+   — same shape, same glow, the row above in its own colour and the row below
+   in the quieter one. */
+.no-pill-art .pw-hub-pill {
+  border-width: 2px;
+  border-image: none;
+  border-color: rgba(61,223,255,.45);
+  background: linear-gradient(100deg, rgba(61,223,255,.22), rgba(7,13,30,.94) 46%);
+  padding: 0 14px;
+  box-shadow: 0 0 14px rgba(61,223,255,.22);
+}
+.no-pill-art .pw-hub-pill.find,
+.no-pill-art .pw-hub-pill.chal {
+  border-color: rgba(255,61,154,.5);
+  background: linear-gradient(100deg, rgba(255,61,154,.24), rgba(7,13,30,.94) 46%);
+  box-shadow: 0 0 14px rgba(255,61,154,.22);
+}
+.no-pill-art .pw-hub-pill.mini {
+  background: linear-gradient(100deg, rgba(61,223,255,.12), rgba(7,13,30,.94) 55%);
+}
 .pw-hub-pill:active { filter: brightness(1.3); transform: scale(.985); }
 .pw-hub-pill-t {
   font-size: calc(12.5px * var(--fs));

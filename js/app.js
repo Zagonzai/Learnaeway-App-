@@ -4380,7 +4380,7 @@
     return `<${tag} class="pw-card ${sideCls}${size}${anim}${o.dim ? " dim" : ""}"${attrs}${note}>
       ${art
         ? `<img class="pw-card-art" src="${art}" alt="${esc(pwCardAlt(card))}${o.note ? " " + esc(o.note) : ""}"
-                draggable="false" decoding="async"${o.lazy ? ` loading="lazy"` : ""}>`
+                draggable="false" decoding="async">`
         : `<span class="pw-card-alt">${esc(card.type)}</span>`}
       ${left != null
         ? `<span class="pw-card-left" title="${left} of this candle left in your deck"
@@ -4394,6 +4394,15 @@
      only two things that decide it: which side the player took and who won.
      The list is capped; the counters are not — see the note in load(). */
   const PW_HISTORY_MAX = 60;
+
+  /* ---- how many matches the hub lists ----
+     It was three, chosen when Play Local sat under the box and the room was
+     tight. With that button gone the box grew and three rows left half of it
+     empty, so the number is measured instead of picked: the list is laid out,
+     its height is divided by a row, and if that is not what was drawn the hub
+     is drawn once more with the right number. It settles in one step, because
+     the box's height comes from the column it is in and not from its rows. */
+  let pwHistRows = 6;
 
   /* ---- Play Local, off the hub ----
      Asked for as "hide it, keep the code", so this is the whole of it: the
@@ -4586,7 +4595,7 @@
     /* Three rather than five, since the two reference buttons went in under
        the match row: the hub has to fit one viewport and the history is the
        part of it that can give. View All still opens the whole record. */
-    const shown = pw.hubAll ? all : all.slice(0, 3);
+    const shown = pw.hubAll ? all : all.slice(0, pwHistRows);
     return `
       <div class="pw-hub">
         ${/* The banner IS the header: the title and the strapline that used to
@@ -4619,7 +4628,7 @@
         <div class="pw-hist">
           <div class="pw-hist-head">
             <span class="pw-hist-title">Match History</span>
-            ${all.length > 3 ? `
+            ${all.length > pwHistRows ? `
             <button type="button" class="pw-hist-all" data-pw-hub-all>
               <span>${pw.hubAll ? "Show Less" : "View All"}</span>
               <img src="${PW_HUB}ico-chevron.png" alt="">
@@ -6587,10 +6596,14 @@
   /* The card back is finished artwork now — frame, character and ground all
      in the picture — so nothing is drawn around it or over it. Each side has
      its own, and a seat shows the back of whoever sits in it. */
+  const pwBackFile = (side) =>
+    `assets/pointaeway/back-${side === "bear" ? "bear" : "bull"}.webp`;
   function pwBackHTML(side) {
     const sd = side === "bear" ? "bear" : "bull";
-    return `<img class="pw-back ${sd}" src="assets/pointaeway/back-${sd}.png"
-                 alt="" draggable="false">`;
+    /* WebP, and padded to the same 2:3 as the faces: these two were 400KB
+       each as PNGs, on a screen that shows both of them at once. */
+    return `<img class="pw-back ${sd}" src="${pwBackFile(sd)}"
+                 alt="" draggable="false" decoding="async">`;
   }
 
   /* The meter, upright: +25 at the top, −25 at the bottom, the print in the
@@ -6861,7 +6874,101 @@
      the Library's grid, the open card — so there is one place to change if
      the shape of a card ever changes. */
   const pwFitHTML = (card, opts) =>
-    `<span class="pw-cardfit">${pwCardHTML(card, Object.assign({ lazy: true }, opts))}</span>`;
+    `<span class="pw-cardfit">${pwCardHTML(card, opts || {})}</span>`;
+
+  /* ---- the faces, before the screen that needs them ----
+     loading="lazy" was wrong here and it cost a card: inside a pager, the
+     page being drawn is new DOM, and an engine is entitled to decide a lazy
+     image in it is not needed yet — which is how page 4 appeared with one
+     card on it. The pager and the Library's open tab load eagerly now, and
+     the whole set is fetched and decoded the moment either screen is opened,
+     so a card is never the thing being waited for. It is twenty-six small
+     WebPs, about a megabyte, and the service worker keeps them.
+
+     Also started once, quietly, a few seconds after the hub settles: by the
+     time anybody taps How to Play it is already done. */
+  const pwArtDone = Object.create(null);
+  function pwPreloadArt() {
+    const urls = [];
+    ["bull", "bear"].forEach((sd) => {
+      pwTiers(sd).forEach((t) => urls.push(pwArtFile({ side: sd, kind: "tier", type: t.type })));
+      urls.push(pwBackFile(sd));
+    });
+    PW_SPECIALS.forEach((s) => urls.push(pwArtFile({ side: "special", type: s.type })));
+    urls.filter(Boolean).forEach((u) => {
+      if (pwArtDone[u]) return;
+      pwArtDone[u] = true;
+      const img = new Image();
+      img.decoding = "async";
+      img.src = u;
+      /* decode as well as fetch: a fetched-but-undecoded picture still has a
+         frame to wait for, and that frame is the one the card is missing in */
+      if (img.decode) img.decode().catch(() => {});
+    });
+  }
+  /* and the frame comes off the moment the picture is there. load does not
+     bubble, so this listens on the way down, once, for every card drawn
+     anywhere in the app. */
+  document.addEventListener("load", (e) => {
+    const el = e.target;
+    if (el && el.classList && (el.classList.contains("pw-card-art") || el.classList.contains("pw-back"))) {
+      el.classList.add("ready");
+    }
+  }, true);
+
+  /* ---- the two pills on the hub ----
+     Start Match and Create Match are nine-slices: border-style: solid plus a
+     border-image. A border-image that does not load leaves the border to be
+     drawn solid in the inherited colour, which here is the text's near-white
+     — a 43px white frame round a dark label, which is what Create Match
+     turned into on the phone. Nothing in CSS can ask whether a border-image
+     arrived, so this asks for the two files itself: if either refuses, the
+     stylesheet's painted version takes over, and asking also warms the cache
+     the stylesheet is about to read. */
+  /* The measurement behind pwHistRows, on the hub it has just drawn.
+     Deferred a frame, and taken again a moment later: --vhpx is measured at
+     boot and again as the standalone view settles, so the first layout a
+     freshly opened hub gets is not always the one it keeps. Both passes are
+     no-ops when the answer has not changed. */
+  function pwMeasureHistRows() {
+    if (!pw || pw.phase !== "hub" || pw.hubAll) return;
+    const list = cardScroll.querySelector(".pw-hist-list");
+    const row = list && list.querySelector(".pw-hrow");
+    if (!row) return;
+    const gap = 4;                                   // .pw-hist-list's own gap
+    const rh = row.getBoundingClientRect().height + gap;
+    if (rh <= gap) return;
+    /* rounded rather than floored: the box is a fixed height whatever goes
+       in it, so stopping a row short of filling it leaves exactly the empty
+       strip this is here to remove. Half a row over, the list scrolls by a
+       few pixels, which it is already built to do. */
+    const fits = Math.max(1, Math.round((list.clientHeight + gap) / rh));
+    if (fits !== pwHistRows) { pwHistRows = fits; renderPointaeway(); }
+  }
+  function pwFitHistRows() {
+    requestAnimationFrame(pwMeasureHistRows);
+    setTimeout(pwMeasureHistRows, 400);
+  }
+  window.addEventListener("resize", () => {
+    if (pw && pw.phase === "hub") pwFitHistRows();
+  });
+
+  function pwGuardPillArt() {
+    ["pill-start", "pill-find"].forEach((n) => {
+      const img = new Image();
+      img.onerror = () => document.documentElement.classList.add("no-pill-art");
+      img.src = `assets/pointaeway/hub/${n}.png`;
+    });
+  }
+
+  let pwArtIdle = false;
+  function pwPreloadArtSoon() {
+    if (pwArtIdle) return;
+    pwArtIdle = true;
+    const go = () => pwPreloadArt();
+    if (window.requestIdleCallback) requestIdleCallback(go, { timeout: 6000 });
+    else setTimeout(go, 3000);
+  }
 
   function pwHowToPages() {
     const t = pwTarget();
@@ -6876,16 +6983,21 @@
 
       { title: "Lock In", body: `
         <div class="pw-ht-cards two">
-          ${pwBackHTML("bull")}${pwBackHTML("bear")}
+          <span class="pw-cardfit">${pwBackHTML("bull")}</span>
+          <span class="pw-cardfit">${pwBackHTML("bear")}</span>
         </div>
-        <div class="pw-ht-tags"><span class="bull">BULL</span><span class="bear">BEAR</span></div>`,
+        <div class="pw-ht-cap pw-ht-tags"><span class="bull">BULL</span><span class="bear">BEAR</span></div>`,
         text: "Both players pick one card from their hand and lock it in face-down." },
 
       { title: "Reveal", body: `
         <div class="pw-ht-cards two">
           ${pwFitHTML(pwTierCard("bull", 4))}
           ${pwFitHTML(pwTierCard("bear", 2))}
-        </div>`,
+        </div>
+        ${/* the caption slot every pair page carries, empty here: it is what
+              keeps the cards the same size on a page with a line under them
+              and a page without one */""}
+        <div class="pw-ht-cap"></div>`,
         text: "Both cards are revealed at the same time." },
 
       { title: "Win the Round", body: `
@@ -6893,7 +7005,7 @@
           ${pwFitHTML(pwTierCard("bull", 5))}
           ${pwFitHTML(pwTierCard("bear", 2))}
         </div>
-        <div class="pw-ht-delta bull">+5 → the Print</div>`,
+        <div class="pw-ht-cap pw-ht-delta bull">+5 → the Print</div>`,
         text: "The stronger card wins the round and pushes the Print its full strength toward its side." },
 
       { title: "If It Ties", body: `
@@ -6901,7 +7013,7 @@
           ${pwFitHTML(pwTierCard("bull", 3))}
           ${pwFitHTML(pwTierCard("bear", 3))}
         </div>
-        <div class="pw-ht-delta flat">The Print does not move</div>`,
+        <div class="pw-ht-cap pw-ht-delta flat">The Print does not move</div>`,
         text: "If the cards tie, the Print does not move and both cards go to the discard pile." },
 
       { title: "Draw a New Card", body: `
@@ -6934,8 +7046,12 @@
         <div class="pw-ht-cards two">
           ${pwFitHTML(pwSpecCard("Volatility Spike"))}
           ${pwFitHTML(pwSpecCard("Market News"))}
-        </div>`,
-        text: "Special cards bend the rules, so read each card before you play it. If a player has no point cards left in their hand or deck, the match ends, and whichever side the Print is leaning toward wins.",
+        </div>
+        <div class="pw-ht-cap"></div>`,
+        /* tightened from the first draft of this page: it is the only page
+           carrying two rules and a button, and every line of it is a line the
+           two cards above do not get on a short screen */
+        text: "Special cards bend the rules, so read each one before you play it. The match ends when a player has no point cards left in hand or deck, and the Print decides it.",
         link: true },
     ];
   }
@@ -7069,7 +7185,7 @@
           ${cards.map((c, n) => `
             <button type="button" class="pw-lib-cell pw-cardfit" data-pw-lib-card="${n}"
                     aria-label="${esc(c.name)}, ${esc(c.meta)}">
-              ${pwCardHTML(c.card, { small: true, lazy: true })}
+              ${pwCardHTML(c.card, { small: true })}
             </button>`).join("")}
         </div>
         <div class="pw-lib-foot">${esc(set.name)} · tap a card to read it</div>
@@ -7092,6 +7208,11 @@
       cardScroll.classList.add("pw-fixed");
       cardScroll.innerHTML = pwHubHTML();
       cardScroll.scrollTop = 0;
+      /* the two reference screens are one tap from here, so their faces are
+         fetched while the hub is being looked at rather than when it is */
+      pwPreloadArtSoon();
+      pwGuardPillArt();
+      pwFitHistRows();
       return;
     }
     /* The one screen here that is allowed to be longer than a view: ten wild
@@ -13865,6 +13986,7 @@
        the picker exactly as it was, because nothing about the picker is
        rebuilt — only the phase moves. */
     else if (t.hasAttribute("data-pw-library")) {
+      pwPreloadArt();
       pw.phase = "library"; pw.libSet = "bull"; pw.libCard = null;
       pw.libFrom = t.getAttribute("data-pw-library") || "setup";
       renderPointaeway();
@@ -13884,7 +14006,11 @@
     else if (t.hasAttribute("data-pw-lib-card")) pwLibOpenCard(Number(t.getAttribute("data-pw-lib-card")));
     else if (t.hasAttribute("data-pw-lib-close")) { pw.libCard = null; renderPointaeway(); }
     else if (t.hasAttribute("data-pw-lib-step")) pwLibStep(Number(t.getAttribute("data-pw-lib-step")));
-    else if (t.hasAttribute("data-pw-howto")) { pw.phase = "howto"; pw.htPage = 0; renderPointaeway(); }
+    else if (t.hasAttribute("data-pw-howto")) {
+      /* every page's faces, fetched and decoded before the first one is drawn */
+      pwPreloadArt();
+      pw.phase = "howto"; pw.htPage = 0; renderPointaeway();
+    }
     else if (t.hasAttribute("data-pw-ht-close")) { pw.phase = "hub"; renderPointaeway(); }
     else if (t.hasAttribute("data-pw-ht-step")) pwHowToStep(Number(t.getAttribute("data-pw-ht-step")));
     else if (t.hasAttribute("data-pw-ht-go")) { pw.htPage = Number(t.getAttribute("data-pw-ht-go")); renderPointaeway(); }
