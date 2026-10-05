@@ -3701,6 +3701,11 @@
       showMatch: false,     // the chart, in the result screen's own slot
       showRound: null,      // which round's reveal is open under the row
       hubAll: false,        // the whole match history rather than the last three
+      /* the performance chart, in the Match History box. `head` is what the
+         video header and the title bars were doing before it opened, so that
+         closing it puts them back the way they were rather than the way the
+         chart left them. */
+      perf: { on: false, side: "all", opp: "all", from: 0, count: 0, sel: null },
       online: null,         // the live 1v1, when one is being found or played
       discipline: null,     // a peek in progress: the Discipline card and theirs
       tp: null,             // a Take Profit waiting on the double-up answer
@@ -4589,6 +4594,391 @@
       </div>`;
   }
 
+  /* ==================== the performance chart ====================
+     Every finished match is one candle on the player's own chart, and the
+     chart is of the player rather than of the market: a Bear who wins by ten
+     has gone UP ten. The record already stores it that way — pwRecordMatch
+     writes `pts` flipped for a Bear — and the rounds inside the replay are
+     stored the way the board drew them, so those are the ones that have to be
+     turned around here.
+
+     Where the round-by-round numbers come from: every match row carries
+     `chart`, the encoded replay, and each entry in it has the print at the
+     open and the close of that round (`o` and `c`). Reading the closes in
+     order gives the whole walk of the match, and with the sign flipped for a
+     Bear it is the walk from the player's side. The high and the low of the
+     candle are the best and worst that walk ever got to, including the 0 it
+     started at — which is what makes `high >= max(open, close)` true rather
+     than hoped for.
+
+     A worked example, the brief's: a Bear two matches in, opening at +30,
+     who goes 15 the wrong way and comes back to win by 10. The stored print
+     runs 0, +9, +15, +4, −10 (positive is Bull's way). From the Bear's side
+     that is 0, −9, −15, −4, +10. So open 30, close 40, high 40, low 15 — a
+     green candle with a long lower wick and no upper one.
+
+     Older matches, recorded before replays were stored, keep their body: open
+     to close, no wicks. They are not dropped. */
+  function pwMatchWalk(m) {
+    /* the print after each round, from this player's side */
+    if (!Array.isArray(m && m.chart) || !m.chart.length) return null;
+    const sign = m.side === "bear" ? -1 : 1;
+    const out = [0];
+    m.chart.forEach((e) => {
+      const v = Number(e && e.c);
+      if (Number.isFinite(v)) out.push(sign * v);
+    });
+    return out.length > 1 ? out : null;
+  }
+
+  /* one candle, given where the last one closed */
+  function pwCandleOf(m, open) {
+    const pts = Number(m.pts) || 0;
+    const close = open + pts;
+    const walk = pwMatchWalk(m);
+    const hi = walk ? open + Math.max.apply(null, walk) : Math.max(open, close);
+    const lo = walk ? open + Math.min.apply(null, walk) : Math.min(open, close);
+    return {
+      t: m.t, side: m.side, opp: m.opp || "computer", result: m.result, pts,
+      o: open, c: close,
+      /* belt and braces: a replay that disagrees with the scoreline — an
+         online match whose last round was never written — still may not
+         produce a wick that is inside its own body */
+      h: Math.max(hi, open, close), l: Math.min(lo, open, close),
+      body: !walk,
+      replay: pwHasReplay(m),
+    };
+  }
+
+  /* The chain, newest last. Filtering rebuilds it: each shown candle opens
+     where the previous SHOWN one closed, so "as Bull" reads as a chart of the
+     player's Bull matches and not as one with gaps in it. */
+  function pwPerfCandles(side, opp) {
+    const all = (store.pwHistory || []).filter((m) =>
+      (side === "all" || m.side === side) &&
+      (opp === "all" || (opp === "online" ? m.opp === "friend" : m.opp !== "friend")));
+    const out = [];
+    let open = 0;
+    for (let i = all.length - 1; i >= 0; i--) {     // the store is newest-first
+      const c = pwCandleOf(all[i], open);
+      out.push(c);
+      open = c.c;
+    }
+    return out;
+  }
+
+  /* ---- the cache ----
+     Recomputing sixty matches is not expensive, but it is done on every pan
+     and every scrub frame if it is not held, so it is held: keyed by the
+     filters and by what the record looked like when it was built. A finished
+     match changes the key by its own timestamp, so the next read rebuilds
+     once and nothing has to remember to clear anything. */
+  let pwPerfCache = { key: "", list: [] };
+  function pwPerfList(side, opp) {
+    const all = store.pwHistory || [];
+    const key = `${side}|${opp}|${all.length}|${all.length ? all[0].t : 0}`;
+    if (pwPerfCache.key !== key) pwPerfCache = { key, list: pwPerfCandles(side, opp) };
+    return pwPerfCache.list;
+  }
+
+  /* ---- the chart's own screen furniture ----
+     Two rows of chips, the running total, and the plot. The plot is drawn
+     from JavaScript rather than from this template: a pan or a pinch moves
+     sixty boxes and must not rebuild the hub around them. */
+  const PW_PERF_SIDES = [["all", "All"], ["bull", "As Bull"], ["bear", "As Bear"]];
+  const PW_PERF_OPPS = [["all", "All"], ["computer", "vs Computer"], ["online", "Online"]];
+
+  function pwPerfHTML() {
+    const list = pwPerfList(pw.perf.side, pw.perf.opp);
+    const chips = (items, now, attr) => `
+      <div class="pw-perf-chips" role="group">
+        ${items.map(([k, name]) => `
+          <button type="button" class="pw-perf-chip${now === k ? " on" : ""}"
+                  ${attr}="${k}" aria-pressed="${now === k}">${esc(name)}</button>`).join("")}
+      </div>`;
+
+    if (!(store.pwHistory || []).length) {
+      return `
+        <div class="pw-perf empty">
+          <div class="pw-perf-none">
+            <span>Play your first match to start your chart.</span>
+            <button type="button" class="pw-hub-pill start wide" data-pw-hub-start>
+              <span class="pw-hub-pill-t">Start Match</span>
+              <span class="pw-hub-pill-s">Play against computer</span>
+            </button>
+          </div>
+        </div>`;
+    }
+
+    const last = list.length ? list[list.length - 1].c : 0;
+    const ten = list.length > 10 ? last - list[list.length - 11].c : last;
+    return `
+      <div class="pw-perf">
+        ${chips(PW_PERF_SIDES, pw.perf.side, "data-pw-perf-side")}
+        ${chips(PW_PERF_OPPS, pw.perf.opp, "data-pw-perf-opp")}
+        <div class="pw-perf-total">
+          <b class="${last > 0 ? "up" : last < 0 ? "down" : ""}">${pwSigned(last)}</b>
+          <i>${list.length} match${list.length === 1 ? "" : "es"}</i>
+          <span class="${ten > 0 ? "up" : ten < 0 ? "down" : ""}">
+            ${pwSigned(ten)} <em>last ${Math.min(10, list.length)}</em></span>
+        </div>
+        <div class="pw-perf-plot" data-pw-perf-plot>
+          <div class="pw-perf-y" aria-hidden="true"></div>
+          <div class="pw-perf-zero" aria-hidden="true"></div>
+          <div class="pw-perf-cands"></div>
+          <div class="pw-perf-x" aria-hidden="true"></div>
+          <div class="pw-perf-tip" hidden></div>
+          ${list.length ? "" : `<div class="pw-perf-none"><span>No matches with these filters.</span></div>`}
+        </div>
+      </div>`;
+  }
+
+  /* ---- drawing the plot ----
+     The candles are made once per list and then only moved: a pan writes six
+     numbers per candle and touches nothing else, which is what keeps the
+     chart still under a finger that is reading it.
+
+     The window is `from` and `count` — which candle is at the left edge and
+     how many are across — and everything else follows from the two. A column
+     is never wider than PW_PERF_MAXCOL, so four matches are four candles at
+     their proper width on the left rather than four slabs stretched across
+     the box, and never narrower than a hairline. */
+  const PW_PERF_MINCOLS = 6;
+  const PW_PERF_MAXCOL = 46;
+
+  function pwPerfView(n) {
+    const p = pw.perf;
+    if (!n) return { from: 0, count: 0 };
+    if (!p.count) { p.count = Math.min(n, 14); p.from = n - p.count; }  // opens on the newest
+    p.count = Math.max(3, Math.min(p.count, Math.max(3, n)));
+    p.from = Math.max(0, Math.min(p.from, n - p.count));
+    return { from: p.from, count: p.count };
+  }
+
+  function pwPerfEnsure() {
+    const plot = document.querySelector("[data-pw-perf-plot]");
+    if (!plot) return null;
+    const host = plot.querySelector(".pw-perf-cands");
+    const list = pwPerfList(pw.perf.side, pw.perf.opp);
+    if (host.getAttribute("data-key") !== pwPerfCache.key) {
+      host.innerHTML = list.map((c, i) => {
+        const tone = c.result === "draw" ? "flat" : c.result === "win" ? "win" : "loss";
+        return `<button type="button" class="pw-cand ${tone}${c.body ? " bodyonly" : ""}"
+                        data-pw-cand="${i}"
+                        aria-label="${esc(pwPerfSay(c))}">
+          <span class="pw-cand-wick"></span><span class="pw-cand-body"></span>
+        </button>`;
+      }).join("");
+      host.setAttribute("data-key", pwPerfCache.key);
+    }
+    return { plot, host, list };
+  }
+
+  const pwPerfSay = (c) =>
+    `${c.result === "draw" ? "Draw" : c.result === "win" ? "Win" : "Loss"} as `
+    + `${c.side === "bull" ? "Bull" : "Bear"} vs ${c.opp === "friend" ? "a friend" : "the computer"}, `
+    + `${pwSigned(c.pts)}, total ${pwSigned(c.c)}, ${pwHubWhen(c.t)}`;
+
+  function pwPerfLayout() {
+    const g = pwPerfEnsure();
+    if (!g) return;
+    const { plot, host, list } = g;
+    const { from, count } = pwPerfView(list.length);
+    const W = host.clientWidth, H = host.clientHeight;
+    if (!W || !H || !list.length) return;
+
+    const cols = Math.max(count, PW_PERF_MINCOLS);
+    const colW = Math.min(W / cols, PW_PERF_MAXCOL);
+    /* the scale is the window's own, so a flat stretch of the record is read
+       at the scale of that stretch rather than squashed by one big match */
+    let hi = -Infinity, lo = Infinity;
+    for (let i = from; i < from + count && i < list.length; i++) {
+      hi = Math.max(hi, list[i].h); lo = Math.min(lo, list[i].l);
+    }
+    if (!Number.isFinite(hi)) { hi = 1; lo = -1; }
+    const pad = Math.max((hi - lo) * 0.12, 2);
+    hi += pad; lo -= pad;
+    const y = (v) => ((hi - v) / (hi - lo)) * H;
+
+    [...host.children].forEach((el, i) => {
+      const c = list[i];
+      const on = i >= from && i < from + count;
+      el.hidden = !on;
+      if (!on) return;
+      const x = (i - from) * colW;
+      el.style.left = x.toFixed(1) + "px";
+      el.style.width = colW.toFixed(1) + "px";
+      const top = y(c.h), bot = y(c.l);
+      const bTop = y(Math.max(c.o, c.c)), bBot = y(Math.min(c.o, c.c));
+      const wick = el.firstElementChild, body = el.lastElementChild;
+      wick.style.top = top.toFixed(1) + "px";
+      wick.style.height = Math.max(bot - top, 1).toFixed(1) + "px";
+      body.style.top = bTop.toFixed(1) + "px";
+      body.style.height = Math.max(bBot - bTop, 1.5).toFixed(1) + "px";
+      el.classList.toggle("on", pw.perf.sel === i);
+    });
+
+    /* the other axis: which match each column is. They thin out as the window
+       widens — at sixty candles there is no room for sixty numbers and no
+       reason for them, since the one that matters is the one under the finger
+       and that is in the label. */
+    const xs = plot.querySelector(".pw-perf-x");
+    if (xs) {
+      const every = Math.max(1, Math.ceil(34 / colW));
+      let out = "";
+      for (let i = from; i < from + count && i < list.length; i++) {
+        if ((list.length - 1 - i) % every !== 0 && i !== list.length - 1) continue;
+        out += `<i style="left:${((i - from) * colW + colW / 2).toFixed(1)}px">${i + 1}</i>`;
+      }
+      xs.innerHTML = out;
+    }
+
+    /* the axis: the window's ends and the zero line if it is in view */
+    const ax = plot.querySelector(".pw-perf-y");
+    if (ax) {
+      const ticks = [hi - pad / 2, (hi + lo) / 2, lo + pad / 2];
+      ax.innerHTML = ticks.map((v) =>
+        `<i style="top:${y(v).toFixed(1)}px">${pwSigned(Math.round(v))}</i>`).join("");
+    }
+    const zero = plot.querySelector(".pw-perf-zero");
+    if (zero) {
+      const inView = 0 <= hi && 0 >= lo;
+      zero.hidden = !inView;
+      if (inView) zero.style.top = y(0).toFixed(1) + "px";
+    }
+    pwPerfTip();
+  }
+
+  /* the label that follows a scrub; nothing while nothing is selected */
+  function pwPerfTip() {
+    const plot = document.querySelector("[data-pw-perf-plot]");
+    const tip = plot && plot.querySelector(".pw-perf-tip");
+    if (!tip) return;
+    const list = pwPerfList(pw.perf.side, pw.perf.opp);
+    const c = pw.perf.sel != null ? list[pw.perf.sel] : null;
+    if (!c) { tip.hidden = true; return; }
+    const tone = c.result === "draw" ? "flat" : c.result === "win" ? "win" : "loss";
+    tip.hidden = false;
+    /* out of its own way: the label stands on the far side of the plot from
+       the candle it is describing, so the thing being read is never under it */
+    const el = plot.querySelector(`[data-pw-cand="${pw.perf.sel}"]`);
+    const pr = plot.getBoundingClientRect();
+    const left = el ? (el.getBoundingClientRect().left + el.getBoundingClientRect().width / 2)
+      < (pr.left + pr.width / 2) : false;
+    tip.classList.toggle("right", left);
+    tip.innerHTML = `
+      <b class="${tone}">${c.result === "draw" ? "Draw" : c.result === "win" ? "Win" : "Loss"}</b>
+      <span>as ${c.side === "bull" ? "Bull" : "Bear"} · ${c.opp === "friend" ? "Online" : "vs Computer"}</span>
+      <span>${esc(pwHubWhen(c.t))}</span>
+      <i>O ${pwSigned(c.o)} · H ${pwSigned(c.h)} · L ${pwSigned(c.l)} · C ${pwSigned(c.c)}</i>`;
+  }
+
+  /* ---- the finger on the chart ----
+     One finger reads: it snaps to the candle under it, labels it, and pushes
+     the window along when it reaches an edge — which is how a one-handed pan
+     happens without taking the gesture away from the scrub. Two fingers move
+     and scale the window. A clean tap, which is a press that never travelled,
+     opens that match's replay; a drag never does. */
+  let pwPerfGrab = null;
+
+  function pwPerfIndexAt(clientX) {
+    const g = pwPerfEnsure();
+    if (!g) return null;
+    const list = g.list;
+    const { from, count } = pwPerfView(list.length);
+    const r = g.host.getBoundingClientRect();
+    const cols = Math.max(count, PW_PERF_MINCOLS);
+    const colW = Math.min(r.width / cols, PW_PERF_MAXCOL);
+    const i = from + Math.floor((clientX - r.left) / colW);
+    return Math.max(from, Math.min(from + count - 1, Math.min(list.length - 1, i)));
+  }
+
+  function pwPerfSelect(i) {
+    if (i == null || pw.perf.sel === i) return false;
+    pw.perf.sel = i;
+    const host = document.querySelector(".pw-perf-cands");
+    if (host) [...host.children].forEach((el, n) => el.classList.toggle("on", n === i));
+    pwPerfTip();
+    return true;
+  }
+
+  /* one finger past the edge drags the window with it */
+  function pwPerfNudge(i) {
+    const list = pwPerfList(pw.perf.side, pw.perf.opp);
+    const { from, count } = pwPerfView(list.length);
+    let moved = false;
+    if (i <= from && from > 0) { pw.perf.from = from - 1; moved = true; }
+    else if (i >= from + count - 1 && from + count < list.length) { pw.perf.from = from + 1; moved = true; }
+    if (moved) pwPerfLayout();
+    return moved;
+  }
+
+  function pwPerfDown(e) {
+    const plot = e.target.closest && e.target.closest("[data-pw-perf-plot]");
+    if (!plot) return;
+    if (pwPerfGrab && pwPerfGrab.b == null && e.pointerId !== pwPerfGrab.a) {
+      /* the second finger: from here it is a pinch, and the tap is off */
+      pwPerfGrab.b = e.pointerId;
+      pwPerfGrab.bx = e.clientX;
+      pwPerfGrab.moved = true;
+      pwPerfGrab.span0 = Math.abs(pwPerfGrab.bx - pwPerfGrab.ax);
+      pwPerfGrab.count0 = pw.perf.count;
+      pwPerfGrab.from0 = pw.perf.from;
+      return;
+    }
+    if (pwPerfGrab) return;
+    pwPerfGrab = { a: e.pointerId, b: null, ax: e.clientX, x0: e.clientX, moved: false, plot };
+  }
+
+  function pwPerfMove(e) {
+    if (!pwPerfGrab) return;
+    const G = pwPerfGrab;
+    if (e.pointerId === G.a) G.ax = e.clientX;
+    else if (e.pointerId === G.b) G.bx = e.clientX;
+    else return;
+    if (e.cancelable) e.preventDefault();
+
+    const list = pwPerfList(pw.perf.side, pw.perf.opp);
+    if (G.b != null) {
+      /* two fingers: the span sets how many candles are across, and the pair's
+         middle carries the window with it */
+      const span = Math.max(Math.abs(G.bx - G.ax), 10);
+      const scale = span / Math.max(G.span0, 10);
+      const count = Math.max(3, Math.min(list.length, Math.round(G.count0 / scale)));
+      const mid = (G.ax + G.bx) / 2;
+      const r = G.plot.getBoundingClientRect();
+      const at = Math.max(0, Math.min(1, (mid - r.left) / Math.max(r.width, 1)));
+      const anchor = G.from0 + at * G.count0;
+      pw.perf.count = count;
+      pw.perf.from = Math.round(anchor - at * count);
+      pwPerfLayout();
+      return;
+    }
+    if (Math.abs(e.clientX - G.x0) > 6) G.moved = true;
+    const i = pwPerfIndexAt(e.clientX);
+    if (!pwPerfNudge(i)) pwPerfSelect(i);
+    else pwPerfSelect(pwPerfIndexAt(e.clientX));
+    if (!G.captured) { try { G.plot.setPointerCapture(G.a); G.captured = true; } catch (err) {} }
+  }
+
+  function pwPerfUp(e) {
+    if (!pwPerfGrab) return;
+    const G = pwPerfGrab;
+    if (e.pointerId === G.b) { G.b = null; return; }
+    if (e.pointerId !== G.a) return;
+    pwPerfGrab = null;
+    if (G.captured) { try { G.plot.releasePointerCapture(e.pointerId); } catch (err) {} }
+    if (G.moved) return;                       // a drag opens nothing
+    const i = pwPerfIndexAt(e.clientX);
+    const list = pwPerfList(pw.perf.side, pw.perf.opp);
+    const c = list[i];
+    if (!c) return;
+    pwPerfSelect(i);
+    if (!c.replay) return;                     // nothing to open on an old record
+    pw.savedT = c.t; pw.showRound = null; pw.phase = "saved";
+    renderPointaeway();
+  }
+
   function pwHubHTML() {
     const st = pwRecord();
     const all = store.pwHistory;
@@ -4625,18 +5015,27 @@
             </div>`).join("")}
         </div>
 
-        <div class="pw-hist">
+        <div class="pw-hist${pw.perf.on ? " charted" : ""}">
           <div class="pw-hist-head">
             <span class="pw-hist-title">Match History</span>
-            ${all.length > pwHistRows ? `
+            ${!pw.perf.on && all.length > pwHistRows ? `
             <button type="button" class="pw-hist-all" data-pw-hub-all>
               <span>${pw.hubAll ? "Show Less" : "View All"}</span>
               <img src="${PW_HUB}ico-chevron.png" alt="">
             </button>` : ""}
+            ${/* the one addition to the row: the same candle glyph the live
+                  chart is opened with in a match */""}
+            <button type="button" class="pw-perf-btn${pw.perf.on ? " on" : ""}"
+                    data-pw-perf aria-pressed="${pw.perf.on}"
+                    aria-label="${pw.perf.on ? "Hide the performance chart" : "Show the performance chart"}">
+              ${PW_CHART_SVG}
+            </button>
           </div>
-          ${shown.length
-            ? `<div class="pw-hist-list">${shown.map(pwHubRowHTML).join("")}</div>`
-            : `<div class="pw-hist-none">No matches yet — your first one lands here.</div>`}
+          ${pw.perf.on
+            ? pwPerfHTML()
+            : shown.length
+              ? `<div class="pw-hist-list">${shown.map(pwHubRowHTML).join("")}</div>`
+              : `<div class="pw-hist-none">No matches yet — your first one lands here.</div>`}
         </div>
 
         <div class="pw-hub-acts">
@@ -6948,9 +7347,15 @@
   function pwFitHistRows() {
     requestAnimationFrame(pwMeasureHistRows);
     setTimeout(pwMeasureHistRows, 400);
+    /* and once more after the last of --vhpx's settling ticks at 1000ms: that
+       one changes the height of the box without firing a resize, so a count
+       taken before it is a count of a box that no longer exists */
+    setTimeout(pwMeasureHistRows, 1200);
   }
   window.addEventListener("resize", () => {
-    if (pw && pw.phase === "hub") pwFitHistRows();
+    if (!pw || pw.phase !== "hub") return;
+    if (pw.perf.on) pwPerfLayout();
+    else pwFitHistRows();
   });
 
   function pwGuardPillArt() {
@@ -7203,6 +7608,15 @@
 
     cardScroll.classList.remove("pw-playing", "pw-introing", "pw-overing",
                                 "pw-revealing", "pw-savedscreen", "pw-fixed");
+    /* The performance chart takes the header and the two title bars the way
+       the live chart does, and by the same rule in the stylesheet. It is set
+       from the phase rather than toggled, so leaving the hub for a match — or
+       for the replay a candle opens — brings them back on its own, and
+       nothing has to remember to put them back. The fold states underneath
+       are never touched, which is what makes closing the chart restore
+       exactly what was there before it opened. */
+    document.querySelector(".app").classList
+      .toggle("perf-open", pw.phase === "hub" && pw.perf.on);
     if (pw.phase === "hub") {
       cardScroll.classList.add("pw-fixed");
       cardScroll.innerHTML = pwHubHTML();
@@ -7211,7 +7625,14 @@
          fetched while the hub is being looked at rather than when it is */
       pwPreloadArtSoon();
       pwGuardPillArt();
-      pwFitHistRows();
+      if (pw.perf.on) {
+        /* the plot is drawn from the box it ended up in, so it is drawn after
+           the box exists rather than inside the template that makes it */
+        requestAnimationFrame(pwPerfLayout);
+        setTimeout(pwPerfLayout, 320);
+      } else {
+        pwFitHistRows();
+      }
       return;
     }
     /* The one screen here that is allowed to be longer than a view: ten wild
@@ -7790,6 +8211,13 @@
   window.addEventListener("pointermove", pwScrubMove, { passive: false });
   window.addEventListener("pointerup", pwScrubUp);
   window.addEventListener("pointercancel", pwScrubUp);
+
+  /* and the performance chart's, which is the same shape of thing: one finger
+     reads, two fingers move, and a press that never travelled opens a match */
+  document.addEventListener("pointerdown", pwPerfDown);
+  window.addEventListener("pointermove", pwPerfMove, { passive: false });
+  window.addEventListener("pointerup", pwPerfUp);
+  window.addEventListener("pointercancel", pwPerfUp);
 
   function paTap(dir) {
     if (!pa) return;
@@ -13597,7 +14025,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-contents],[data-contents-back],[data-open-connections],[data-conn-back],[data-conn-retry],[data-conn-list],[data-conn-find],[data-conn-add],[data-conn-cancel],[data-conn-approve],[data-conn-deny],[data-conn-msg],[data-conn-thread-close],[data-conn-send],[data-chal-bar-hide],[data-online-reconnect],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-library],[data-pw-lib-back],[data-pw-lib-set],[data-pw-lib-card],[data-pw-lib-close],[data-pw-lib-step],[data-pw-howto],[data-pw-ht-close],[data-pw-ht-step],[data-pw-ht-go],[data-pw-setup-back],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-pw-hub-start],[data-pw-hub-create],[data-pw-hub-local],[data-pw-create-points],[data-pw-create-spec],[data-pw-create-go],[data-pw-create-joinopen],[data-pw-create-check],[data-pw-create-join],[data-pw-create-back],[data-pw-code-copy],[data-pw-code-share],[data-pw-hub-all],[data-pw-hub-back],[data-pw-hub-open],[data-pw-saved-back],[data-pw-hub-history],[data-pw-online-cancel],[data-pw-online-back],[data-pw-online-retry],[data-pw-online-signin],[data-pw-online-card],[data-pw-online-chart],[data-pw-chart],[data-pw-online-seen],[data-pw-online-specials],[data-pw-online-forfeit],[data-pw-online-forfeit-yes],[data-pw-online-forfeit-no],[data-pw-online-again],[data-pw-online-rematch],[data-pw-oh-open],[data-pr-online-save],[data-pr-online-level],[data-pr-online-signin],[data-pr-online-retry],[data-jnote-new],[data-jnote-cancel],[data-jnote-save],[data-jnote-img],[data-jnote-img-clear],[data-jnote-edit],[data-jnote-del],[data-jnote-del-yes],[data-jnote-del-no],[data-jnote-open],[data-jnote-retry],[data-jnote-signin],[data-pw-chal-cancel],[data-pw-oh-rematch],[data-pw-inv-accept],[data-pw-inv-decline],[data-pr-code-copy],[data-pr-code-share],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-contents],[data-contents-back],[data-open-connections],[data-conn-back],[data-conn-retry],[data-conn-list],[data-conn-find],[data-conn-add],[data-conn-cancel],[data-conn-approve],[data-conn-deny],[data-conn-msg],[data-conn-thread-close],[data-conn-send],[data-chal-bar-hide],[data-online-reconnect],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-library],[data-pw-lib-back],[data-pw-lib-set],[data-pw-lib-card],[data-pw-lib-close],[data-pw-lib-step],[data-pw-howto],[data-pw-ht-close],[data-pw-ht-step],[data-pw-ht-go],[data-pw-setup-back],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-pw-hub-start],[data-pw-hub-create],[data-pw-hub-local],[data-pw-create-points],[data-pw-create-spec],[data-pw-create-go],[data-pw-create-joinopen],[data-pw-create-check],[data-pw-create-join],[data-pw-create-back],[data-pw-code-copy],[data-pw-code-share],[data-pw-perf],[data-pw-perf-side],[data-pw-perf-opp],[data-pw-hub-all],[data-pw-hub-back],[data-pw-hub-open],[data-pw-saved-back],[data-pw-hub-history],[data-pw-online-cancel],[data-pw-online-back],[data-pw-online-retry],[data-pw-online-signin],[data-pw-online-card],[data-pw-online-chart],[data-pw-chart],[data-pw-online-seen],[data-pw-online-specials],[data-pw-online-forfeit],[data-pw-online-forfeit-yes],[data-pw-online-forfeit-no],[data-pw-online-again],[data-pw-online-rematch],[data-pw-oh-open],[data-pr-online-save],[data-pr-online-level],[data-pr-online-signin],[data-pr-online-retry],[data-jnote-new],[data-jnote-cancel],[data-jnote-save],[data-jnote-img],[data-jnote-img-clear],[data-jnote-edit],[data-jnote-del],[data-jnote-del-yes],[data-jnote-del-no],[data-jnote-open],[data-jnote-retry],[data-jnote-signin],[data-pw-chal-cancel],[data-pw-oh-rematch],[data-pw-inv-accept],[data-pw-inv-decline],[data-pr-code-copy],[data-pr-code-share],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -13981,6 +14409,28 @@
     else if (t.hasAttribute("data-pw-specials")) { pw.showSpecials = !pw.showSpecials; renderPointaeway(); }
     else if (t.hasAttribute("data-pw-seen")) { pw.showSeen = !pw.showSeen; renderPointaeway(); }
     else if (t.hasAttribute("data-pw-chart")) { pw.showChart = !pw.showChart; renderPointaeway(); }
+    /* ---- the performance chart's toggle ----
+       Opening it folds the video header and the title bars away, which is
+       what the live chart does inside a match, and for the same reason: the
+       chart wants the height. Closing it puts both back exactly as they were
+       — not expanded, as they were — because what they were is remembered
+       here rather than assumed. */
+    else if (t.hasAttribute("data-pw-perf")) {
+      pw.perf.on = !pw.perf.on;
+      pw.perf.sel = null;
+      pw.perf.count = 0;                 // it reopens on the newest matches
+      renderPointaeway();
+    }
+    else if (t.hasAttribute("data-pw-perf-side")) {
+      pw.perf.side = t.getAttribute("data-pw-perf-side");
+      pw.perf.count = 0; pw.perf.from = 0; pw.perf.sel = null;
+      renderPointaeway();
+    }
+    else if (t.hasAttribute("data-pw-perf-opp")) {
+      pw.perf.opp = t.getAttribute("data-pw-perf-opp");
+      pw.perf.count = 0; pw.perf.from = 0; pw.perf.sel = null;
+      renderPointaeway();
+    }
     /* The library is a place, not a panel: going there and coming back leaves
        the picker exactly as it was, because nothing about the picker is
        rebuilt — only the phase moves. */

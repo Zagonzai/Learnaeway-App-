@@ -6038,7 +6038,12 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 }
 /* the panel is open, so the region it borrows is not */
 .app.chart-open .header-zone,
-.app.chart-open .bar { display: none; }
+.app.chart-open .bar,
+/* the hub's performance chart asks for the same three boxes, for the same
+   reason and by the same rule — the difference being that nothing stands in
+   their place, so the card below takes the height instead */
+.app.perf-open .header-zone,
+.app.perf-open .bar { display: none; }
 
 .chart-panel {
   position: relative;
@@ -6723,6 +6728,165 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   padding: 8px 7px;
   margin-bottom: 8px;
 }
+/* ==================== the performance chart ====================
+   It lives inside the Match History box, which becomes the whole of the hub's
+   middle while it is up — the header video and the two title bars having
+   stepped aside the way they do for the live chart in a match.
+
+   The plot is a plain box with absolutely positioned candles in it. Not a
+   canvas and not an SVG: a pan writes left and width on sixty elements, which
+   the compositor handles without a repaint of anything else, and the candles
+   stay ordinary buttons that a finger and a screen reader can both find. */
+.pw-hist.charted {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex; flex-direction: column;
+}
+.pw-perf {
+  flex: 1 1 auto;
+  min-height: 0;
+  display: flex; flex-direction: column;
+  gap: clamp(4px, calc(.8 * var(--vh1)), 8px);
+}
+.pw-perf-chips { display: flex; gap: 5px; }
+.pw-perf-chip {
+  flex: 1 1 0;
+  min-width: 0;
+  padding: clamp(4px, calc(.8 * var(--vh1)), 7px) 4px;
+  border: 1px solid var(--pw-line);
+  border-radius: 999px;
+  background: rgba(5,9,22,.7);
+  font-size: calc(10.5px * var(--fs)); font-weight: 700;
+  color: var(--pw-muted);
+  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+}
+.pw-perf-chip.on {
+  border-color: rgba(61,223,255,.65);
+  background: rgba(10,30,56,.9);
+  color: #EAF6FF;
+}
+.pw-perf-chip:active { filter: brightness(1.3); }
+
+.pw-perf-total {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 0 2px;
+}
+.pw-perf-total b { font-size: calc(19px * var(--fs)); font-weight: 800; color: var(--text); }
+.pw-perf-total b.up { color: var(--pw-bull); }
+.pw-perf-total b.down { color: var(--pw-bear); }
+.pw-perf-total i { font-style: normal; font-size: calc(10px * var(--fs)); color: var(--pw-muted); }
+.pw-perf-total span { margin-left: auto; font-size: calc(11.5px * var(--fs)); font-weight: 700; color: var(--pw-muted); }
+.pw-perf-total span.up { color: var(--pw-bull); }
+.pw-perf-total span.down { color: var(--pw-bear); }
+.pw-perf-total em { font-style: normal; font-weight: 600; color: var(--pw-muted); }
+
+.pw-perf-plot {
+  position: relative;
+  flex: 1 1 auto;
+  min-height: 0;
+  border-radius: 12px;
+  border: 1px solid var(--pw-line);
+  background: rgba(4,7,18,.9);
+  background-image: radial-gradient(circle, rgba(143,169,196,.22) 0.5px, transparent 1px);
+  background-size: 13px 13px;
+  padding: 8px 40px 8px 8px;      /* the right gutter is the axis's */
+  overflow: hidden;
+  /* the chart takes the gesture: no page swipe, no pull-to-refresh, no
+     double-tap zoom under a finger that is reading it */
+  touch-action: none;
+}
+.pw-perf-cands { position: relative; height: 100%; width: 100%; }
+.pw-cand {
+  position: absolute; top: 0; bottom: 0;
+  padding: 0; border: 0; background: none;
+  -webkit-tap-highlight-color: transparent;
+}
+.pw-cand-wick, .pw-cand-body {
+  position: absolute;
+  left: 50%;
+  transform: translateX(-50%);
+  border-radius: 1px;
+}
+.pw-cand-wick { width: 1.5px; background: currentColor; opacity: .75; }
+.pw-cand-body { width: 62%; min-width: 3px; background: currentColor; border-radius: 2px; }
+.pw-cand.win { color: #26a69a; }
+.pw-cand.loss { color: #ef5350; }
+.pw-cand.flat { color: #8FA9C4; }
+/* a match recorded before replays were kept: the body, and no wick to tell a
+   story the record does not have */
+.pw-cand.bodyonly .pw-cand-wick { display: none; }
+.pw-cand.on .pw-cand-body { box-shadow: 0 0 0 1.5px #EAF6FF, 0 0 10px rgba(234,246,255,.5); }
+.pw-cand.on .pw-cand-wick { opacity: 1; }
+
+.pw-perf-y {
+  position: absolute; top: 8px; right: 6px; bottom: 8px; width: 34px;
+  pointer-events: none;
+}
+.pw-perf-y i {
+  position: absolute; right: 0;
+  transform: translateY(-50%);
+  font-style: normal;
+  font-size: calc(9px * var(--fs)); font-weight: 700;
+  color: var(--pw-muted);
+}
+.pw-perf-x {
+  position: absolute; left: 8px; right: 40px; bottom: 1px; height: 11px;
+  pointer-events: none;
+}
+.pw-perf-x i {
+  position: absolute;
+  transform: translateX(-50%);
+  font-style: normal;
+  font-size: calc(8.5px * var(--fs)); font-weight: 700;
+  color: rgba(143,169,196,.75);
+}
+.pw-perf-zero {
+  position: absolute; left: 8px; right: 40px;
+  border-top: 1px dashed rgba(143,169,196,.4);
+  pointer-events: none;
+}
+.pw-perf-tip {
+  position: absolute; left: 8px; top: 8px;
+  display: flex; flex-direction: column; gap: 1px;
+  max-width: calc(100% - 52px);
+  padding: 5px 8px;
+  border: 1px solid var(--pw-line); border-radius: 9px;
+  background: rgba(5,9,22,.94);
+  pointer-events: none;
+}
+.pw-perf-tip.right { left: auto; right: 44px; }
+.pw-perf-tip[hidden] { display: none; }
+.pw-perf-tip b { font-size: calc(11px * var(--fs)); font-weight: 800; }
+.pw-perf-tip b.win { color: var(--pw-bull); }
+.pw-perf-tip b.loss { color: var(--pw-bear); }
+.pw-perf-tip b.flat { color: var(--pw-muted); }
+.pw-perf-tip span { font-size: calc(9.5px * var(--fs)); color: #C7D9EF; }
+.pw-perf-tip i { font-style: normal; font-size: calc(9.5px * var(--fs)); font-weight: 700; color: var(--pw-muted); }
+
+.pw-perf.empty { justify-content: center; }
+.pw-perf-none {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 12px;
+  text-align: center;
+  padding: 12px;
+  font-size: calc(11.5px * var(--fs)); color: var(--pw-muted);
+}
+.pw-perf-none .pw-hub-pill.wide { flex: 0 0 auto; width: min(100%, 230px); }
+
+/* the toggle: the same candle glyph the live chart has, at the size of the
+   row it sits in */
+.pw-perf-btn {
+  flex: 0 0 auto;
+  display: grid; place-items: center;
+  width: 30px; height: 26px;
+  border: 1px solid var(--pw-line); border-radius: 8px;
+  background: rgba(5,9,22,.7);
+  color: #9FD9FF;
+}
+.pw-perf-btn .pw-chart-ico { width: 18px; height: 13px; }
+.pw-perf-btn.on { border-color: rgba(61,223,255,.7); background: rgba(10,30,56,.95); color: #EAF6FF; }
+.pw-perf-btn:active { filter: brightness(1.35); transform: scale(.94); }
+
 .pw-hist-head {
   display: flex; align-items: center; justify-content: space-between;
   gap: 8px;
