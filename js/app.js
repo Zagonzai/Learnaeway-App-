@@ -3705,7 +3705,8 @@
          video header and the title bars were doing before it opened, so that
          closing it puts them back the way they were rather than the way the
          chart left them. */
-      perf: { on: false, side: "all", opp: "all", from: 0, count: 0, sel: null },
+      perf: { on: false, side: "all", opp: "all", from: 0, count: 0, sel: null,
+              menu: null },   // which of the two filter menus is open
       online: null,         // the live 1v1, when one is being found or played
       discipline: null,     // a peek in progress: the Discipline card and theirs
       tp: null,             // a Take Profit waiting on the double-up answer
@@ -4685,16 +4686,39 @@
      Two rows of chips, the running total, and the plot. The plot is drawn
      from JavaScript rather than from this template: a pan or a pinch moves
      sixty boxes and must not rebuild the hub around them. */
-  const PW_PERF_SIDES = [["all", "All"], ["bull", "As Bull"], ["bear", "As Bear"]];
-  const PW_PERF_OPPS = [["all", "All"], ["computer", "vs Computer"], ["online", "Online"]];
+  /* [key, the word in the menu, the word on the button] */
+  const PW_PERF_SIDES = [["all", "All", "All"], ["bull", "As Bull", "Bull"], ["bear", "As Bear", "Bear"]];
+  const PW_PERF_OPPS = [["all", "All", "All"], ["computer", "vs Computer", "CPU"], ["online", "Online", "Online"]];
 
   function pwPerfHTML() {
     const list = pwPerfList(pw.perf.side, pw.perf.opp);
-    const chips = (items, now, attr) => `
-      <div class="pw-perf-chips" role="group">
-        ${items.map(([k, name]) => `
-          <button type="button" class="pw-perf-chip${now === k ? " on" : ""}"
-                  ${attr}="${k}" aria-pressed="${now === k}">${esc(name)}</button>`).join("")}
+    /* The two filters, as the chart menus the day chart already has: same
+       button, same caret, same open panel, same cyan for the choice that is
+       made — .tp-menu-* is that style, reused rather than copied. They stand
+       inside the plot's top-left corner, which is where the two rows of pills
+       they replace used to take a fifth of the chart's height. */
+    const menu = (items, now, kind, label) => {
+      const open = pw.perf.menu === kind;
+      const set = now !== "all";
+      return `
+        <div class="tp-menu-wrap">
+          <button type="button" class="tp-menu-btn${set || open ? " on" : ""}"
+                  data-pw-perf-menu="${kind}" aria-expanded="${open}"
+                  aria-label="${esc(label)}">
+            <span>${esc((items.find((x) => x[0] === now) || items[0])[2])}</span><i></i>
+          </button>
+          ${open ? `<div class="tp-menu" role="menu">
+            ${items.map(([k, name]) => `
+              <button type="button" class="tp-menu-item${now === k ? " on" : ""}"
+                      role="menuitemradio" aria-checked="${now === k}"
+                      data-pw-perf-${kind}="${k}">${esc(name)}</button>`).join("")}
+          </div>` : ""}
+        </div>`;
+    };
+    const menus = `
+      <div class="pw-perf-menus">
+        ${menu(PW_PERF_SIDES, pw.perf.side, "side", "Which side to chart")}
+        ${menu(PW_PERF_OPPS, pw.perf.opp, "opp", "Which opponent to chart")}
       </div>`;
 
     if (!(store.pwHistory || []).length) {
@@ -4714,8 +4738,6 @@
     const ten = list.length > 10 ? last - list[list.length - 11].c : last;
     return `
       <div class="pw-perf">
-        ${chips(PW_PERF_SIDES, pw.perf.side, "data-pw-perf-side")}
-        ${chips(PW_PERF_OPPS, pw.perf.opp, "data-pw-perf-opp")}
         <div class="pw-perf-total">
           <b class="${last > 0 ? "up" : last < 0 ? "down" : ""}">${pwSigned(last)}</b>
           <i>${list.length} match${list.length === 1 ? "" : "es"}</i>
@@ -4723,6 +4745,7 @@
             ${pwSigned(ten)} <em>last ${Math.min(10, list.length)}</em></span>
         </div>
         <div class="pw-perf-plot" data-pw-perf-plot>
+          ${menus}
           <div class="pw-perf-y" aria-hidden="true"></div>
           <div class="pw-perf-zero" aria-hidden="true"></div>
           <div class="pw-perf-cands"></div>
@@ -4859,13 +4882,30 @@
     if (!c) { tip.hidden = true; return; }
     const tone = c.result === "draw" ? "flat" : c.result === "win" ? "win" : "loss";
     tip.hidden = false;
-    /* out of its own way: the label stands on the far side of the plot from
-       the candle it is describing, so the thing being read is never under it */
+    /* Where it stands. Three corners are available — the fourth is the
+       filters' — and the one it takes is the first that does not land on the
+       candle it is describing. Measured rather than guessed from which half
+       the finger is in: a tall candle near the middle reaches the top-right
+       box even though it is on the left. */
     const el = plot.querySelector(`[data-pw-cand="${pw.perf.sel}"]`);
     const pr = plot.getBoundingClientRect();
-    const left = el ? (el.getBoundingClientRect().left + el.getBoundingClientRect().width / 2)
-      < (pr.left + pr.width / 2) : false;
-    tip.classList.toggle("right", left);
+    tip.classList.remove("low", "lowright");
+    const drawn = el && (() => {
+      const w = el.firstElementChild.getBoundingClientRect();
+      const b = el.lastElementChild.getBoundingClientRect();
+      return { l: Math.min(w.left, b.left) - pr.left, r: Math.max(w.right, b.right) - pr.left,
+               t: Math.min(w.top, b.top) - pr.top, b: Math.max(w.bottom, b.bottom) - pr.top };
+    })();
+    if (drawn) {
+      const tr = tip.getBoundingClientRect();
+      const tw = tr.width, th = tr.height;
+      const PL = 8, PR = pr.width - 40, PT = 8, PB = pr.height - 16;
+      const clear = (x, y) => !(x + tw < drawn.l || x > drawn.r || y + th < drawn.t || y > drawn.b);
+      if (clear(PR - tw, PT)) {                       // top-right, the default
+        if (!clear(PL, PB - th)) tip.classList.add("low");          // bottom-left
+        else tip.classList.add("lowright");                         // bottom-right
+      }
+    }
     tip.innerHTML = `
       <b class="${tone}">${c.result === "draw" ? "Draw" : c.result === "win" ? "Win" : "Loss"}</b>
       <span>as ${c.side === "bull" ? "Bull" : "Bear"} · ${c.opp === "friend" ? "Online" : "vs Computer"}</span>
@@ -4916,6 +4956,12 @@
   function pwPerfDown(e) {
     const plot = e.target.closest && e.target.closest("[data-pw-perf-plot]");
     if (!plot) return;
+    /* The two filter menus stand inside the plot, so a press on one of them is
+       a press on a button and not the beginning of a scrub. A press elsewhere
+       while one is open is the press that dismisses it — the listener below
+       does that — and must not also start a scrub on a chart that is about to
+       be drawn again. */
+    if (e.target.closest(".pw-perf-menus") || pw.perf.menu) return;
     if (pwPerfGrab && pwPerfGrab.b == null && e.pointerId !== pwPerfGrab.a) {
       /* the second finger: from here it is a pinch, and the tap is off */
       pwPerfGrab.b = e.pointerId;
@@ -7608,15 +7654,19 @@
 
     cardScroll.classList.remove("pw-playing", "pw-introing", "pw-overing",
                                 "pw-revealing", "pw-savedscreen", "pw-fixed");
-    /* The performance chart takes the header and the two title bars the way
-       the live chart does, and by the same rule in the stylesheet. It is set
-       from the phase rather than toggled, so leaving the hub for a match — or
-       for the replay a candle opens — brings them back on its own, and
-       nothing has to remember to put them back. The fold states underneath
-       are never touched, which is what makes closing the chart restore
-       exactly what was there before it opened. */
-    document.querySelector(".app").classList
-      .toggle("perf-open", pw.phase === "hub" && pw.perf.on);
+    /* The performance chart asks the header and the two title bars to stand
+       down while it is up. It does NOT hide the header: what it folds it to
+       is the pill the app already folds it to, which keeps the hamburger, the
+       grabber and the speaker on screen and keeps everything below the safe
+       area. Hiding the whole zone put the panel under the clock and the
+       Dynamic Island.
+
+       Driven from the phase so that leaving the hub — into a match, or into
+       the replay a candle opens — puts them back on its own, and done once on
+       the way in rather than on every render, so that expanding the header by
+       hand while the chart is up is allowed: the chart simply gets less room
+       and redraws into it. */
+    pwPerfHead(pw.phase === "hub" && pw.perf.on);
     if (pw.phase === "hub") {
       cardScroll.classList.add("pw-fixed");
       cardScroll.innerHTML = pwHubHTML();
@@ -8215,6 +8265,13 @@
   /* and the performance chart's, which is the same shape of thing: one finger
      reads, two fingers move, and a press that never travelled opens a match */
   document.addEventListener("pointerdown", pwPerfDown);
+  /* anywhere else on the screen closes an open filter menu */
+  document.addEventListener("pointerdown", (e) => {
+    if (!pw || !pw.perf || !pw.perf.menu) return;
+    if (e.target.closest && e.target.closest(".pw-perf-menus")) return;
+    pw.perf.menu = null;
+    renderPointaeway();
+  });
   window.addEventListener("pointermove", pwPerfMove, { passive: false });
   window.addEventListener("pointerup", pwPerfUp);
   window.addEventListener("pointercancel", pwPerfUp);
@@ -13924,7 +13981,10 @@
     }
   }
   const hdrMenu = $("hdrMenu");
-  if (hdrMenu) hdrMenu.addEventListener("click", () => { barsHidden = !barsHidden; syncBars(); });
+  if (hdrMenu) hdrMenu.addEventListener("click", () => {
+    barsHidden = !barsHidden; syncBars();
+    if (pw && pw.phase === "hub" && pw.perf.on) requestAnimationFrame(pwPerfLayout);
+  });
 
   /* ---- the video header, folded to a pill ----
      The second of the two folds, and independent of the first: the hamburger
@@ -13968,7 +14028,31 @@
     }
   }
   const hdrFold = $("hdrFold");
-  if (hdrFold) hdrFold.addEventListener("click", () => { headCollapsed = !headCollapsed; syncHead(); });
+  if (hdrFold) hdrFold.addEventListener("click", () => {
+    headCollapsed = !headCollapsed; syncHead();
+    /* the chart is measured from the box it is in, and the box just changed */
+    if (pw && pw.phase === "hub" && pw.perf.on) requestAnimationFrame(pwPerfLayout);
+  });
+
+  /* ---- the two folds, asked for from the hub's chart ----
+     Folded once on the way in and put back on the way out, with what they
+     were in between left alone: unfolding the header by hand while the chart
+     is up is allowed, and the chart redraws into whatever room is left. */
+  let pwPerfHeadWas = null;
+  function pwPerfHead(want) {
+    if (want) {
+      if (pwPerfHeadWas) return;                       // already done, hands off
+      pwPerfHeadWas = { head: headCollapsed, bars: barsHidden };
+      if (!headCollapsed) { headCollapsed = true; syncHead(); }
+      if (!barsHidden) { barsHidden = true; syncBars(); }
+      return;
+    }
+    if (!pwPerfHeadWas) return;
+    const was = pwPerfHeadWas;
+    pwPerfHeadWas = null;
+    if (headCollapsed !== was.head) { headCollapsed = was.head; syncHead(); }
+    if (barsHidden !== was.bars) { barsHidden = was.bars; syncBars(); }
+  }
   /* and the same reasoning one step out: a clip nobody is looking at is a
      clip nobody should be decoding. Folded away was already covered; this is
      the app in the background, or the screen locked. */
@@ -14025,7 +14109,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-contents],[data-contents-back],[data-open-connections],[data-conn-back],[data-conn-retry],[data-conn-list],[data-conn-find],[data-conn-add],[data-conn-cancel],[data-conn-approve],[data-conn-deny],[data-conn-msg],[data-conn-thread-close],[data-conn-send],[data-chal-bar-hide],[data-online-reconnect],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-library],[data-pw-lib-back],[data-pw-lib-set],[data-pw-lib-card],[data-pw-lib-close],[data-pw-lib-step],[data-pw-howto],[data-pw-ht-close],[data-pw-ht-step],[data-pw-ht-go],[data-pw-setup-back],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-pw-hub-start],[data-pw-hub-create],[data-pw-hub-local],[data-pw-create-points],[data-pw-create-spec],[data-pw-create-go],[data-pw-create-joinopen],[data-pw-create-check],[data-pw-create-join],[data-pw-create-back],[data-pw-code-copy],[data-pw-code-share],[data-pw-perf],[data-pw-perf-side],[data-pw-perf-opp],[data-pw-hub-all],[data-pw-hub-back],[data-pw-hub-open],[data-pw-saved-back],[data-pw-hub-history],[data-pw-online-cancel],[data-pw-online-back],[data-pw-online-retry],[data-pw-online-signin],[data-pw-online-card],[data-pw-online-chart],[data-pw-chart],[data-pw-online-seen],[data-pw-online-specials],[data-pw-online-forfeit],[data-pw-online-forfeit-yes],[data-pw-online-forfeit-no],[data-pw-online-again],[data-pw-online-rematch],[data-pw-oh-open],[data-pr-online-save],[data-pr-online-level],[data-pr-online-signin],[data-pr-online-retry],[data-jnote-new],[data-jnote-cancel],[data-jnote-save],[data-jnote-img],[data-jnote-img-clear],[data-jnote-edit],[data-jnote-del],[data-jnote-del-yes],[data-jnote-del-no],[data-jnote-open],[data-jnote-retry],[data-jnote-signin],[data-pw-chal-cancel],[data-pw-oh-rematch],[data-pw-inv-accept],[data-pw-inv-decline],[data-pr-code-copy],[data-pr-code-share],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-contents],[data-contents-back],[data-open-connections],[data-conn-back],[data-conn-retry],[data-conn-list],[data-conn-find],[data-conn-add],[data-conn-cancel],[data-conn-approve],[data-conn-deny],[data-conn-msg],[data-conn-thread-close],[data-conn-send],[data-chal-bar-hide],[data-online-reconnect],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-library],[data-pw-lib-back],[data-pw-lib-set],[data-pw-lib-card],[data-pw-lib-close],[data-pw-lib-step],[data-pw-howto],[data-pw-ht-close],[data-pw-ht-step],[data-pw-ht-go],[data-pw-setup-back],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-pw-hub-start],[data-pw-hub-create],[data-pw-hub-local],[data-pw-create-points],[data-pw-create-spec],[data-pw-create-go],[data-pw-create-joinopen],[data-pw-create-check],[data-pw-create-join],[data-pw-create-back],[data-pw-code-copy],[data-pw-code-share],[data-pw-perf],[data-pw-perf-menu],[data-pw-perf-side],[data-pw-perf-opp],[data-pw-hub-all],[data-pw-hub-back],[data-pw-hub-open],[data-pw-saved-back],[data-pw-hub-history],[data-pw-online-cancel],[data-pw-online-back],[data-pw-online-retry],[data-pw-online-signin],[data-pw-online-card],[data-pw-online-chart],[data-pw-chart],[data-pw-online-seen],[data-pw-online-specials],[data-pw-online-forfeit],[data-pw-online-forfeit-yes],[data-pw-online-forfeit-no],[data-pw-online-again],[data-pw-online-rematch],[data-pw-oh-open],[data-pr-online-save],[data-pr-online-level],[data-pr-online-signin],[data-pr-online-retry],[data-jnote-new],[data-jnote-cancel],[data-jnote-save],[data-jnote-img],[data-jnote-img-clear],[data-jnote-edit],[data-jnote-del],[data-jnote-del-yes],[data-jnote-del-no],[data-jnote-open],[data-jnote-retry],[data-jnote-signin],[data-pw-chal-cancel],[data-pw-oh-rematch],[data-pw-inv-accept],[data-pw-inv-decline],[data-pr-code-copy],[data-pr-code-share],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -14418,16 +14502,20 @@
     else if (t.hasAttribute("data-pw-perf")) {
       pw.perf.on = !pw.perf.on;
       pw.perf.sel = null;
+      pw.perf.menu = null;
       pw.perf.count = 0;                 // it reopens on the newest matches
       renderPointaeway();
     }
-    else if (t.hasAttribute("data-pw-perf-side")) {
-      pw.perf.side = t.getAttribute("data-pw-perf-side");
-      pw.perf.count = 0; pw.perf.from = 0; pw.perf.sel = null;
+    else if (t.hasAttribute("data-pw-perf-menu")) {
+      /* one open at a time, and a second press on the same one shuts it */
+      const k = t.getAttribute("data-pw-perf-menu");
+      pw.perf.menu = pw.perf.menu === k ? null : k;
       renderPointaeway();
     }
-    else if (t.hasAttribute("data-pw-perf-opp")) {
-      pw.perf.opp = t.getAttribute("data-pw-perf-opp");
+    else if (t.hasAttribute("data-pw-perf-side") || t.hasAttribute("data-pw-perf-opp")) {
+      const side = t.hasAttribute("data-pw-perf-side");
+      pw.perf[side ? "side" : "opp"] = t.getAttribute(side ? "data-pw-perf-side" : "data-pw-perf-opp");
+      pw.perf.menu = null;
       pw.perf.count = 0; pw.perf.from = 0; pw.perf.sel = null;
       renderPointaeway();
     }
