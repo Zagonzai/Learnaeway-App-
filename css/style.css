@@ -6126,12 +6126,7 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 }
 /* the panel is open, so the region it borrows is not */
 .app.chart-open .header-zone,
-.app.chart-open .bar,
-/* the hub's performance chart asks for the same three boxes, for the same
-   reason and by the same rule — the difference being that nothing stands in
-   their place, so the card below takes the height instead */
-.app.perf-open .header-zone,
-.app.perf-open .bar { display: none; }
+.app.chart-open .bar { display: none; }
 
 .chart-panel {
   position: relative;
@@ -6836,24 +6831,17 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   display: flex; flex-direction: column;
   gap: clamp(4px, calc(.8 * var(--vh1)), 8px);
 }
-.pw-perf-chips { display: flex; gap: 5px; }
-.pw-perf-chip {
-  flex: 1 1 0;
-  min-width: 0;
-  padding: clamp(4px, calc(.8 * var(--vh1)), 7px) 4px;
-  border: 1px solid var(--pw-line);
-  border-radius: 999px;
-  background: rgba(5,9,22,.7);
-  font-size: calc(10.5px * var(--fs)); font-weight: 700;
-  color: var(--pw-muted);
-  white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+/* The two filters, in the plot's top-left, wearing the chart menus the day
+   chart already has — .tp-menu-btn and .tp-menu, reused rather than copied,
+   so there is one dropdown in this app and not two that look alike. They cost
+   the chart nothing: they stand over it rather than above it, where the two
+   rows of pills they replace were taking a fifth of its height. */
+.pw-perf-menus {
+  position: absolute; top: 7px; left: 7px;
+  display: flex; gap: 5px;
+  z-index: 3;
 }
-.pw-perf-chip.on {
-  border-color: rgba(61,223,255,.65);
-  background: rgba(10,30,56,.9);
-  color: #EAF6FF;
-}
-.pw-perf-chip:active { filter: brightness(1.3); }
+.pw-perf-menus .tp-menu-btn { min-width: 52px; }
 
 .pw-perf-total {
   display: flex; align-items: baseline; gap: 8px;
@@ -6933,16 +6921,25 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
   border-top: 1px dashed rgba(143,169,196,.4);
   pointer-events: none;
 }
+/* The scrub label has three corners to choose from — the fourth is the
+   filters', which have to stay reachable. It takes the top-right one, and
+   drops to a bottom corner when the candle it is describing is standing in
+   that one; pwPerfTip measures which rather than guessing from which half the
+   finger is in, because a tall candle near the middle reaches the top-right
+   box while still being on the left. */
 .pw-perf-tip {
-  position: absolute; left: 8px; top: 8px;
+  position: absolute; right: 44px; top: 8px;
   display: flex; flex-direction: column; gap: 1px;
-  max-width: calc(100% - 52px);
+  /* kept to its corner: a label wide enough to cross the plot would reach
+     the candle it is describing however it is anchored */
+  max-width: min(60%, 215px);
   padding: 5px 8px;
   border: 1px solid var(--pw-line); border-radius: 9px;
   background: rgba(5,9,22,.94);
   pointer-events: none;
 }
-.pw-perf-tip.right { left: auto; right: 44px; }
+.pw-perf-tip.low { top: auto; right: auto; left: 8px; bottom: 16px; }
+.pw-perf-tip.lowright { top: auto; bottom: 16px; }
 .pw-perf-tip[hidden] { display: none; }
 .pw-perf-tip b { font-size: calc(11px * var(--fs)); font-weight: 800; }
 .pw-perf-tip b.win { color: var(--pw-bull); }

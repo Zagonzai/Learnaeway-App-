@@ -3,7 +3,7 @@
  * deploys show up immediately; only falls back to cache when offline.
  * Heavy binary assets (images) are cache-first since they rarely change.
  */
-const CACHE = "learnaeway-v220";
+const CACHE = "learnaeway-v222";
 
 /* ---- two caches, on purpose ----
  * CACHE is the code: HTML, CSS, JS, course data. Its name carries the
