@@ -3,7 +3,7 @@
  * deploys show up immediately; only falls back to cache when offline.
  * Heavy binary assets (images) are cache-first since they rarely change.
  */
-const CACHE = "learnaeway-v221";
+const CACHE = "learnaeway-v223";
 
 /* ---- two caches, on purpose ----
  * CACHE is the code: HTML, CSS, JS, course data. Its name carries the
@@ -29,6 +29,9 @@ const SHELL = [
   "./index.html",
   "./css/style.css",
   "./js/app.js",
+  /* the rules, which app.js reads as it loads — it is not optional and it is
+     not large, so it belongs beside the file that cannot start without it */
+  "./js/pw-rules.js",
   "./js/config.js",
   "./js/firebase.js",
   "./data/course-data.js",
