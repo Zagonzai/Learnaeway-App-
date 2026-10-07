@@ -10587,3 +10587,297 @@ a.pr-link:active { border-color: var(--cyan); filter: brightness(1.25); }
 .tp-prac-line.no { border-color: rgba(255,61,154,.45); color: #FF6B9D; }
 .tp-prac-done { text-align: center; }
 .tp-prac-done .btn-primary, .tp-prac-done .btn-secondary { width: 78%; margin: 10px auto 0; }
+
+/* ==================== ÆWAY: the market screen ====================
+   The chart fills whatever is left after the head and the calls, so the panel
+   becomes a column and the chart box the thing that flexes. Everything else in
+   the Tools panel keeps the layout it had, which is what .aw-fill is for. */
+#cardScroll .ip-panel.aw-fill {
+  height: 100%;
+  display: flex; flex-direction: column;
+  min-height: 0;
+}
+/* The body is the column and the chart box is the one thing in it that
+   stretches. Everything else — the mode toggle, the head, the calls — is its own
+   height, and the chart takes whatever is left. */
+.ip-panel.aw-fill .tp-body {
+  flex: 1 1 auto; min-height: 0;
+  display: flex; flex-direction: column;
+}
+.ip-panel.aw-fill .tp-body { margin-bottom: 0; }
+
+.aw-head { margin-bottom: 6px; flex: 0 0 auto; }
+.aw-head .tp-quote b { font-size: calc(13px * var(--fs)); letter-spacing: .1em; }
+/* the tag that says what this market is. It is also the way in to the admin
+   page, under a long press — see awIsAdmin(). */
+.aw-sim {
+  display: inline-block;
+  margin-left: 7px; padding: 1px 6px;
+  border-radius: 999px;
+  border: 1px solid rgba(143,169,196,.38);
+  background: rgba(143,169,196,.10);
+  color: #9FC0E0;
+  font-size: calc(8.5px * var(--fs)); font-weight: 800;
+  letter-spacing: .05em; text-transform: uppercase;
+  vertical-align: 2px;
+  -webkit-user-select: none; user-select: none;
+  -webkit-touch-callout: none;
+}
+
+.aw-box {
+  position: relative;
+  /* basis 0, so the leftover height is shared by the chart alone rather than in
+     proportion to what each child happens to contain */
+  flex: 1 1 0;
+  min-height: 132px;
+  border-radius: 14px;
+  border: 1px solid var(--pw-line, rgba(61,223,255,.24));
+  background: rgba(7,10,24,.72);
+  overflow: hidden;
+}
+.aw-canvas {
+  position: absolute; inset: 0;
+  display: block; width: 100%; height: 100%;
+  /* the gesture handler owns this surface: without it the browser pans and
+     pinch-zooms the page before a pointermove is ever seen */
+  touch-action: none;
+  -webkit-user-select: none; user-select: none;
+}
+.aw-box.aw-dead {
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 8px; padding: 14px;
+}
+.aw-dead-why { font-size: calc(9.5px * var(--fs)); color: #6F8CA8; text-align: center; }
+
+/* the readout: the crosshair's candle, or the newest one when nothing is held */
+.aw-read {
+  position: absolute; top: 4px; left: 7px; right: 58px;
+  display: flex; flex-direction: column; gap: 1px;
+  font-size: calc(8.5px * var(--fs));
+  color: #8FA9C4;
+  pointer-events: none;
+  text-shadow: 0 0 7px rgba(2,4,12,.95), 0 0 3px rgba(2,4,12,.95);
+  z-index: 2;
+}
+.aw-read-when { font-weight: 800; color: #C7DCEF; letter-spacing: .03em; margin-right: 2px; }
+.aw-read-when i { font-style: normal; font-weight: 700; color: #6F8CA8; font-size: .9em; }
+/* a short plot: one line, and only what cannot be read off the candle itself */
+.aw-box.tight .aw-read { flex-direction: row; flex-wrap: wrap; gap: 4px 7px; align-items: baseline; }
+.aw-box.tight .aw-read-ohlc > .o,
+.aw-box.tight .aw-read-ohlc > .h,
+.aw-box.tight .aw-read-ohlc > .l,
+.aw-box.tight .aw-read-vol > .m { display: none; }
+.aw-box.tight .aw-menus { top: 26px; }
+.aw-read-ohlc { display: flex; flex-wrap: wrap; gap: 5px; align-items: baseline; }
+.aw-read-ohlc i { font-style: normal; font-weight: 800; color: #E6F2FB; margin-left: 2px; }
+.aw-read-ohlc i.up, .aw-read-vol b.up, .aw-read-ohlc em.up { color: var(--pw-bull, #1FCBA0); }
+.aw-read-ohlc i.down, .aw-read-vol b.down, .aw-read-ohlc em.down { color: var(--pw-bear, #E5484D); }
+.aw-read-ohlc em { font-style: normal; font-weight: 800; }
+.aw-read-vol { display: flex; flex-wrap: wrap; gap: 7px; }
+.aw-read-vol b { font-weight: 800; }
+.aw-read-vol b.flat { color: #8FA9C4; }
+.aw-read-vol b i { font-style: normal; font-weight: 700; opacity: .72; margin-left: 2px; }
+.aw-read-vol b.aw-est { opacity: .6; text-transform: uppercase; letter-spacing: .06em; }
+.aw-read-dim { color: #5F7C99; }
+
+/* the timeframe menu reuses the instrument chart's dropdown, lowered to clear
+   the three-line readout above it */
+.aw-menus { top: 46px; left: 7px; }
+.aw-box .tp-menu {
+  position: absolute; top: calc(100% + 4px); left: 0;
+  display: flex; flex-direction: column; gap: 3px;
+  padding: 5px;
+  border-radius: 10px;
+  border: 1px solid rgba(120,150,180,.35);
+  background: rgba(5,9,22,.96);
+  pointer-events: auto; z-index: 5;
+}
+.aw-box .tp-menu-item {
+  padding: 5px 12px; border-radius: 7px;
+  border: 1px solid transparent; background: none;
+  color: #9FC0E0; font-size: calc(10px * var(--fs)); font-weight: 800;
+  text-align: left; white-space: nowrap;
+}
+.aw-box .tp-menu-item.on { border-color: var(--cyan); color: var(--cyan); }
+
+/* back to the newest candle. Only there when the chart has been panned off it. */
+.aw-jump {
+  position: absolute; right: 60px; bottom: 22px;
+  width: 26px; height: 26px;
+  border-radius: 50%;
+  border: 1px solid rgba(61,223,255,.5);
+  background: rgba(5,9,22,.92);
+  color: var(--cyan);
+  font-size: calc(11px * var(--fs)); font-weight: 900;
+  line-height: 1;
+  z-index: 3;
+}
+.aw-jump:active { filter: brightness(1.4); }
+
+/* ---- the calls ---- */
+.aw-head, .aw-panel, .ip-panel.aw-fill .tp-mode { flex: 0 0 auto; }
+.aw-panel { margin-top: 8px; }
+/* no prediction open, no line, no height held for one */
+.aw-live:empty { display: none; }
+.aw-live { margin-bottom: 5px; }
+.aw-open {
+  font-size: calc(9.5px * var(--fs)); color: #9FC0E0;
+  display: flex; flex-wrap: wrap; gap: 4px; align-items: baseline;
+}
+.aw-open b { font-weight: 900; letter-spacing: .06em; }
+.aw-open.bull b { color: var(--pw-bull, #1FCBA0); }
+.aw-open.bear b { color: var(--pw-bear, #E5484D); }
+.aw-open i { font-style: normal; font-weight: 800; }
+.aw-open i.up { color: var(--pw-bull, #1FCBA0); }
+.aw-open i.down { color: var(--pw-bear, #E5484D); }
+
+.aw-calls { align-items: stretch; gap: 7px; }
+.aw-calls .ae-call { min-height: 46px; font-size: calc(13px * var(--fs)); }
+.aw-calls .ae-call:disabled { opacity: .42; }
+/* the countdown sits between the two calls, which is where the reference puts it */
+.aw-count {
+  flex: 0 0 auto;
+  min-width: 70px;
+  display: flex; flex-direction: column; align-items: center; justify-content: center;
+  gap: 1px;
+  border-radius: 14px;
+  border: 1px solid rgba(120,150,180,.3);
+  background: rgba(5,9,22,.6);
+  color: #E6F2FB;
+  font-size: calc(15px * var(--fs)); font-weight: 900;
+  font-variant-numeric: tabular-nums;
+  letter-spacing: .04em;
+}
+.aw-count i {
+  font-style: normal; font-size: calc(8px * var(--fs)); font-weight: 800;
+  letter-spacing: .08em; color: #7E9CBB; text-transform: uppercase;
+}
+.aw-count.locked { color: #7E9CBB; font-size: calc(11px * var(--fs)); letter-spacing: .08em; }
+
+.aw-foot {
+  display: flex; align-items: center; gap: 9px;
+  margin-top: 7px;
+  font-size: calc(9.5px * var(--fs));
+}
+.aw-bal { font-weight: 900; color: #E6F2FB; font-size: calc(11px * var(--fs)); }
+.aw-bal i { font-style: normal; font-weight: 700; color: #7E9CBB; font-size: calc(9px * var(--fs)); }
+.aw-note { color: var(--cyan); flex: 1 1 auto; min-width: 0; }
+.aw-link {
+  margin-left: auto;
+  padding: 3px 9px;
+  border-radius: 999px;
+  border: 1px solid rgba(120,150,180,.3);
+  background: rgba(5,9,22,.5);
+  color: #9FC0E0;
+  font-size: calc(9.5px * var(--fs)); font-weight: 800;
+}
+.aw-link + .aw-link { margin-left: 0; }
+.aw-adm-ask { gap: 6px; }
+.aw-adm-pass { flex: 1 1 auto; min-width: 0; }
+
+/* on a short phone the two calls are what has to be on screen; the chart gives
+   up the height rather than the controls */
+@media (max-height: 740px) {
+  .aw-calls .ae-call { min-height: 40px; }
+  .aw-count { min-width: 62px; font-size: calc(13px * var(--fs)); }
+  .aw-box { min-height: 104px; }
+  .aw-read { font-size: calc(8px * var(--fs)); }
+  .aw-head { margin-bottom: 3px; }
+  .aw-panel { margin-top: 5px; }
+  .aw-foot { margin-top: 5px; }
+  .aw-head .tp-quote b { font-size: calc(12px * var(--fs)); }
+  .ip-panel.aw-fill .tp-mode { margin-bottom: 5px; }
+  .ip-panel.aw-fill .tp-tabs { margin-bottom: 7px; }
+}
+
+/* ---- point history ---- */
+.aw-hist-top { margin: 2px 0 8px; }
+.aw-hist { display: flex; flex-direction: column; gap: 6px; }
+.aw-hrow {
+  padding: 7px 9px;
+  border-radius: 11px;
+  border: 1px solid rgba(120,150,180,.22);
+  background: rgba(7,10,24,.6);
+}
+.aw-hrow.up { border-left: 3px solid var(--pw-bull, #1FCBA0); }
+.aw-hrow.down { border-left: 3px solid var(--pw-bear, #E5484D); }
+.aw-hrow.flat { border-left: 3px solid #5F7C99; }
+.aw-hrow-top { display: flex; align-items: baseline; gap: 7px; flex-wrap: wrap; }
+.aw-hrow-top b { font-size: calc(12px * var(--fs)); font-weight: 900; }
+.aw-hrow-top b.up { color: var(--pw-bull, #1FCBA0); }
+.aw-hrow-top b.down { color: var(--pw-bear, #E5484D); }
+.aw-hrow-top b.flat { color: #8FA9C4; }
+.aw-hrow-side {
+  font-size: calc(9px * var(--fs)); font-weight: 800;
+  letter-spacing: .06em; text-transform: uppercase;
+}
+.aw-hrow-side.bull { color: var(--pw-bull, #1FCBA0); }
+.aw-hrow-side.bear { color: var(--pw-bear, #E5484D); }
+.aw-hrow-when { font-size: calc(9px * var(--fs)); color: #7E9CBB; margin-left: auto; }
+.aw-hrow-why { margin-top: 3px; font-size: calc(9px * var(--fs)); color: #8FA9C4; line-height: 1.45; }
+
+/* ---- admin ---- */
+.aw-adm { display: flex; flex-direction: column; gap: 3px; }
+.aw-adm-sw { display: flex; gap: 6px; margin-bottom: 6px; }
+.aw-adm-sw .tp-mode-btn { display: flex; flex-direction: column; gap: 1px; padding: 5px 6px; }
+.aw-adm-sw .tp-mode-btn i {
+  font-style: normal; font-size: calc(8px * var(--fs)); font-weight: 700;
+  letter-spacing: .06em; opacity: .75; text-transform: uppercase;
+}
+.aw-adm-h4 {
+  margin: 11px 0 3px;
+  font-size: calc(10px * var(--fs)); font-weight: 900;
+  letter-spacing: .08em; text-transform: uppercase; color: var(--cyan);
+  display: flex; align-items: baseline; justify-content: space-between; gap: 8px;
+}
+.aw-adm-row {
+  display: flex; align-items: baseline; gap: 8px;
+  padding: 3px 0;
+  border-bottom: 1px solid rgba(120,150,180,.12);
+  font-size: calc(9.5px * var(--fs));
+}
+.aw-adm-row.bad { color: #FFC4C6; }
+.aw-adm-k { color: #8FA9C4; flex: 1 1 auto; min-width: 0; }
+.aw-adm-v { font-weight: 800; color: #E6F2FB; text-align: right; white-space: nowrap; }
+.aw-adm-v.es { min-width: 58px; color: #9FC0E0; }
+.aw-adm-h { font-size: calc(8.5px * var(--fs)); color: #6F8CA8; font-weight: 700; }
+.aw-adm-flag {
+  margin: 5px 0;
+  padding: 6px 8px;
+  border-radius: 9px;
+  border: 1px solid rgba(61,223,255,.26);
+  background: rgba(61,223,255,.07);
+  font-size: calc(9px * var(--fs)); color: #9FC0E0; line-height: 1.45;
+}
+.aw-adm-flag.bad { border-color: rgba(229,72,77,.4); background: rgba(229,72,77,.09); color: #FFC4C6; }
+.aw-adm-flag.ok { border-color: rgba(31,203,160,.34); background: rgba(31,203,160,.07); }
+.aw-adm-say {
+  margin: 7px 0 3px;
+  font-size: calc(10.5px * var(--fs)); font-weight: 800; color: #E6F2FB; line-height: 1.45;
+}
+.aw-adm-ass { display: flex; flex-wrap: wrap; gap: 9px; margin: 5px 0; }
+.aw-adm-ass label {
+  display: flex; align-items: center; gap: 5px;
+  font-size: calc(9px * var(--fs)); color: #8FA9C4;
+}
+.aw-adm-in { width: 56px; padding: 3px 6px; text-align: center; }
+.aw-adm-act { display: flex; flex-wrap: wrap; align-items: center; gap: 6px; margin: 7px 0; }
+.aw-cmp-wrap { margin: 5px 0; }
+.aw-cmp {
+  display: block; width: 100%; height: 86px;
+  border-radius: 10px;
+  border: 1px solid rgba(120,150,180,.22);
+  background: rgba(7,10,24,.6);
+}
+.aw-cmp-key { margin-top: 4px; font-size: calc(8.5px * var(--fs)); color: #6F8CA8; line-height: 1.5; }
+.aw-cmp-key b { font-weight: 800; }
+.aw-cmp-key b.k1 { color: #E6F2FB; }
+.aw-cmp-key b.k2 { color: var(--cyan); }
+
+/* the ÆWAY panel on the desktop layout: the same screen, its own box */
+.aw-desk { display: flex; flex-direction: column; height: 100%; min-height: 0; }
+
+/* Reset balance, in Settings */
+.set-bal { font-size: calc(13px * var(--fs)); font-weight: 900; color: #E6F2FB; margin-bottom: 6px; }
+.set-bal i { font-style: normal; font-weight: 700; font-size: calc(9.5px * var(--fs)); color: #7E9CBB; }
+.set-ask { font-size: calc(9.5px * var(--fs)); color: #9FC0E0; margin-bottom: 6px; line-height: 1.45; }

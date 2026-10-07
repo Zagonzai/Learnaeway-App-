@@ -50,4 +50,46 @@ module.exports = {
      them, and nobody but Smart and the engine's own opponent plays a wild on a
      read of the board. */
   patientHoldRounds: 6,
+
+  /* ---- the market the matches move ----
+     Price is a log-space walk: a Bull win adds `epsilon` to the log price and a
+     Bear win takes it off. See the note at the top of market.js for why.
+
+     `epsilon` is tuned so a typical day moves about 1%, like ES. Net wins over
+     a day are a fair coin walk, so their standard deviation is the square root
+     of the number of decided matches, and the day's log move is epsilon times
+     that:
+
+         epsilon = 0.01 / sqrt(decided matches per day)
+                 = 0.01 / sqrt(4,050 × 288 × 0.969)
+                 = 0.01 / sqrt(1,130,242)
+                 = 0.01 / 1,063.1
+                 = 9.4e-6
+
+     The three numbers in that are Phase 1's measurements: 4,050 matches finish
+     per five-minute candle, there are 288 candles in a day, and 96.9% of
+     matches are decided rather than drawn. Change the population and this
+     number has to move with it, or the chart gets quieter or wilder. */
+  market: {
+    startPrice: 10000,
+    epsilon: 9.4e-6,
+    targetDailyMove: 0.01,      // what epsilon was fitted to, for the record
+    candleMs: 5 * 60 * 1000,
+    sampleMs: 10 * 1000,
+    maxPoints: 25,              // the match target: a winner's Print is 1..25
+  },
+
+  /* ---- the recording ----
+     The chart runs off a pre-recorded market until there is a server to run a
+     live one. 90 days, one file per day. */
+  record: {
+    days: 90,
+    dir: "data/aeway",
+    /* The scrambling key. This is not a secret and is not treated as one — it
+       is there so a tester poking at the network tab sees bytes rather than
+       tomorrow's prices. A determined developer can read this file and decode
+       the recording, which is exactly why predictions have to move to a server
+       before points are ever worth anything. */
+    key: "aeway-recording-v1",
+  },
 };

@@ -23,9 +23,16 @@ node sim/selftest.js                     the invariants a chart cannot survive l
 | `match.js` | one match, played whole, in memory, with no screen |
 | `sim.js` | the population, the matchmaking, and the clock |
 | `results.js` | the one door every finished match comes through |
+| `market.js` | and what is behind it: finished matches in, five-minute candles out |
+| `record.js` | the offline recorder — 90 days, one file a day, and the stitch pass |
+| `report.js` | the admin report, from the whole recording, as aggregates only |
+| `../js/aeway-codec.js` | the recording's file format, shared with the phone |
 | `config.js` | every number somebody might want to change |
 | `run.js` | the command line, and the measurements |
 | `selftest.js` | `node sim/selftest.js` |
+
+The market, the recording and the chart that plays it back have their own
+write-up in [`docs/aeway-market.md`](../docs/aeway-market.md).
 
 ## Why it is cheap
 

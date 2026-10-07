@@ -34,6 +34,10 @@
   if (!store.liked) store.liked = {};
   if (!store.notes) store.notes = {};
   if (!store.settings) store.settings = { sound: true, textSize: "M", name: "" };
+  /* ÆWAY play points, on stores written before the market existed */
+  if (typeof store.awPoints !== "number") store.awPoints = 10000;
+  if (!store.awOpen) store.awOpen = {};
+  if (!store.awDone) store.awDone = [];
   if (!store.videosWatched) store.videosWatched = {};   // videoId -> true
   if (!store.checkinLog) store.checkinLog = {};         // YYYY-MM-DD -> submitted answers
   if (!store.beforeTrade) store.beforeTrade = {};       // Before Trade Stage 1 picks
@@ -187,6 +191,11 @@
          down. These only ever go up. */
       pwStats: { played: 0, won: 0, lost: 0, drawn: 0, bull: 0, bear: 0 },
       pwHistory: [],
+      /* ÆWAY play points. Device-only — see the note on awSave(). */
+      awPoints: 10000,
+      awOpen: {},            // one open prediction per timeframe
+      awDone: [],            // settled predictions, newest first
+      awAdmin: null,         // the admin page's editable assumptions
     };
   }
   function save() {
@@ -322,8 +331,19 @@
        timeframe, own drawings, own view window. Restored from the store. */
     tpMode: store.chartMode,
     dcMode: store.dcChartMode,
-    aeCall: null,            // which of the two calls is pressed; nothing reads it yet
-    aeNote: "",              // what Generate says back until it does something
+    /* ---- the ÆWAY market screen ---- */
+    awTf: "5m",              // which timeframe the chart and the calls run on
+    awFrom: null,            // leftmost bar; null means "follow the newest"
+    awSpan: 64,              // how many candles are across — this is the zoom
+    awFollow: true,          // sticking to the newest candle
+    awCross: null,           // the crosshair, while a finger is held down
+    awMenu: false,           // the timeframe dropdown
+    awView: null,            // null, "history" or "admin"
+    awNote: "",              // what the screen says back after an action
+    awProject: false,        // the admin's 1,000,000-player projection
+    awAdminOk: false,        // the passcode was accepted this session
+    awAdminAsk: false,       // the passcode box, after a long press on the tag
+    awResetAsk: false,       // the "start again from 10,000?" confirmation
     tpMenu: null,            // which of the phone chart's two dropdowns is open
     tpPat: false,            // the saved-pattern list, expanded inline
     tpPatOpen: null,         // a saved pattern id, when one is being looked at
@@ -7404,6 +7424,42 @@
 
   /* and the performance chart's, which is the same shape of thing: one finger
      reads, two fingers move, and a press that never travelled opens a match */
+  /* and the ÆWAY chart's: one finger pans, a held finger raises the crosshair
+     and scrubs with it, two fingers pinch the span */
+  /* the admin page's two editable assumptions, saved as they are typed */
+  document.addEventListener("change", (e) => {
+    const el = e.target.closest && e.target.closest("[data-aw-ass]");
+    if (!el) return;
+    const k = el.getAttribute("data-aw-ass");
+    const n = Number(el.value);
+    if (!Number.isFinite(n) || n < 0) return;
+    store.awAdmin = Object.assign({}, store.awAdmin || {}, { [k]: n });
+    awSave();
+    render();
+  });
+
+  document.addEventListener("pointerdown", awDown);
+  window.addEventListener("pointermove", awMove, { passive: false });
+  window.addEventListener("pointerup", awUp);
+  window.addEventListener("pointercancel", awUp);
+
+  /* The way into the admin page: a long press on the "Simulated market" tag,
+     then a passcode. Long rather than a tap so that a tester who reads the tag
+     and prods it finds nothing — see awIsAdmin() for what the passcode is and
+     is not. */
+  let awSimHold = null;
+  document.addEventListener("pointerdown", (e) => {
+    if (!e.target.closest || !e.target.closest("[data-aw-sim]")) return;
+    clearTimeout(awSimHold);
+    awSimHold = setTimeout(awAdminAsk, 1500);
+  });
+  const awSimOff = () => { clearTimeout(awSimHold); awSimHold = null; };
+  window.addEventListener("pointerup", awSimOff);
+  window.addEventListener("pointercancel", awSimOff);
+  window.addEventListener("pointermove", (e) => {
+    if (awSimHold && (Math.abs(e.movementX || 0) > 4 || Math.abs(e.movementY || 0) > 4)) awSimOff();
+  }, { passive: true });
+
   document.addEventListener("pointerdown", pwPerfDown);
   /* anywhere else on the screen closes an open filter menu */
   document.addEventListener("pointerdown", (e) => {
@@ -10085,7 +10141,14 @@
       stopAudio();
       cardFooter.style.display = "none";
       cardScroll.classList.remove("pa-playing", "pw-playing", "pw-introing", "pw-savedscreen", "ci-resulting");
-      cardScroll.innerHTML = `<div class="ip-panel">
+      /* The ÆWAY chart is the one panel that has to fill the height rather than
+         sit at its natural size: its plot is whatever is left after the head
+         and the calls, and a chart that chose its own height would either
+         overflow the screen or waste it. Everything else keeps the layout it
+         had, which is what the class is for. */
+      const awFill = state.panel === "tools" && (state.tpTab || "chart") === "chart" &&
+        state.tpMode === "aeway" && !state.awView && !state.tpPractice && !state.tpPatOpen;
+      cardScroll.innerHTML = `<div class="ip-panel${awFill ? " aw-fill" : ""}">
         <div class="ip-head">
           <span class="ip-title">${state.panel === "settings" ? "Settings" : "Tools"}</span>
           <button class="ip-close" data-panel-close aria-label="Close">✕</button>
@@ -10093,6 +10156,23 @@
         ${state.panel === "settings" ? settingsPanelHTML() : toolsPanelHTML()}
       </div>`;
       cardScroll.scrollTop = 0;
+    }
+
+    /* ---- the ÆWAY chart's own life ----
+       It is the only screen in the app with a clock in it, so it is started and
+       stopped by whether it is on screen rather than by a route: the canvas it
+       paints into is either in the document or it is not. */
+    /* The recording is fetched the first time an ÆWAY screen is drawn, and the
+       canvas only exists once it has arrived — so the boot cannot wait for the
+       canvas to appear, or neither would ever happen. It hangs off the head
+       instead, which is on the screen from the first paint. */
+    if (document.querySelector(".aw-head, #awCmp")) awBoot();
+    if (document.querySelector(".aw-canvas")) {
+      awStart();
+      requestAnimationFrame(() => { awPaint(); awPaintPanel(); });
+    } else {
+      awStop();
+      if (document.getElementById("awCmp")) requestAnimationFrame(awPaintCompare);
     }
 
     /* ==> invites.js: the bar stands down on the one screen that lists every
@@ -10884,35 +10964,1046 @@
     return hit.story.seq[hit.story.seq.length - 1].id;
   }
 
-  /* ==================== $ÆWAY — WAITING ON ITS MECHANIC ====================
-     This mode showed a tape that printed a candle every second and a half.
-     It is on hold while the generation mechanic is designed, so the chart
-     opens empty and Generate is a button and nothing behind it yet. The two
-     calls stay where they are — they press, and that is all they do for now.
+  /* ==================== ÆWAY: the market, the chart, the calls ====================
 
-     The story engine itself is untouched: seBuildStory and the composed
-     series are what the practice loop and the instrument chart run on, and
-     they are what the mechanic will be built from when it is specified. */
-  function aeEmptyHTML() {
-    return `<div class="ae-empty">
-      <span class="ae-empty-line">No story on the chart yet</span>
+     The ÆWAY chart is a live market moved only by Pointæway match results. A
+     Bull winning a match takes the price up and a Bear winning takes it down,
+     and nothing else touches it — a prediction never moves the price, it only
+     reads it.
+
+     Three files sit under this one and this one owns none of their work:
+
+       js/aeway-codec.js   the recording's file format, shared with the recorder
+       js/aeway-market.js  the data source: the recording today, a live feed
+                           later, behind one switch. Also the playback clock.
+       js/aeway-chart.js   the canvas painter and its geometry
+
+     What is here is the screen: the markup, the state, the gestures and the
+     predictions — the same things every other screen in this file owns.
+
+     ==> THE MARKET IS A RECORDING. Ninety days of the ten-thousand-bot market
+     were simulated offline and are played back against the real clock, so every
+     phone shows the same chart at the same moment without a server to agree
+     with. It is labelled on screen as a simulated market, because it is one. */
+
+  const AW = () => window.AewayMarket;
+  const AWC = () => window.AewayChart;
+
+  const AW_TARGET = 200;        // what a full-candle prediction pays on a normal candle
+  const AW_RATE_BARS = 12;      // how many candles the rate's average looks back over
+  const AW_LOCK_MS = 15000;     // entries close this long before the candle does
+  const AW_START_POINTS = 10000;
+  const AW_HOLD_MS = 400;       // press and hold this long for the crosshair
+  const AW_SLOP = 8;            // a drag this far is a pan rather than a hold
+  const AW_SPAN_MIN = 24, AW_SPAN_MAX = 220, AW_SPAN_DEF = 64;
+  const AW_HISTORY_MAX = 60;
+
+  /* ---- the balance ----
+     Play points, kept on the device.
+
+     ==> AND KEPT ON THE DEVICE ON PURPOSE. The brief asks for the balance in
+     Firestore if that can be done inside the free Spark allowance, and to say
+     so if it cannot. It cannot be guaranteed: Spark allows twenty thousand
+     document writes a day across the whole project, and a tester holding
+     predictions on all five timeframes settles five of them every five
+     minutes — fourteen hundred writes a day each, before the course, the
+     journal and the notes have written anything. A dozen testers would spend
+     the allowance by lunchtime, and the first thing to break would be the
+     journal rather than the chart.
+
+     So predictions never touch the cloud: they use awSave(), which writes
+     localStorage and deliberately does not call pushCloudSoon(). The cost is
+     that a tester who reinstalls starts again — which is what the Reset balance
+     button in Settings does anyway — and the fix is the same move the brief
+     already requires before points are ever worth anything: settle on a
+     server. */
+  function awSave() {
+    try { localStorage.setItem(KEY, JSON.stringify(store)); } catch (e) { /* quota */ }
+  }
+  const awPoints = () => (typeof store.awPoints === "number" ? store.awPoints : AW_START_POINTS);
+
+  /* ---- is this an administrator ----
+     Two ways in, both client-side, both distribution keys rather than secrets —
+     the same footing as the beta access passcode this app already ships with,
+     and said out loud for the same reason. The admin page shows no money and no
+     user data; what it shows is the simulator's own report.
+
+       LEARNAEWAY_CONFIG.adminEmails   the signed-in account's email, if listed
+       LEARNAEWAY_CONFIG.adminPasscode typed into the prompt behind a long press
+                                       on the "Simulated market" tag
+
+     A tester who never does either sees no trace of it. */
+  const awCfg = () => (window.LEARNAEWAY_CONFIG || {});
+  function awIsAdmin() {
+    if (state.awAdminOk) return true;
+    const list = awCfg().adminEmails || [];
+    const email = (window.FB && FB.user() && FB.user().email) || "";
+    return !!email && list.some((e) => String(e).toLowerCase() === email.toLowerCase());
+  }
+
+  /* ---------------- boot ---------------- */
+
+  let awReady = false, awFailed = null, awTimer = null, awRaf = 0;
+
+  function awBoot() {
+    if (awReady || !AW()) return;
+    AW().ready().then(() => {
+      awReady = true; awFailed = null;
+      awSettleDue();
+      if (document.querySelector(".aw-head, #awCmp")) render();
+    }).catch((e) => {
+      awFailed = String(e && e.message || e);
+      if (document.querySelector(".aw-head, #awCmp")) render();
+    });
+  }
+
+  /* The chart is only alive while it is on screen: one timer, started when the
+     screen renders and stopped when it does not. A phone that leaves the tab
+     open on the chart should not be repainting a canvas nobody is looking at,
+     and a prediction that settles while the app is closed settles when it
+     opens, because the recording is deterministic and the answer is the same
+     whenever it is asked. */
+  function awStart() {
+    if (awTimer) return;
+    awTimer = setInterval(awFrame, 1000);
+  }
+  function awStop() {
+    awReadWas = "";
+    if (awTimer) { clearInterval(awTimer); awTimer = null; }
+    if (awRaf) { cancelAnimationFrame(awRaf); awRaf = 0; }
+  }
+
+  /* one second of market time: settle what is due, repaint the forming candle,
+     move the countdown on */
+  function awFrame() {
+    if (!awBoxes().length) { awStop(); return; }
+    const settled = awSettleDue();
+    awPaintSoon();
+    awPaintPanel();
+    if (settled) render();
+  }
+
+  function awPaintSoon() {
+    if (awRaf) return;
+    awRaf = requestAnimationFrame(() => { awRaf = 0; awPaint(); });
+  }
+
+  /* ---------------- the view ---------------- */
+
+  const awTf = () => (AW() ? AW().tfOf(state.awTf) : { id: "5m", k: 1, min: 5 });
+
+  /* The chart's window, clamped to what exists. `from` is a bar index on the
+     current timeframe; null means "follow the newest", which is where the chart
+     opens and where the jump button puts it back. */
+  function awWindow() {
+    const tf = state.awTf;
+    const last = AW().liveBar(tf);
+    const first = AW().firstBar(tf);
+    let span = Math.max(AW_SPAN_MIN, Math.min(AW_SPAN_MAX, Math.round(state.awSpan || AW_SPAN_DEF)));
+    span = Math.min(span, Math.max(AW_SPAN_MIN, last - first + 1));
+    /* the newest candle sits a little in from the right edge, the way every
+       chart in the world leaves room for the price to keep going */
+    const gap = Math.max(1, Math.round(span * 0.06));
+    /* and that position is also as far right as the chart will go. Letting the
+       window run past it looked like a bug rather than like freedom: zooming
+       out would leave the candles bunched against the left edge with a third of
+       the plot empty, because the window had grown rightwards into a future
+       that has nothing in it. */
+    const rightmost = last - span + 1 + gap;
+    let from = state.awFollow || state.awFrom == null ? rightmost : state.awFrom;
+    from = Math.max(first, Math.min(rightmost, Math.round(from)));
+    state.awSpan = span;
+    if (!state.awFollow) state.awFrom = from;
+    return { tf, from, span, first, last };
+  }
+
+  function awView() {
+    const w = awWindow();
+    const bars = AW().bars(w.tf, w.from, w.span);
+    /* The readout sits over the plot, so the plot has to start under it —
+       measured rather than guessed, because it is two lines at one text size
+       and three at another, and a candle drawn behind it is a candle nobody
+       can read. */
+    return {
+      tf: w.tf, from: w.from, span: w.span, bars,
+      cross: state.awCross,
+      scale: awScale(),
+      fontScale: awFontScale(),
+      padTop: 0,          // set per box in awPaint: they are different widths
+      window: w,
+    };
+  }
+
+  /* the admin's projection: everything that is a count or a volume, ×100 */
+  const awScale = () => (state.awProject && awIsAdmin() ? 100 : 1);
+  function awFontScale() {
+    const v = getComputedStyle(document.documentElement).getPropertyValue("--fs");
+    const n = parseFloat(v);
+    return Number.isFinite(n) && n > 0 ? n : 1;
+  }
+
+  /* ---- one paint is one paint ----
+     The first version of this did three things on every frame that it only
+     needed to do when something changed, and a pan came out at 28ms a frame —
+     half the speed a phone needs. All three were the same mistake, which is
+     doing work on the frame rather than on the change:
+
+       - it asked the data source to load the window and painted again when that
+         resolved. The days are already in memory during a pan, so the promise
+         resolved immediately and every single frame painted twice.
+       - it wrote the readout's innerHTML whether or not the readout had
+         changed, which during a pan it usually has not.
+       - it measured the readout's height to find where the plot starts, and a
+         measurement straight after an innerHTML write is a forced layout.
+
+     So the fetch only repaints when it actually brought something back, the
+     readout is only written when its markup differs, and the height is measured
+     only when it was. */
+  let awReadWas = "";
+
+  /* Every ÆWAY surface in the document, because on a wide screen there can be
+     two of them: the phone's Tools panel and the desktop layout's own chart
+     panel draw the same screen, and giving them element ids would have meant
+     the second one silently never painting. They share one view — the same
+     market at the same moment — and differ only in how much room they have. */
+  const awBoxes = () => document.querySelectorAll(".aw-box");
+
+  function awPaint() {
+    const boxes = awBoxes();
+    if (!boxes.length || !awReady) return;
+    /* Tight first, then the readout, then the chart. A short plot cannot carry a
+       three-line readout and a chart as well — at 375×667 with the header open
+       the whole box is 125 pixels — so the readout folds to one line below a
+       threshold, and the open, high and low go. Set on the box rather than in a
+       media query, because what is short here is the plot and not the phone:
+       the same phone with its header folded has room, and the desktop panel has
+       a great deal more.
+       The order matters because folding the readout changes its height, and the
+       height is what tells the chart where to start. Measuring before the fold
+       would leave the plot a line of gap it does not need until the next time
+       the readout happens to change. */
+    boxes.forEach((box) => {
+      const cv = box.querySelector(".aw-canvas");
+      if (!cv) return;
+      const was = box.classList.contains("tight");
+      const now = cv.clientHeight < 180;
+      if (was !== now) { box.classList.toggle("tight", now); delete box.dataset.awPad; }
+    });
+    const v = awView();
+    awPaintRead(v);
+    boxes.forEach((box) => {
+      const cv = box.querySelector(".aw-canvas");
+      if (!cv) return;
+      AWC().paint(cv, Object.assign({}, v, { padTop: Number(box.dataset.awPad) || 0 }));
+    });
+    const was = AW().version();
+    AW().needBars(v.tf, v.from, v.span).then(() => {
+      if (AW().version() === was || !awBoxes().length) return;
+      awPaint();
+    }).catch(() => {});
+  }
+
+  /* ---------------- the readout ---------------- */
+
+  const awNum = (n) => Math.round(n).toLocaleString("en-US");
+  const awPts = (n) => awNum(n * awScale());
+
+  /* the bar the readout is describing: whatever the crosshair is on, or the
+     newest one */
+  function awReadBar(v) {
+    if (v.cross && v.cross.bar) return v.cross.bar;
+    return v.bars.length ? v.bars[v.bars.length - 1] : null;
+  }
+
+  function awReadHTML(v) {
+    const b = awReadBar(v);
+    if (!b) return `<span class="aw-read-dim">waiting for the market…</span>`;
+    /* the market's clock, not the device's — see the note in js/aeway-chart.js */
+    const when = new Date(b.t).toLocaleTimeString("en-US",
+      { timeZone: AWC().TZ, hour: "numeric", minute: "2-digit" });
+    const day = AWC().dayLabel(b.t);
+    const tone = b.up > 0 ? "up" : b.up < 0 ? "down" : "flat";
+    const pc = b.open ? (100 * (b.close - b.open) / b.open) : 0;
+    return `
+      <span class="aw-read-when">${esc(day)} ${esc(when)} <i>ET</i></span>
+      <span class="aw-read-ohlc">
+        <span class="o">O<i>${AWC().fmtPrice(b.open)}</i></span>
+        <span class="h">H<i>${AWC().fmtPrice(b.high)}</i></span>
+        <span class="l">L<i>${AWC().fmtPrice(b.low)}</i></span>
+        <span>C<i class="${tone}">${AWC().fmtPrice(b.close)}</i></span>
+        <em class="${tone}">${pc >= 0 ? "+" : ""}${pc.toFixed(2)}%</em>
+      </span>
+      <span class="aw-read-vol">
+        <b class="up">Bulls ${awPts(b.bullPts)}<i>(${awNum(b.bullWins * awScale())})</i></b>
+        <b class="down">Bears ${awPts(b.bearPts)}<i>(${awNum(b.bearWins * awScale())})</i></b>
+        <b class="flat m">${awNum(b.matches * awScale())} matches</b>
+        ${b.estimated ? `<b class="flat aw-est" title="the candle is still forming">forming</b>` : ""}
+      </span>`;
+  }
+
+  function awPaintRead(v) {
+    const html = awReadHTML(v || awView());
+    const fresh = html !== awReadWas;
+    awReadWas = html;
+    awBoxes().forEach((box) => {
+      const el = box.querySelector(".aw-read");
+      if (!el) return;
+      if (fresh || !box.dataset.awPad) {
+        el.innerHTML = html;
+        /* the one place a height is allowed to be measured: it changes only
+           when the markup does, and each box keeps its own because the same
+           readout wraps to three lines on a phone and one on a desktop panel */
+        const h = el.offsetHeight + 8;
+        if (String(h) !== box.dataset.awPad) { box.dataset.awPad = String(h); awPaintSoon(); }
+      }
+    });
+    document.querySelectorAll(".aw-jump").forEach((j) => { j.hidden = !!state.awFollow; });
+  }
+
+  /* ---------------- the countdown and the calls ---------------- */
+
+  const awBarNow = () => AW().liveBar(state.awTf);
+  const awBarEnd = () => AW().barEnd(state.awTf, awBarNow());
+  const awLeftMs = () => Math.max(0, awBarEnd() - AW().nowMs());
+  const awLocked = () => awLeftMs() <= AW_LOCK_MS;
+
+  const awClock = (ms) => {
+    const s = Math.ceil(ms / 1000);
+    return `${Math.floor(s / 60)}:${String(s % 60).padStart(2, "0")}`;
+  };
+
+  const awOpenBet = () => {
+    const o = store.awOpen && store.awOpen[state.awTf];
+    return o && o.bar === awBarNow() ? o : null;
+  };
+
+  /* ---- the rate ----
+     Raw volume grows with the number of players, so points are converted before
+     they touch a balance. The rate is set from the average total volume of the
+     last twelve candles of this timeframe and locked at the candle's open —
+     which is the same thing as computing it from the twelve candles before this
+     one, because those twelve never change again.
+
+     A big candle still pays more than a quiet one: it pays more because it is
+     big compared with normal, which is the point. */
+  function awRate(tfId, barIdx) {
+    let sum = 0, n = 0;
+    for (let i = barIdx - AW_RATE_BARS; i < barIdx; i++) {
+      const b = AW().bar(tfId, i);
+      if (!b || b.forming) continue;
+      sum += b.bullPts + b.bearPts;
+      n++;
+    }
+    if (!n) return null;              // not enough history yet: no entries
+    const half = (sum / n) / 2;
+    return half > 0 ? AW_TARGET / half : null;
+  }
+
+  /* What each side has brought in since a prediction's entry. Works the same
+     while the candle is forming and after it has closed, because a forming
+     candle reports its running totals and a closed one reports its final ones.
+
+     On a timeframe above five minutes the bar is several base candles, and the
+     entry sits inside one of them: the candles after it count whole, the candle
+     it is in counts from the entry's ten-second sample, and the ones before it
+     do not count at all. */
+  function awEarnedAfter(tfId, barIdx, entryMs) {
+    const k = AW().tfOf(tfId).k;
+    const first = barIdx * k;
+    const ec = AW().idxAt(entryMs);
+    const es = AW().entrySample(ec, entryMs);
+    let bull = 0, bear = 0, ok = false;
+    for (let i = 0; i < k; i++) {
+      const c = AW().bar5(first + i);
+      if (!c) continue;
+      if (first + i < ec) continue;
+      ok = true;
+      if (first + i > ec) { bull += c.bullPts; bear += c.bearPts; continue; }
+      const run = AW().runningAt(ec, es);
+      if (!run) continue;
+      bull += Math.max(0, c.bullPts - run.bull);
+      bear += Math.max(0, c.bearPts - run.bear);
+    }
+    return ok ? { bull, bear } : null;
+  }
+
+  function awPick(side) {
+    if (!awReady) return;
+    if (awLocked()) return;
+    if (awOpenBet()) return;
+    if (awPoints() <= 0) { state.awNote = "No play points left — reset the balance in Settings."; render(); return; }
+    const bar = awBarNow();
+    const rate = awRate(state.awTf, bar);
+    if (rate == null) { state.awNote = "Not enough history on this timeframe yet."; render(); return; }
+    /* The entry time is the playback clock's, and the entry counts from the
+       NEXT ten-second sample after it, so nothing that had already happened
+       when the button was pressed can be claimed.
+
+       ==> The playback clock is the device's, because there is no server to
+       check it against. A tester who moves their phone's clock moves their own
+       chart and their own entries with it. That is survivable for play points
+       and is the fourth reason settlement has to move server-side before Æway
+       points are worth anything. */
+    const at = AW().nowMs();
+    const c5 = AW().idxAt(at);
+    /* The entry time is checked against the playback clock rather than trusted:
+       the five-minute candle it lands in has to be inside the bar it is being
+       filed against, or the clock moved between reading the bar and reading the
+       time and the prediction would settle against a candle it was not placed
+       in. Nothing legitimate trips this; a clock that jumped does. */
+    if (Math.floor(c5 / AW().tfOf(state.awTf).k) !== bar) {
+      state.awNote = "The clock moved — try that again.";
+      render();
+      return;
+    }
+    if (!store.awOpen) store.awOpen = {};
+    store.awOpen[state.awTf] = {
+      tf: state.awTf, bar, side, at, rate,
+      candle: c5, sample: AW().entrySample(c5, at),
+      barStart: AW().barStart(state.awTf, bar),
+    };
+    state.awNote = "";
+    awSave();
+    render();
+  }
+
+  /* ---- settling ----
+     At the candle's close: your side won it and you gain your own side's
+     post-entry points, your side lost it and you lose the other side's, a tied
+     candle pays nothing either way.
+
+     A balance never goes below zero: a loss bigger than the balance takes it to
+     zero and stops. */
+  function awSettleDue() {
+    if (!awReady || !store.awOpen) return false;
+    let any = false;
+    for (const tfId of Object.keys(store.awOpen)) {
+      const o = store.awOpen[tfId];
+      if (!o) { delete store.awOpen[tfId]; continue; }
+      const end = AW().barEnd(tfId, o.bar);
+      if (AW().nowMs() < end) continue;
+      const b = AW().bar(tfId, o.bar);
+      if (!b || b.forming) continue;           // its day is not loaded yet
+      const earned = awEarnedAfter(tfId, o.bar, o.at);
+      if (!earned) continue;
+      const won = b.up > 0 ? "bull" : b.up < 0 ? "bear" : null;
+      const raw = won == null ? 0 : won === o.side
+        ? (o.side === "bull" ? earned.bull : earned.bear)
+        : (o.side === "bull" ? earned.bear : earned.bull);
+      const delta = won == null ? 0 : Math.round(raw * o.rate) * (won === o.side ? 1 : -1);
+      const before = awPoints();
+      const after = Math.max(0, before + delta);
+      store.awPoints = after;
+      if (!store.awDone) store.awDone = [];
+      store.awDone.unshift({
+        t: end, tf: tfId, bar: o.bar, barStart: o.barStart, side: o.side,
+        at: o.at, rate: o.rate, raw, delta: after - before,
+        won, bullWins: b.bullWins, bearWins: b.bearWins,
+        bullPts: b.bullPts, bearPts: b.bearPts,
+        earnedBull: earned.bull, earnedBear: earned.bear,
+      });
+      if (store.awDone.length > AW_HISTORY_MAX) store.awDone.length = AW_HISTORY_MAX;
+      delete store.awOpen[tfId];
+      any = true;
+    }
+    if (any) awSave();
+    return any;
+  }
+
+  /* the live line under the calls, while a prediction is open */
+  function awLiveHTML() {
+    const o = awOpenBet();
+    if (!o) return "";
+    const earned = awEarnedAfter(o.tf, o.bar, o.at);
+    if (!earned) return "";
+    const mine = o.side === "bull" ? earned.bull : earned.bear;
+    const theirs = o.side === "bull" ? earned.bear : earned.bull;
+    const win = Math.round(mine * o.rate);
+    const lose = Math.round(theirs * o.rate);
+    const since = new Date(o.at + (o.sample + 1) * AW().SAMPLE_MS - AW().SAMPLE_MS);
+    return `<div class="aw-open ${o.side}">
+      <b>${o.side === "bull" ? "BULL" : "BEAR"}</b>
+      since ${esc(since.toLocaleTimeString("en-US",
+        { timeZone: AWC().TZ, hour: "numeric", minute: "2-digit", second: "2-digit" }))}
+      · If ${o.side === "bull" ? "Bulls" : "Bears"} win <i class="up">+${awNum(win)}</i>
+      · If ${o.side === "bull" ? "Bears" : "Bulls"} win <i class="down">−${awNum(lose)}</i>
     </div>`;
   }
-  function aeCallsHTML() {
+
+  /* ---------------- the screen ---------------- */
+
+  function tpAewayHTML(desk) {
+    if (state.awView === "history") return awHistoryHTML();
+    if (state.awView === "admin" && awIsAdmin()) return awAdminHTML();
+    const head = `
+      ${desk ? "" : tpModeHTML("data-tp-mode")}
+      <div class="tp-chart-head ae-head aw-head">
+        <div class="tp-quote"><b>ÆWAY</b>
+          ${AW() && AW().simulated()
+            ? `<span class="aw-sim" data-aw-sim>Simulated market</span>` : ""}
+        </div>
+        <div class="tp-sym-name">Moved by Bulls vs Bears match results.</div>
+      </div>`;
+
+    if (awFailed) {
+      return `${head}
+        <div class="aw-box aw-dead">
+          <span class="ae-empty-line">The market recording did not load.</span>
+          <span class="aw-dead-why">${esc(awFailed)}</span>
+          <button class="dc-tool" data-aw-retry>Try again</button>
+        </div>`;
+    }
+    if (!awReady) {
+      return `${head}
+        <div class="aw-box aw-dead"><span class="ae-empty-line">Loading the market…</span></div>`;
+    }
+
+    const open = awOpenBet();
+    const locked = awLocked();
+    const tf = awTf();
     return `
-      <div class="ae-gen-row">
-        <button class="ae-gen" data-ae-gen>Generate</button>
-        ${state.aeNote ? `<span class="ae-note">${esc(state.aeNote)}</span>` : ""}
+      ${head}
+      <div class="aw-box">
+        <canvas class="aw-canvas"></canvas>
+        <div class="aw-read"></div>
+        <div class="tp-menus aw-menus">
+          <div class="tp-menu-wrap">
+            <button class="tp-menu-btn${state.awMenu ? " on" : ""}" data-aw-menu
+                    aria-expanded="${!!state.awMenu}">${esc(tf.label)}<i></i></button>
+            ${state.awMenu ? `<div class="tp-menu">
+              ${AW().TFS.map((t) => `<button class="tp-menu-item${t.id === state.awTf ? " on" : ""}"
+                data-aw-tf="${t.id}">${esc(t.label)}</button>`).join("")}
+            </div>` : ""}
+          </div>
+        </div>
+        <button class="aw-jump" data-aw-jump aria-label="Jump to the latest candle"
+                ${state.awFollow ? "hidden" : ""}>›|</button>
       </div>
-      <div class="ae-calls">
-        <button class="ae-call up${state.aeCall === "up" ? " on" : ""}" data-ae-call="up">Green</button>
-        <button class="ae-call down${state.aeCall === "down" ? " on" : ""}" data-ae-call="down">Red</button>
+      <div class="ae-panel aw-panel">
+        <div class="aw-live">${awLiveHTML()}</div>
+        <div class="ae-calls aw-calls">
+          <button class="ae-call up${open && open.side === "bull" ? " on" : ""}"
+                  data-aw-pick="bull" ${locked || open ? "disabled" : ""}>Bull</button>
+          <div class="aw-count${locked ? " locked" : ""}">
+            ${locked ? "Locked" : awClock(awLeftMs())}
+            <i>${esc(tf.label)}</i>
+          </div>
+          <button class="ae-call down${open && open.side === "bear" ? " on" : ""}"
+                  data-aw-pick="bear" ${locked || open ? "disabled" : ""}>Bear</button>
+        </div>
+        ${state.awAdminAsk && !awIsAdmin() ? `
+          <div class="aw-foot aw-adm-ask">
+            <input class="mt-input aw-adm-pass" id="awPass" type="password"
+                   placeholder="Admin passcode" autocomplete="off">
+            <button class="aw-link" data-aw-admin-go>Enter</button>
+            <button class="aw-link" data-aw-admin-no>Cancel</button>
+          </div>`
+        : `<div class="aw-foot">
+            <span class="aw-bal">${awNum(awPoints())} <i>play points</i></span>
+            ${state.awNote ? `<span class="aw-note">${esc(state.awNote)}</span>` : ""}
+            <button class="aw-link" data-aw-history>History</button>
+            ${awIsAdmin() ? `<button class="aw-link" data-aw-admin>Admin</button>` : ""}
+          </div>`}
       </div>`;
   }
-  /* the panel only: pressing a call rebuilds two buttons, not the chart */
-  function aePaintCalls() {
-    const calls = aeCallsHTML();
-    for (const el of document.querySelectorAll(".ae-panel")) el.innerHTML = calls;
+
+  /* the panel under the chart, updated where it stands: the countdown moves
+     every second and the live line with it, and rebuilding the screen would
+     replace the canvas under the finger that is panning it */
+  function awPaintPanel() {
+    const html = awLiveHTML();
+    document.querySelectorAll(".aw-live").forEach((el) => { el.innerHTML = html; });
+    const counts = document.querySelectorAll(".aw-count");
+    if (!counts.length) return;
+    const locked = awLocked();
+    const label = `${locked ? "Locked" : awClock(awLeftMs())}<i>${esc(awTf().label)}</i>`;
+    counts.forEach((c) => { c.classList.toggle("locked", locked); c.innerHTML = label; });
+    const open = awOpenBet();
+    document.querySelectorAll("[data-aw-pick]").forEach((b) => {
+      b.disabled = locked || !!open;
+      b.classList.toggle("on", !!open && open.side === b.getAttribute("data-aw-pick"));
+    });
+  }
+
+  /* ---------------- point history ---------------- */
+
+  function awHistoryHTML() {
+    const list = (store.awDone || []);
+    return `
+      <div class="pw-lib-head">
+        <button class="pw-hub-back" data-aw-back aria-label="Back to the chart">
+          <img src="assets/nav-icons/icon-arrow-back@2x.png" alt="">
+        </button>
+        <span class="pw-lib-title">Point history</span>
+      </div>
+      <div class="aw-hist-top">
+        <span class="aw-bal">${awNum(awPoints())} <i>play points</i></span>
+      </div>
+      <div class="aw-hist">
+        ${list.length ? list.map(awHistRowHTML).join("")
+          : `<div class="tp-note">No settled predictions yet. Pick Bull or Bear on the
+             chart and the candle will settle it when it closes.</div>`}
+      </div>`;
+  }
+
+  function awHistRowHTML(h) {
+    const tone = h.delta > 0 ? "up" : h.delta < 0 ? "down" : "flat";
+    const when = new Date(h.barStart).toLocaleTimeString("en-US",
+      { timeZone: AWC().TZ, hour: "numeric", minute: "2-digit" });
+    const day = AWC().dayLabel(h.barStart);
+    const entered = new Date(h.at).toLocaleTimeString("en-US",
+      { timeZone: AWC().TZ, hour: "numeric", minute: "2-digit", second: "2-digit" });
+    const mine = h.side === "bull" ? h.earnedBull : h.earnedBear;
+    const theirs = h.side === "bull" ? h.earnedBear : h.earnedBull;
+    const raw = h.won == null ? 0 : h.won === h.side ? mine : theirs;
+    const per = h.rate > 0 ? Math.round(1 / h.rate) : 0;
+    const verdict = h.won == null
+      ? `The candle tied at ${awNum(h.bullWins)} match wins each — nothing either way`
+      : `${h.won === "bull" ? "Bulls" : "Bears"} won ${awNum(Math.max(h.bullWins, h.bearWins))}
+         to ${awNum(Math.min(h.bullWins, h.bearWins))} matches`;
+    return `
+      <div class="aw-hrow ${tone}">
+        <div class="aw-hrow-top">
+          <b class="${tone}">${h.delta > 0 ? "+" : ""}${awNum(h.delta)} pts</b>
+          <span class="aw-hrow-side ${h.side}">${h.side === "bull" ? "Bull" : "Bear"}</span>
+          <span class="aw-hrow-when">${esc(day)} ${esc(when)} candle (${esc(h.tf)})</span>
+        </div>
+        <div class="aw-hrow-why">
+          Entered ${esc(entered)} ·
+          ${h.won === h.side ? `${h.side === "bull" ? "Bulls" : "Bears"}` :
+            h.won == null ? "Nobody" : `${h.side === "bull" ? "Bears" : "Bulls"}`}
+          brought in ${awNum(raw)} pts after entry ·
+          Rate 1 per ${awNum(per)} · ${esc(verdict.replace(/\s+/g, " "))}
+        </div>
+      </div>`;
+  }
+
+  /* ---------------- gestures ----------------
+     A drag pans. A press held for four tenths of a second raises the crosshair
+     and then scrubs with the finger, snapping candle to candle. Two fingers
+     pinch the span. Lifting clears the crosshair.
+
+     The order matters: the crosshair must not come up during a pan and a pan
+     must not start from a hold, so the first movement past the slop decides
+     which of the two this gesture is and the other never happens. */
+  let awGrab = null;
+
+  function awDown(e) {
+    const box = e.target.closest && e.target.closest(".aw-box");
+    if (!box) return;
+    if (e.target.closest(".tp-menus") || e.target.closest(".aw-jump")) return;
+    if (state.awMenu) return;
+    if (awGrab && awGrab.b == null && e.pointerId !== awGrab.a) {
+      awGrab.b = e.pointerId; awGrab.bx = e.clientX;
+      awGrab.pinch = true; awGrab.mode = "pan";
+      awGrab.span0 = state.awSpan;
+      awGrab.gap0 = Math.max(24, Math.abs(awGrab.bx - awGrab.ax));
+      awGrab.from0 = awWindow().from;
+      awHoldOff();
+      return;
+    }
+    if (awGrab) return;
+    const r = box.getBoundingClientRect();
+    awGrab = {
+      a: e.pointerId, b: null, ax: e.clientX, ay: e.clientY,
+      x0: e.clientX, y0: e.clientY, rect: r, box,
+      mode: null, from0: awWindow().from, span0: state.awSpan,
+      hold: setTimeout(() => {
+        if (!awGrab || awGrab.mode) return;
+        awGrab.mode = "cross";
+        state.awCross = awCrossAt(awGrab.ax, awGrab.ay, r, box);
+        awBuzz();
+        awPaintSoon();
+      }, AW_HOLD_MS),
+    };
+  }
+
+  function awHoldOff() {
+    if (awGrab && awGrab.hold) { clearTimeout(awGrab.hold); awGrab.hold = null; }
+  }
+
+  /* a light tap, where the device has one */
+  function awBuzz() {
+    try { if (navigator.vibrate) navigator.vibrate(8); } catch (e) { /* no haptics */ }
+  }
+
+  /* the crosshair, snapped to the nearest candle */
+  function awCrossAt(cx, cy, rect, box) {
+    const cv = box && box.querySelector(".aw-canvas");
+    if (!cv) return null;
+    const v = awView();
+    const g = AWC().geom(cv, v);
+    const x = cx - rect.left, y = cy - rect.top;
+    let i = g.barAt(Math.max(g.plot.x, Math.min(g.plot.x + g.plot.w - 1, x)));
+    i = Math.max(v.from, Math.min(v.from + v.span - 1, i));
+    let bar = v.bars.find((b) => b.idx === i);
+    if (!bar && v.bars.length) {
+      /* the finger is past the newest candle: snap to it rather than showing
+         nothing, and never past it — there is nothing there to show */
+      bar = v.bars[v.bars.length - 1];
+    }
+    return { x, y: Math.max(g.plot.y, Math.min(g.plot.y + g.plot.h, y)), bar };
+  }
+
+  function awMove(e) {
+    if (!awGrab) return;
+    const G = awGrab;
+    if (e.pointerId === G.a) { G.ax = e.clientX; G.ay = e.clientY; }
+    else if (e.pointerId === G.b) { G.bx = e.clientX; }
+    else return;
+
+    if (!G.mode) {
+      if (Math.abs(G.ax - G.x0) < AW_SLOP && Math.abs(G.ay - G.y0) < AW_SLOP) return;
+      G.mode = "pan";
+      awHoldOff();
+      /* the gesture is a pan from here, so the surface is ours */
+      try { G.box.setPointerCapture(G.a); } catch (err) { /* already gone */ }
+    }
+    if (e.cancelable) e.preventDefault();
+
+    if (G.mode === "cross") {
+      state.awCross = awCrossAt(G.ax, G.ay, G.rect, G.box);
+      awPaintSoon();
+      awPaintPanel();
+      return;
+    }
+
+    if (G.pinch && G.b != null) {
+      const gap = Math.max(24, Math.abs(G.bx - G.ax));
+      const span = Math.max(AW_SPAN_MIN, Math.min(AW_SPAN_MAX,
+        Math.round(G.span0 * G.gap0 / gap)));
+      /* the pair's middle holds its place, so a pinch zooms where the fingers
+         are rather than at the edge */
+      const mid = ((G.ax + G.bx) / 2 - G.rect.left - AWC().PAD.l) /
+        Math.max(1, G.rect.width - AWC().PAD.l - AWC().PAD.r);
+      const anchor = G.from0 + G.span0 * Math.max(0, Math.min(1, mid));
+      state.awSpan = span;
+      state.awFollow = false;
+      state.awFrom = Math.round(anchor - span * Math.max(0, Math.min(1, mid)));
+      awPaintSoon();
+      return;
+    }
+
+    const w = G.rect.width - AWC().PAD.l - AWC().PAD.r;
+    const perBar = Math.max(1, w) / Math.max(1, G.span0);
+    const moved = Math.round((G.x0 - G.ax) / perBar);
+    state.awFrom = G.from0 + moved;
+    state.awFollow = false;
+    const win = awWindow();
+    /* back at the right-hand edge is the same thing as following again */
+    if (win.from >= win.last - win.span + 1 + Math.round(win.span * 0.06)) {
+      state.awFollow = true;
+    }
+    awPaintSoon();
+    awPaintRead();
+  }
+
+  function awUp(e) {
+    if (!awGrab) return;
+    if (e.pointerId === awGrab.b) { awGrab.b = null; return; }
+    if (e.pointerId !== awGrab.a) return;
+    awHoldOff();
+    const wasCross = awGrab.mode === "cross";
+    awGrab = null;
+    if (wasCross) {
+      state.awCross = null;
+      awPaintSoon();
+      awPaintPanel();
+    }
+    awPaintRead();
+  }
+
+  /* ==================== admin only ====================
+
+     Hidden from testers, and the two ways in are in awIsAdmin() above. What is
+     on it is the simulator's own report plus one switch, and nothing about any
+     user: no money, no pricing, no revenue arithmetic. The brief is explicit
+     that this build has none of that, and this page is where it would have gone.
+
+     ---- what is measured offline and what is measured here ----
+
+     The market-likeness and balance figures are computed by sim/report.js from
+     the whole 90-day recording and shipped as aggregates in
+     data/aeway/report.json — distributions, correlations and counts.
+
+     ==> Aggregates ONLY, and that is a rule rather than a convenience. A report
+     carrying 90 days of closes would be the future in plaintext, next to a
+     recording that was scrambled precisely so it would not be. So anything that
+     needs the actual shape of the market — the CSV export, the wins-against-
+     points comparison — is built here in the browser out of days that have
+     already happened. */
+
+  /* The long press landed. The passcode box appears in the footer rather than
+     over a dimmed screen, because no action in this app opens a modal. */
+  function awAdminAsk() {
+    if (awIsAdmin()) { state.awView = "admin"; render(); return; }
+    state.awAdminAsk = true;
+    render();
+    const el = document.getElementById("awPass");
+    if (el) el.focus();
+  }
+  function awAdminTry() {
+    const el = document.getElementById("awPass");
+    const want = awCfg().adminPasscode || "";
+    if (want && el && el.value === want) {
+      state.awAdminOk = true;
+      state.awAdminAsk = false;
+      state.awView = "admin";
+      state.awNote = "";
+    } else {
+      state.awNote = "That is not the admin passcode.";
+      state.awAdminAsk = false;
+    }
+    render();
+  }
+
+  const AW_ADMIN_DEF = { predictRate: 35, perDay: 12, csvDays: 7 };
+  const awAdm = () => Object.assign({}, AW_ADMIN_DEF, store.awAdmin || {});
+  let awReport = null, awReportErr = null;
+
+  function awLoadReport() {
+    if (awReport || awReportErr) return;
+    awReportErr = "loading";
+    fetch(`${AW().config.dir}report.json`, { cache: "no-cache" })
+      .then((r) => { if (!r.ok) throw new Error(String(r.status)); return r.json(); })
+      .then((j) => { awReport = j; awReportErr = null; if (state.awView === "admin") render(); })
+      .catch((e) => {
+        awReportErr = `report.json is not there yet (${e.message}). ` +
+          `Run: node sim/report.js`;
+        if (state.awView === "admin") render();
+      });
+  }
+
+  function awAdminHTML() {
+    awLoadReport();
+    const a = awAdm();
+    const proj = state.awProject;
+    const scale = proj ? 100 : 1;
+    const players = 10000 * scale;
+    const r = awReport;
+
+    /* per-day throughput, from the recording's own manifest and report */
+    const perCandle = (r && r.throughput && r.throughput.matchesPerCandle) || 4050;
+    const matchesDay = perCandle * 288 * scale;
+    const ptsDay = (r && r.throughput && r.throughput.pointsPerCandle
+      ? r.throughput.pointsPerCandle : perCandle * 13.5 * 0.969) * 288 * scale;
+    const predictors = Math.round(players * a.predictRate / 100);
+    const predDay = predictors * a.perDay;
+
+    const row = (k, v, hint) => `<div class="aw-adm-row">
+      <span class="aw-adm-k">${esc(k)}</span>
+      <span class="aw-adm-v">${esc(v)}</span>
+      ${hint ? `<span class="aw-adm-h">${esc(hint)}</span>` : ""}
+    </div>`;
+    const mo = (n) => awNum(n * 30);
+
+    return `
+      <div class="pw-lib-head">
+        <button class="pw-hub-back" data-aw-back aria-label="Back to the chart">
+          <img src="assets/nav-icons/icon-arrow-back@2x.png" alt="">
+        </button>
+        <span class="pw-lib-title">Admin — simulator report</span>
+      </div>
+      <div class="aw-adm">
+
+        <div class="aw-adm-sw">
+          <button class="tp-mode-btn${!proj ? " on" : ""}" data-aw-project="0">10,000 players<i>actual</i></button>
+          <button class="tp-mode-btn${proj ? " on" : ""}" data-aw-project="1">1,000,000 players<i>projected</i></button>
+        </div>
+        ${proj ? `<div class="aw-adm-flag">Projection — the chart's shape is unchanged.
+          Because ε is tuned to a ~1% day, a hundred times the crowd changes the
+          volume and not the shape. Match counts and point volumes below, in the
+          chart readout and in the volume bars are ×100.</div>` : ""}
+
+        <h4 class="aw-adm-h4">Throughput${proj ? " — Projection" : ""}</h4>
+        ${row("Matches played", `${awNum(matchesDay)} / day · ${mo(matchesDay)} / month`)}
+        ${row("Points traded by winners", `${awNum(ptsDay)} / day · ${mo(ptsDay)} / month`)}
+        ${row("Matches per 5-minute candle", awNum(perCandle * scale))}
+
+        <h4 class="aw-adm-h4">Prediction activity${proj ? " — Projection" : ""}</h4>
+        <div class="aw-adm-ass">
+          <label>Players who predict
+            <input class="mt-input aw-adm-in" type="number" min="0" max="100" step="1"
+                   value="${a.predictRate}" data-aw-ass="predictRate"> %
+          </label>
+          <label>Predictions each, per day
+            <input class="mt-input aw-adm-in" type="number" min="0" max="500" step="1"
+                   value="${a.perDay}" data-aw-ass="perDay">
+          </label>
+        </div>
+        ${row("Predicting players", awNum(predictors))}
+        ${row("Predictions", `${awNum(predDay)} / day · ${mo(predDay)} / month`)}
+        <div class="aw-adm-flag">Assumptions, not measurements — Mattia sets the real
+          ones. Everything in this section is labelled Projection whichever switch
+          is selected, because nobody has made a prediction yet.</div>
+
+        <h4 class="aw-adm-h4">The shape of the market</h4>
+        <div class="aw-cmp-wrap">
+          <canvas class="aw-cmp" id="awCmp"></canvas>
+          <div class="aw-cmp-key">
+            <b class="k1">price by wins</b> — what the chart shows
+            <b class="k2">price by points</b> — the same matches, moved by volume instead
+          </div>
+        </div>
+        <div class="aw-adm-act">
+          <button class="dc-tool" data-aw-csv="7">Export 7 days as CSV</button>
+          <button class="dc-tool" data-aw-csv="30">30 days</button>
+          <span class="aw-adm-h">Built here from days that have already played,
+            so the export never contains a candle from the future.</span>
+        </div>
+
+        ${r ? awReportHTML(r) : `<div class="tp-note">${esc(awReportErr || "loading the report…")}</div>`}
+      </div>`;
+  }
+
+  function awReportHTML(r) {
+    const row = (k, v, flag) => `<div class="aw-adm-row${flag ? " bad" : ""}">
+      <span class="aw-adm-k">${esc(k)}</span><span class="aw-adm-v">${esc(v)}</span></div>`;
+    const b = r.balance || {};
+    const m = r.likeness || {};
+    const es = m.es;
+    const pair = (k, mine, theirs, fmt) => `<div class="aw-adm-row">
+      <span class="aw-adm-k">${esc(k)}</span>
+      <span class="aw-adm-v">${esc(fmt(mine))}</span>
+      <span class="aw-adm-v es">${theirs == null ? "—" : esc(fmt(theirs))}</span></div>`;
+    const p2 = (x) => (x == null ? "—" : Number(x).toFixed(2));
+    const p3 = (x) => (x == null ? "—" : Number(x).toFixed(3));
+    const pc = (x) => (x == null ? "—" : (100 * Number(x)).toFixed(2) + "%");
+
+    return `
+      <h4 class="aw-adm-h4">Game balance, over ${esc(awNum(r.matches || 0))} matches</h4>
+      ${row("Bull win rate", pc(b.bullRate), b.bullRate > 0.52 || b.bullRate < 0.48)}
+      ${row("Bear win rate", pc(b.bearRate), b.bearRate > 0.52 || b.bearRate < 0.48)}
+      ${row("Draws", pc(b.drawRate))}
+      ${row("Average match length", `${p2(b.meanRounds)} rounds · ${p2(b.meanSeconds / 60)} min`)}
+      ${row("Finished at the full 25", pc(b.onTrackRate))}
+      ${row("YOLO met Market News", `${pc(b.yoloNewsPerMatch)} of matches, ` +
+        `${pc(b.yoloNewsDeciderRate)} of them deciding one`)}
+      ${(b.bullRate > 0.52 || b.bearRate > 0.52)
+        ? `<div class="aw-adm-flag bad">One side is winning more than 52% over the
+            recording, which would make the chart drift on its own.</div>`
+        : `<div class="aw-adm-flag ok">Neither side is over 52%, so the chart has no
+            drift of its own: the price is a fair walk.</div>`}
+
+      <h4 class="aw-adm-h4">Market likeness
+        <span class="aw-adm-h">ÆWAY · ES 5-minute</span></h4>
+      ${es ? "" : `<div class="aw-adm-flag">No ES data in the repository, so the right-hand
+         column is empty. Drop Mattia's Tradovate export in as
+         <b>data/aeway/es-5m.csv</b> (timestamp, open, high, low, close[, volume])
+         and re-run <b>node sim/report.js</b>; nothing else has to change.</div>`}
+      ${pair("Kurtosis of returns (3 is a bell curve)", m.kurtosis, es && es.kurtosis, p2)}
+      ${pair("Moves beyond 4 standard deviations", m.tail4, es && es.tail4, pc)}
+      ${pair("Autocorrelation, lag 1", m.acf && m.acf[0], es && es.acf && es.acf[0], p3)}
+      ${pair("lag 2", m.acf && m.acf[1], es && es.acf && es.acf[1], p3)}
+      ${pair("lag 3", m.acf && m.acf[2], es && es.acf && es.acf[2], p3)}
+      ${pair("lag 4", m.acf && m.acf[3], es && es.acf && es.acf[3], p3)}
+      ${pair("lag 5", m.acf && m.acf[4], es && es.acf && es.acf[4], p3)}
+      ${pair("Volatility clustering (|return| lag 1)", m.volAcf, es && es.volAcf, p3)}
+      ${pair("Mean run of same-colour candles", m.meanStreak, es && es.meanStreak, p2)}
+      ${pair("Longest run", m.maxStreak, es && es.maxStreak, (x) => (x == null ? "—" : String(x)))}
+      ${pair("Median candle range", m.medRange, es && es.medRange, pc)}
+      ${pair("95th percentile range", m.p95Range, es && es.p95Range, pc)}
+      ${pair("Typical day", m.dailySd, es && es.dailySd, pc)}
+      ${pair("Typical 5-minute candle", m.sd, es && es.sd, pc)}
+      ${m.winsVsPoints != null ? row("Wins and points agree, candle to candle", p3(m.winsVsPoints)) : ""}
+      <div class="aw-adm-say">${esc(m.summary || "")}</div>
+      <div class="aw-adm-h">Generated ${esc(r.generated || "")} from
+        ${esc(awNum(r.candles || 0))} five-minute candles.</div>`;
+  }
+
+  /* ---- the wins-against-points comparison ----
+     The same matches, drawn twice: once with the price moved by who won, which
+     is what the chart shows, and once with it moved by how many points the
+     winners brought in. The second line is scaled to the same typical daily
+     move as the first, or the two would not fit on one axis and the comparison
+     would be about the scaling rather than about the shape. */
+  function awPaintCompare() {
+    const cv = document.getElementById("awCmp");
+    if (!cv || !awReady) return;
+    const days = 7;
+    const last = AW().liveIdx();
+    const from = last - days * 288 + 1;
+    AW().need(from, last).then(() => {
+      const wins = [], pts = [];
+      let cw = 0, cp = 0;
+      for (let i = from; i <= last; i++) {
+        const b = AW().bar5(i);
+        if (!b) continue;
+        cw += b.bullWins - b.bearWins;
+        cp += b.bullPts - b.bearPts;
+        wins.push(cw); pts.push(cp);
+      }
+      if (wins.length < 10) return;
+      const sd = (a) => {
+        const d = a.slice(1).map((x, i) => x - a[i]);
+        const mu = d.reduce((x, y) => x + y, 0) / d.length;
+        return Math.sqrt(d.reduce((s, x) => s + (x - mu) * (x - mu), 0) / d.length) || 1;
+      };
+      const k = sd(wins) / sd(pts);
+      const dpr = Math.min(3, window.devicePixelRatio || 1);
+      const w = cv.clientWidth, h = cv.clientHeight;
+      cv.width = Math.round(w * dpr); cv.height = Math.round(h * dpr);
+      const ctx = cv.getContext("2d");
+      ctx.setTransform(dpr, 0, 0, dpr, 0, 0);
+      ctx.clearRect(0, 0, w, h);
+      /* One vertical frame for both, or the comparison would be about the
+         scaling rather than about the shape: two lines each stretched to fill
+         the box always look alike. They are also both started at zero, so what
+         is being compared is where each one went from the same opening. */
+      const a = wins.map((v) => v - wins[0]);
+      const b2 = pts.map((v) => (v - pts[0]) * k);
+      let lo = Infinity, hi = -Infinity;
+      for (const v of a.concat(b2)) { if (v < lo) lo = v; if (v > hi) hi = v; }
+      if (hi === lo) hi = lo + 1;
+      const line = (vals, colour, width) => {
+        ctx.strokeStyle = colour; ctx.lineWidth = width;
+        ctx.beginPath();
+        vals.forEach((v, i) => {
+          const x = (i / (vals.length - 1)) * (w - 2) + 1;
+          const y = h - 3 - ((v - lo) / (hi - lo)) * (h - 6);
+          i ? ctx.lineTo(x, y) : ctx.moveTo(x, y);
+        });
+        ctx.stroke();
+      };
+      line(b2, "rgba(61,223,255,.8)", 1);
+      line(a, "#F2FBFF", 1.5);
+    }).catch(() => {});
+  }
+
+  /* ---- the CSV ----
+     Every stored field of every five-minute candle of the last N days, built
+     here from the recording as the app already has it. Past days only. */
+  function awExportCsv(days) {
+    if (!awReady) return;
+    const last = AW().liveIdx();
+    const from = Math.max(AW().firstIdx(), last - days * 288 + 1);
+    state.awNote = "building the CSV…";
+    render();
+    AW().need(from, last).then(() => {
+      const head = ["time", "iso", "open", "high", "low", "close",
+        "bullWins", "bearWins", "bullPoints", "bearPoints", "matches", "draws",
+        "netWinsAtClose"];
+      const rows = [head.join(",")];
+      for (let i = from; i <= last; i++) {
+        const b = AW().bar5(i);
+        if (!b || b.forming) continue;
+        rows.push([b.t, new Date(b.t).toISOString(),
+          b.open.toFixed(2), b.high.toFixed(2), b.low.toFixed(2), b.close.toFixed(2),
+          b.bullWins, b.bearWins, b.bullPts, b.bearPts, b.matches, b.draws,
+          b.closeNet].join(","));
+      }
+      const blob = new Blob([rows.join("\n")], { type: "text/csv" });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement("a");
+      a.href = url;
+      a.download = `aeway-5m-${days}d.csv`;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      setTimeout(() => URL.revokeObjectURL(url), 4000);
+      state.awNote = `${rows.length - 1} candles exported.`;
+      render();
+    }).catch((e) => { state.awNote = `CSV failed: ${e.message}`; render(); });
   }
 
   const TP_SPAN_MIN = 18, TP_SPAN_MAX = 220;
@@ -11176,22 +12267,6 @@
       ${tpStripHTML()}`;
   }
 
-  /* ---- $ÆWAY: the tape, and the two calls under it ---- */
-  function tpAewayHTML() {
-    return `
-      ${tpModeHTML("data-tp-mode")}
-      <div class="tp-chart-head ae-head">
-        <div class="tp-quote"><b>$ÆWAY</b></div>
-        <div class="tp-sym-name">Æway Trading System — price action only</div>
-      </div>
-      <div class="tp-toolbar">
-        <button class="dc-tool tp-prac-btn" data-tp-prac>Practice</button>
-      </div>
-      <div class="tp-chart ae-chart" id="tpChart">
-        <div class="tp-track" id="tpTrack">${aeEmptyHTML()}</div>
-      </div>
-      <div class="ae-panel">${aeCallsHTML()}</div>`;
-  }
 
   /* ==================== DESKTOP CHART + WATCHLIST ====================
      The right panel is the same chart the hamburger's Chart tab draws — the
@@ -11417,12 +12492,13 @@
       ${tpSaveBarHTML("d")}`;
   }
 
+  /* ---- the desktop's ÆWAY panel ----
+     The same screen, not a second one. The chart is a canvas that measures its
+     own box, so the one implementation fits a 320-pixel panel and a 900-pixel
+     one without a line of difference; what the desktop does not get is the mode
+     toggle, which its own chrome already draws above the panel. */
   function dcAewayHTML() {
-    return `
-      <div class="dc-box ae-chart" id="dcBox">
-        <div class="tp-track" id="dcTrack">${aeEmptyHTML()}</div>
-      </div>
-      <div class="ae-panel">${aeCallsHTML()}</div>`;
+    return `<div class="aw-desk">${tpAewayHTML(true)}</div>`;
   }
 
   function dcPatternHTML() {
@@ -11821,6 +12897,18 @@
         <input class="set-input" id="setName" placeholder="Your name" value="${esc(s.name || "")}" maxlength="40">
       </div>
       <button class="btn-primary" data-close>Done</button>
+      <div class="set-group">
+        <div class="set-label">ÆWAY play points</div>
+        <div class="set-bal">${awNum(awPoints())} <i>play points</i></div>
+        ${state.awResetAsk ? `
+          <div class="set-ask">Start again from 10,000? Open predictions and the
+            point history go with it.</div>
+          <div class="set-options">
+            <button class="set-opt active" data-aw-reset-ok>Reset</button>
+            <button class="set-opt" data-aw-reset-no>Keep</button>
+          </div>`
+          : `<button class="set-opt" data-aw-reset>Reset balance</button>`}
+      </div>
       <button class="btn-secondary" data-reset-progress>Reset course progress</button>
       <button class="btn-secondary" data-logout>Log Out</button>`;
     openOverlay(html);
@@ -11866,19 +12954,42 @@
         <div class="set-label">Plan</div>
         ${tpPlanHTML()}
       </div>
+      <div class="set-group">
+        <div class="set-label">ÆWAY play points</div>
+        <div class="set-bal">${awNum(awPoints())} <i>play points</i></div>
+        ${state.awResetAsk ? `
+          <div class="set-ask">Start again from 10,000? Open predictions and the
+            point history go with it.</div>
+          <div class="set-options">
+            <button class="set-opt active" data-aw-reset-ok>Reset</button>
+            <button class="set-opt" data-aw-reset-no>Keep</button>
+          </div>`
+          : `<button class="set-opt" data-aw-reset>Reset balance</button>`}
+      </div>
       <button class="btn-secondary" data-reset-progress>Reset course progress</button>
       <button class="btn-secondary" data-logout>Log Out</button>`;
   }
 
   /* Plan lives with the rest of the account under the gear now, not as a tab
      among the market tools — it is something about you, not about the tape. */
+  /* ---- the paid tiers are off in this build ----
+     The ÆWAY brief is explicit that there is to be no mention of subscriptions,
+     rewards, cash or redemption anywhere in the app while points are play
+     points, and two tiers priced per month next to a balance of Æway points is
+     exactly the thing it is guarding against: a tester would reasonably read
+     the one as a way to buy the other.
+
+     So they are behind a flag rather than deleted. The screen, the markup and
+     the upgrade path are untouched and one line in js/config.js brings them
+     back; nothing about this is a decision that pricing has changed. */
   function tpPlanHTML() {
     const plan = (store.plan && store.plan.id) || "free";
+    const paid = !!(window.LEARNAEWAY_CONFIG && window.LEARNAEWAY_CONFIG.showPaidPlans);
     const TIERS = [
-      { id: "free", name: "Beta", price: "Free", lines: ["The full course", "Trade Journal", "Gameæway", "Practice chart"] },
+      { id: "free", name: "Beta", price: "Free", lines: ["The full course", "Trade Journal", "Gameæway", "Practice chart", "The ÆWAY chart and predictions"] },
       { id: "pro", name: "Pro", price: "$19/mo", lines: ["Everything in Beta", "Live market data", "Unlimited journal imports", "Priority Ask Æway"] },
       { id: "desk", name: "Desk", price: "$49/mo", lines: ["Everything in Pro", "Prop firm tracking", "Connections and leaderboards", "Early access to new games"] },
-    ];
+    ].filter((t) => paid || t.id === "free");
     return `
       <div class="tp-plans">
         ${TIERS.map((t) => `
@@ -11893,8 +13004,8 @@
               : `<button class="pa-ghost" data-tp-plan="${t.id}">Upgrade</button>`}
           </div>`).join("")}
       </div>
-      <div class="tp-note">Billing is not connected yet — upgrading tells us you
-        are interested and changes nothing else.</div>`;
+      ${paid ? `<div class="tp-note">Billing is not connected yet — upgrading tells us you
+        are interested and changes nothing else.</div>` : ""}`;
   }
 
   function applyTextSize() {
@@ -13249,7 +14360,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-ae-call],[data-ae-gen],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-contents],[data-contents-back],[data-open-connections],[data-conn-back],[data-conn-retry],[data-conn-list],[data-conn-find],[data-conn-add],[data-conn-cancel],[data-conn-approve],[data-conn-deny],[data-conn-msg],[data-conn-thread-close],[data-conn-send],[data-chal-bar-hide],[data-online-reconnect],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-library],[data-pw-lib-back],[data-pw-lib-set],[data-pw-lib-card],[data-pw-lib-close],[data-pw-lib-step],[data-pw-howto],[data-pw-ht-close],[data-pw-ht-step],[data-pw-ht-go],[data-pw-setup-back],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-pw-hub-start],[data-pw-hub-create],[data-pw-hub-local],[data-pw-create-points],[data-pw-create-spec],[data-pw-create-go],[data-pw-create-joinopen],[data-pw-create-check],[data-pw-create-join],[data-pw-create-back],[data-pw-code-copy],[data-pw-code-share],[data-pw-perf],[data-pw-perf-menu],[data-pw-perf-side],[data-pw-perf-opp],[data-pw-hub-all],[data-pw-hub-back],[data-pw-hub-open],[data-pw-saved-back],[data-pw-hub-history],[data-pw-online-cancel],[data-pw-online-back],[data-pw-online-retry],[data-pw-online-signin],[data-pw-online-card],[data-pw-online-chart],[data-pw-chart],[data-pw-online-seen],[data-pw-online-specials],[data-pw-online-forfeit],[data-pw-online-forfeit-yes],[data-pw-online-forfeit-no],[data-pw-online-again],[data-pw-online-rematch],[data-pw-oh-open],[data-pr-online-save],[data-pr-online-level],[data-pr-online-signin],[data-pr-online-retry],[data-jnote-new],[data-jnote-cancel],[data-jnote-save],[data-jnote-img],[data-jnote-img-clear],[data-jnote-edit],[data-jnote-del],[data-jnote-del-yes],[data-jnote-del-no],[data-jnote-open],[data-jnote-retry],[data-jnote-signin],[data-pw-chal-cancel],[data-pw-oh-rematch],[data-pw-inv-accept],[data-pw-inv-decline],[data-pr-code-copy],[data-pr-code-share],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-aw-pick],[data-aw-menu],[data-aw-tf],[data-aw-jump],[data-aw-history],[data-aw-admin],[data-aw-back],[data-aw-retry],[data-aw-project],[data-aw-csv],[data-aw-admin-go],[data-aw-admin-no],[data-aw-reset],[data-aw-reset-ok],[data-aw-reset-no],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-contents],[data-contents-back],[data-open-connections],[data-conn-back],[data-conn-retry],[data-conn-list],[data-conn-find],[data-conn-add],[data-conn-cancel],[data-conn-approve],[data-conn-deny],[data-conn-msg],[data-conn-thread-close],[data-conn-send],[data-chal-bar-hide],[data-online-reconnect],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-library],[data-pw-lib-back],[data-pw-lib-set],[data-pw-lib-card],[data-pw-lib-close],[data-pw-lib-step],[data-pw-howto],[data-pw-ht-close],[data-pw-ht-step],[data-pw-ht-go],[data-pw-setup-back],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-pw-hub-start],[data-pw-hub-create],[data-pw-hub-local],[data-pw-create-points],[data-pw-create-spec],[data-pw-create-go],[data-pw-create-joinopen],[data-pw-create-check],[data-pw-create-join],[data-pw-create-back],[data-pw-code-copy],[data-pw-code-share],[data-pw-perf],[data-pw-perf-menu],[data-pw-perf-side],[data-pw-perf-opp],[data-pw-hub-all],[data-pw-hub-back],[data-pw-hub-open],[data-pw-saved-back],[data-pw-hub-history],[data-pw-online-cancel],[data-pw-online-back],[data-pw-online-retry],[data-pw-online-signin],[data-pw-online-card],[data-pw-online-chart],[data-pw-chart],[data-pw-online-seen],[data-pw-online-specials],[data-pw-online-forfeit],[data-pw-online-forfeit-yes],[data-pw-online-forfeit-no],[data-pw-online-again],[data-pw-online-rematch],[data-pw-oh-open],[data-pr-online-save],[data-pr-online-level],[data-pr-online-signin],[data-pr-online-retry],[data-jnote-new],[data-jnote-cancel],[data-jnote-save],[data-jnote-img],[data-jnote-img-clear],[data-jnote-edit],[data-jnote-del],[data-jnote-del-yes],[data-jnote-del-no],[data-jnote-open],[data-jnote-retry],[data-jnote-signin],[data-pw-chal-cancel],[data-pw-oh-rematch],[data-pw-inv-accept],[data-pw-inv-decline],[data-pr-code-copy],[data-pr-code-share],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -13916,21 +15027,48 @@
       if (m !== chartMode(d ? "d" : "m")) {
         if (d) state.dcMode = store.dcChartMode = m;
         else state.tpMode = store.chartMode = m;
-        /* a call is about a candle on the tape you just left */
-        state.aeCall = null; state.aeNote = "";
+        /* leaving the ÆWAY chart puts away whatever it had open */
+        state.awView = null; state.awCross = null; state.awMenu = false;
         state.tpPractice = null; state.tpPatOpen = null;
         save(); renderBothCharts();
       }
     }
-    else if (t.hasAttribute("data-ae-call")) {
-      const d = t.getAttribute("data-ae-call");
-      state.aeCall = state.aeCall === d ? null : d;
-      aePaintCalls();
+    /* ---- ÆWAY ---- */
+    else if (t.hasAttribute("data-aw-pick")) awPick(t.getAttribute("data-aw-pick"));
+    else if (t.hasAttribute("data-aw-menu")) { state.awMenu = !state.awMenu; render(); }
+    else if (t.hasAttribute("data-aw-tf")) {
+      const id = t.getAttribute("data-aw-tf");
+      state.awMenu = false;
+      if (id !== state.awTf) {
+        state.awTf = id;
+        /* a new timeframe is a new chart: the window and the crosshair belong
+           to the one being left */
+        state.awFrom = null; state.awFollow = true; state.awCross = null;
+      }
+      render();
     }
-    else if (t.hasAttribute("data-ae-gen")) {
-      /* a placeholder, and it says so rather than looking broken */
-      state.aeNote = "Coming soon";
-      aePaintCalls();
+    else if (t.hasAttribute("data-aw-jump")) {
+      state.awFollow = true; state.awFrom = null; state.awCross = null; render();
+    }
+    else if (t.hasAttribute("data-aw-history")) { state.awView = "history"; state.awNote = ""; render(); }
+    else if (t.hasAttribute("data-aw-admin")) { state.awView = "admin"; state.awNote = ""; render(); }
+    else if (t.hasAttribute("data-aw-back")) { state.awView = null; state.awNote = ""; render(); }
+    else if (t.hasAttribute("data-aw-retry")) { awFailed = null; awReady = false; awBoot(); render(); }
+    else if (t.hasAttribute("data-aw-project")) {
+      state.awProject = t.getAttribute("data-aw-project") === "1";
+      render();
+    }
+    else if (t.hasAttribute("data-aw-admin-go")) awAdminTry();
+    else if (t.hasAttribute("data-aw-admin-no")) { state.awAdminAsk = false; render(); }
+    else if (t.hasAttribute("data-aw-ass")) { /* handled on input, not on click */ }
+    else if (t.hasAttribute("data-aw-csv")) awExportCsv(Number(t.getAttribute("data-aw-csv")) || 7);
+    else if (t.hasAttribute("data-aw-reset")) { state.awResetAsk = true; render(); }
+    else if (t.hasAttribute("data-aw-reset-no")) { state.awResetAsk = false; render(); }
+    else if (t.hasAttribute("data-aw-reset-ok")) {
+      store.awPoints = 10000; store.awOpen = {}; store.awDone = [];
+      state.awResetAsk = false;
+      awSave();
+      render();
     }
     else if (t.hasAttribute("data-tp-patsave")) { patSave("m"); state.tpPat = true; renderBothCharts(); }
     else if (t.hasAttribute("data-dc-patsave")) { patSave("d"); state.dcPat = true; renderBothCharts(); }

@@ -24,6 +24,8 @@ const { STYLE_NAMES } = require("./styles.js");
 const { Sim, easternDay } = require("./sim.js");
 const { submitResult, onResult } = require("./results.js");
 const { rngFrom } = require("./rng.js");
+const { Market, priceOf, colourOf, badReason, SAMPLES, CANDLE_MS } = require("./market.js");
+const CODEC = require("../js/aeway-codec.js");
 
 let pass = 0, fail = 0;
 function ok(cond, what, detail) {
@@ -153,7 +155,19 @@ function ok(cond, what, detail) {
   const before = Date.UTC(2026, 3, 8, 3, 30, 0);
   const after = Date.UTC(2026, 3, 8, 4, 30, 0);
   ok(easternDay(before) !== easternDay(after),
-     "the day turns over at midnight Eastern", `${easternDay(before)} -> ${easternDay(after)}`);
+     "the day turns over at midnight Eastern",
+     `${new Date(easternDay(before)).toISOString()} -> ${new Date(easternDay(after)).toISOString()}`);
+  /* and the cache has to be right going backwards as well as forwards, or a
+     result arriving slightly out of order would be filed under the wrong day */
+  ok(easternDay(before) === easternDay(before - 3600 * 1000) &&
+     easternDay(after) === easternDay(after + 3600 * 1000),
+     "the cached day window holds either side of a reading");
+  /* the 23-hour day: Eastern clocks go forward at 2am on 8 March 2026 */
+  const dstDay = easternDay(Date.UTC(2026, 2, 8, 12, 0, 0));
+  const dstNext = easternDay(Date.UTC(2026, 2, 9, 12, 0, 0));
+  ok(dstNext - dstDay === 23 * 3600 * 1000,
+     "a spring-forward day is 23 hours, not 24",
+     `${(dstNext - dstDay) / 3600000} hours`);
 }
 
 /* ---- the one door ---- */
@@ -178,6 +192,114 @@ function ok(cond, what, detail) {
   ok(inRange && Math.abs(mean - 0.5) < 0.01,
      "the seeded generator is uniform on [0,1)", `mean ${mean.toFixed(4)}`);
   ok(rngFrom(0)() === rngFrom(1)(), "seed 0 is nudged to 1 rather than sticking at zero");
+}
+
+/* ---- the market refuses what it cannot price ---- */
+{
+  const bad = [];
+  const m = new Market({ onReject: (x) => bad.push(x.reason) });
+  const t = Date.UTC(2026, 4, 1, 12, 0, 0);
+  const takes = [
+    [{ source: "bot", at: t, winner: "bull", points: 7 }, true, "a normal win"],
+    [{ source: "bot", at: t, winner: "draw", points: 0 }, true, "a draw"],
+    [{ source: "bot", at: t, winner: "bull", points: NaN }, false, "a NaN Print"],
+    [{ source: "bot", at: t, winner: "bull", points: Infinity }, false, "an infinite Print"],
+    [{ source: "bot", at: t, winner: "bull", points: 0 }, false, "a win worth nothing"],
+    [{ source: "bot", at: t, winner: "bull", points: 26 }, false, "a win worth more than 25"],
+    [{ source: "bot", at: t, winner: "bull", points: 7.5 }, false, "half a point"],
+    [{ source: "bot", at: t, winner: "draw", points: 4 }, false, "a draw worth something"],
+    [{ source: "bot", at: t, winner: "sideways", points: 4 }, false, "no winner"],
+    [{ source: "bot", at: NaN, winner: "bull", points: 4 }, false, "no finish time"],
+  ];
+  let wrong = null;
+  for (const [r, want, what] of takes) {
+    if (m.submit(r) !== want) wrong = what;
+  }
+  ok(!wrong, "the market prices only a finite whole 1..25 result and refuses the rest",
+     wrong ? `it got ${wrong} wrong` : `${m.accepted} taken, ${m.rejected} refused`);
+  ok(bad.length === m.rejected && bad.every((x) => typeof x === "string" && x.length),
+     "and every refusal is logged with a reason", bad[2]);
+  ok(badReason({ source: "bot", at: t, winner: "bull", points: NaN }) !== null,
+     "NaN does not slip through a range test, which is how the last one hid");
+}
+
+/* ---- candles ---- */
+{
+  const candles = [];
+  const m = new Market({ onCandle: (c) => candles.push(c) });
+  const t0 = Math.floor(Date.UTC(2026, 4, 1, 12, 0, 0) / CANDLE_MS) * CANDLE_MS;
+  /* one candle with more Bull wins, one dead level, one with more Bear */
+  /* in finish order, which is the order the market is given them in */
+  const feed = [];
+  const add = (off, w, p) => feed.push({ source: "bot", at: t0 + off, winner: w, points: p });
+  for (let i = 0; i < 7; i++) add(1000 + i * 9000, "bull", 5);
+  for (let i = 0; i < 4; i++) add(2000 + i * 9000, "bear", 9);
+  for (let i = 0; i < 3; i++) add(CANDLE_MS + 1000 + i * 9000, "bull", 4);
+  for (let i = 0; i < 3; i++) add(CANDLE_MS + 2000 + i * 9000, "bear", 20);
+  for (let i = 0; i < 5; i++) add(2 * CANDLE_MS + 1000 + i * 9000, "bear", 6);
+  add(2 * CANDLE_MS + 60000, "draw", 0);
+  feed.sort((x, y) => x.at - y.at).forEach((r) => m.submit(r));
+  m.flush();
+
+  ok(candles.length === 3, "one candle per five minutes", `${candles.length}`);
+  const [a, b, c] = candles;
+  ok(colourOf(a) === "up" && colourOf(b) === "flat" && colourOf(c) === "down",
+     "colour follows the win counts", `${colourOf(a)} ${colourOf(b)} ${colourOf(c)}`);
+  ok(priceOf(b.closeNet) === priceOf(b.openNet),
+     "equal wins leave the price exactly where it started — a doji to the last bit",
+     `${priceOf(b.openNet)} -> ${priceOf(b.closeNet)}`);
+  ok(b.bullPts === 12 && b.bearPts === 60,
+     "and a level candle can still carry very different volume each way",
+     `bull ${b.bullPts} v bear ${b.bearPts} points`);
+  ok(a.closeNet === b.openNet && b.closeNet === c.openNet,
+     "each candle opens where the last one closed");
+  ok(candles.every((x) => x.path.length === SAMPLES &&
+       x.path[SAMPLES - 1].dn === x.bullWins - x.bearWins &&
+       x.path[SAMPLES - 1].bp === x.bullPts && x.path[SAMPLES - 1].bq === x.bearPts),
+     "the last sample of a candle is its close");
+  ok(candles.every((x) => {
+       for (let i = 1; i < SAMPLES; i++) {
+         if (x.path[i].bp < x.path[i - 1].bp || x.path[i].bq < x.path[i - 1].bq) return false;
+       }
+       return true;
+     }), "and the running points never go backwards");
+  ok(c.draws === 1 && c.matches === 6, "a draw counts as a match and moves nothing",
+     `${c.matches} matches, ${c.draws} drawn, net ${c.closeNet - c.openNet}`);
+
+  /* a result that arrives for a ten seconds already published is refused */
+  const late = [];
+  const m2 = new Market({ onReject: (x) => late.push(x.reason) });
+  m2.submit({ source: "bot", at: t0 + 100000, winner: "bull", points: 5 });
+  const took = m2.submit({ source: "bot", at: t0 + 20000, winner: "bear", points: 5 });
+  ok(!took && late.length === 1, "a result that arrives behind the samples already written is refused",
+     late[0]);
+
+  /* ---- and it survives a round trip through the file format ---- */
+  const pad = [];
+  for (let i = 0; i < 288; i++) pad.push(candles[i % 3]);
+  const fixed = pad.map((x, i) => Object.assign({}, x, { index: i }));
+  let open = 0;
+  for (const x of fixed) {
+    x.openNet = open; x.closeNet = open + x.bullWins - x.bearWins;
+    x.hiNet = Math.max(x.openNet, x.closeNet); x.loNet = Math.min(x.openNet, x.closeNet);
+    open = x.closeNet;
+  }
+  const enc = CODEC.encodeDay({ day: 3, candles: fixed, samples: SAMPLES, key: "k" });
+  const back = CODEC.decodeDay(enc.text, { day: 3, samples: SAMPLES, key: "k" });
+  ok(back.n === 288 && back.endNet === open &&
+     back.candles.every((x, i) => x.bullWins === fixed[i].bullWins &&
+       x.bearWins === fixed[i].bearWins && x.bullPts === fixed[i].bullPts &&
+       x.bearPts === fixed[i].bearPts && x.draws === fixed[i].draws &&
+       x.openNet === fixed[i].openNet),
+     "a day survives being written and read back", `${enc.bytes.length} bytes`);
+  let threw = null;
+  try { CODEC.decodeDay(enc.text, { day: 4, samples: SAMPLES, key: "k" }); }
+  catch (e) { threw = e.message; }
+  ok(!!threw, "and a file read as the wrong day is refused rather than drawn", threw);
+  threw = null;
+  try { CODEC.decodeDay(enc.text, { day: 3, samples: SAMPLES, key: "wrong" }); }
+  catch (e) { threw = e.message; }
+  ok(!!threw, "as is one descrambled with the wrong key", threw);
 }
 
 console.log("");

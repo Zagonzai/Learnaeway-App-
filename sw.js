@@ -32,6 +32,15 @@ const SHELL = [
   /* the rules, which app.js reads as it loads — it is not optional and it is
      not large, so it belongs beside the file that cannot start without it */
   "./js/pw-rules.js",
+  /* the ÆWAY market's three files, same reasoning. The recording's day files
+     under data/aeway/ are deliberately NOT here: they are 62KB each and a
+     player only ever needs the day they are looking at, so they are fetched on
+     demand and kept by the fetch handler below. Ninety of them on install would
+     be five and a half megabytes of market nobody has asked to see. */
+  "./js/aeway-codec.js",
+  "./js/aeway-market.js",
+  "./js/aeway-chart.js",
+  "./data/aeway/manifest.json",
   "./js/config.js",
   "./js/firebase.js",
   "./data/course-data.js",
@@ -193,6 +202,19 @@ const SHELL = [
 
 const CACHE_FIRST = /\/assets\//;
 
+/* The recording's day files are a third case. They are immutable once written —
+   a day that has been recorded never changes — so they want cache-first, like
+   the art. But unlike the art they are replaced wholesale when the market is
+   re-recorded, and an asset cache that never bumps would serve last month's
+   market for ever. So they are cache-first and kept in CACHE rather than
+   ASSETS: a deploy that carries a new recording bumps CACHE, which is the same
+   bump it needs anyway, and the old days go with it.
+   The manifest and the report are deliberately NOT here. They are small, they
+   change whenever the recording does, and they are what tells the app how to
+   read the rest — so they stay network-first and the app never starts from a
+   stale description of a fresh recording. */
+const RECORDING = /\/data\/aeway\/day-\d+\.txt$/;
+
 /* The list above is one list because it is one decision — what is worth
  * having before it is asked for — but the two halves of it live in different
  * caches, for the reason at the top of this file. */
@@ -225,10 +247,11 @@ self.addEventListener("fetch", (e) => {
   const url = new URL(e.request.url);
   if (url.origin !== location.origin) return;
 
-  if (CACHE_FIRST.test(url.pathname)) {
+  if (CACHE_FIRST.test(url.pathname) || RECORDING.test(url.pathname)) {
+    const where = RECORDING.test(url.pathname) ? CACHE : ASSETS;
     e.respondWith(
       caches.match(e.request).then((hit) => hit || fetch(e.request).then((res) => {
-        if (res.ok) caches.open(ASSETS).then((c) => c.put(e.request, res.clone()));
+        if (res.ok) caches.open(where).then((c) => c.put(e.request, res.clone()));
         return res;
       }))
     );

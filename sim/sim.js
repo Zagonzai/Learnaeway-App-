@@ -65,11 +65,63 @@ class Heap {
   drain() { const out = this.a; this.a = []; return out; }
 }
 
-/* The calendar day in Eastern time, which is where the brief puts the market's
-   day boundary. A string rather than a number because that is what the platform
-   will give us for free and it compares correctly. */
-const easternDay = (ms) =>
-  new Date(ms).toLocaleDateString("en-CA", { timeZone: "America/New_York" });
+/* ---- which Eastern day a moment falls in ----
+   The brief puts the market's day boundary at midnight Eastern, and every bot
+   re-flips its side when it crosses one, so this is asked twice per match —
+   210 million times over a 90-day recording.
+
+   Asking Intl that many times is not viable: a toLocaleDateString per call made
+   the recorder three and a half times slower than the card game it was
+   recording, which is to say the simulator spent most of its life formatting
+   dates. So the answer is cached as a half-open window of milliseconds and the
+   common case is one numeric comparison. Intl is consulted twice per day
+   boundary instead — about 180 times for the whole recording.
+
+   The window is found by asking for the next midnight rather than adding 24
+   hours, because two days a year are 23 and 25 hours long and a market that
+   re-flipped its sides an hour late twice a year would be a bug nobody would
+   ever find. The day's key is the millisecond its own midnight falls on, which
+   is unique per day and compares as a number. */
+const EASTERN = "America/New_York";
+const EAST_FMT = new Intl.DateTimeFormat("en-CA", {
+  timeZone: EASTERN, year: "numeric", month: "2-digit", day: "2-digit",
+  hour: "2-digit", minute: "2-digit", second: "2-digit", hour12: false,
+});
+/* the Eastern wall clock at `ms`, as numbers */
+function easternParts(ms) {
+  const p = {};
+  for (const { type, value } of EAST_FMT.formatToParts(ms)) {
+    if (type !== "literal") p[type] = +value;
+  }
+  /* 24:00:00 is how some engines render midnight in this format */
+  if (p.hour === 24) p.hour = 0;
+  return p;
+}
+/* the moment Eastern midnight last happened at or before `ms` */
+function easternMidnight(ms) {
+  const p = easternParts(ms);
+  const wall = Date.UTC(p.year, p.month - 1, p.day, p.hour, p.minute, p.second);
+  const offset = wall - Math.floor(ms / 1000) * 1000;   // + to read UTC as Eastern
+  let guess = Date.UTC(p.year, p.month - 1, p.day) - offset;
+  /* That applies the offset in force at `ms` to a moment sixteen hours earlier,
+     which is right on 363 days a year and an hour out on the two the clocks
+     change — the guess lands at 23:00 the evening before, or at 01:00. So it is
+     checked rather than trusted: read the Eastern wall clock at the guess and,
+     if it is not midnight, move by however far off it is. One extra Intl call
+     per day boundary, and the two awkward days come out right. */
+  const q = easternParts(guess);
+  const off = ((q.hour * 60 + q.minute) * 60 + q.second) * 1000;
+  if (off) guess -= off > 12 * 3600 * 1000 ? off - 86400000 : off;
+  return guess;
+}
+let dayFrom = 0, dayTo = -1;
+function easternDay(ms) {
+  if (ms >= dayFrom && ms < dayTo) return dayFrom;
+  dayFrom = easternMidnight(ms);
+  /* 36 hours on is certainly inside the next day however long this one was */
+  dayTo = easternMidnight(dayFrom + 36 * 3600 * 1000);
+  return dayFrom;
+}
 
 class Sim {
   /* `seed` makes the whole run reproducible: the population, the sides, the rest
@@ -196,6 +248,10 @@ class Sim {
       rounds: res.rounds,
       seconds: res.seconds,
       seat: res.seat,
+      /* carried through for the admin report's balance section */
+      onTrack: res.onTrack,
+      yoloNews: res.yoloNews,
+      yoloNewsDecider: res.yoloNewsDecider,
       /* enough to replay it and nothing more: the seed plus the two styles is the
          whole match, and the two bot ids are who to credit it to */
       bull: { id: m.bull.id, style: res.bullStyle },
