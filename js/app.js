@@ -3221,14 +3221,24 @@
      candle — a track from -25 to +25 — that many points its way. First side to
      the end of the track wins.
 
+     ==> The rules are not in this file. They are in js/pw-rules.js, and they
+     moved there so that the market simulator plays the game the app plays
+     rather than a copy of it: ten thousand bots a day resolving rounds through
+     a second implementation would be two games the moment one of them was
+     corrected and the other was not. Nothing about the rules changed in the
+     move. What is below is the screen's half — the board, the hand, the result,
+     the history — plus a short list of names that bind this file's old call
+     sites onto the one engine.
+
      The port keeps three things from the reference deliberately, each of which
-     was a bug there once:
+     was a bug there once, and all three are now the module's:
 
        - resolveRound() is pure. It reads the two cards and the candle and
-         returns a description of what should happen; pwApplyResult() is the
+         returns a description of what should happen; applyResult() is the
          only thing that changes state. Keeping the two apart is what makes the
-         round logic testable at all.
-       - pwApplyResult() draws against local copies of the decks ("bags") and
+         round logic testable at all — and it is why a headless bot can play
+         through exactly this code.
+       - applyResult() draws against local copies of the decks ("bags") and
          commits once at the end. The reference hit a bug where multi-card
          effects — FOMO drawing two, a hand refilling — read stale
          deck state between draws and handed out the same card repeatedly.
@@ -3237,163 +3247,12 @@
        - A special card's own fields never share a name with the engine's. The
          reference briefly spread these objects in an order that let a card's
          own classification overwrite the engine's `kind`, which silently broke
-         every special in the deck; the card's own is `effect`. */
+         every special in the deck; the card's own is `effect`.
 
-  /* Six ranks a side, five down to nought, and the two sides mirror each
-     other rank for rank — the names on the faces are these names, so what the
-     round log and the Seen panel say is what the card says.
-
-     A Null scores nothing. It is a card like any other, not a discard: it can
-     only ever tie the other side's Null, because any rank above it wins, and
-     an equal score is already a wash that spends both cards. Nothing else in
-     the engine needed a word changing for it.
-
-     The bear's 4 and 1 read the other way round for a while — the previous
-     art printed Hanging Man on the 4 — and this set settles it: Shooting Star
-     is the 4 again and the 1 is Weak Rejection, matching the bull's. There is
-     no Hanging Man in the deck now.
-
-     Shapes are not carried here any more. They drove a drawn candle icon that
-     the illustrated faces replaced; the faces are the shapes. */
-  const PW_TIERS_BY_SIDE = {
-    bull: [
-      { type: "Bullish Marubozu",       pts: 5 },
-      { type: "Bullish Hammer",         pts: 4 },
-      { type: "Bullish Standard",       pts: 3 },
-      { type: "Bullish Spinning Top",   pts: 2 },
-      { type: "Bullish Weak Rejection", pts: 1 },
-      { type: "Bullish Null",           pts: 0 },
-    ],
-    bear: [
-      { type: "Bearish Marubozu",       pts: 5 },
-      { type: "Bearish Shooting Star",  pts: 4 },
-      { type: "Bearish Standard",       pts: 3 },
-      { type: "Bearish Spinning Top",   pts: 2 },
-      { type: "Bearish Weak Rejection", pts: 1 },
-      { type: "Bearish Null",           pts: 0 },
-    ],
-  };
-  const pwTiers = (side) => PW_TIERS_BY_SIDE[side] || PW_TIERS_BY_SIDE.bull;
-
-  /* The twelve wilds. `effect` is what the engine switches on; `cls` is only
-     what the card shows. Three of them read the opponent's revealed card and
-     score off it in the player's own direction, at rising multiples — Stop
-     Loss at its value, Momentum at double, Market News at triple — so they
-     are resolved with both cards in hand rather than as standalone effects.
-     One `absorb` effect covers all three; only `mult` separates them.
-     Discipline is not resolved here at all: it is a peek, and the card that
-     scores is the one chosen after it. */
-  const PW_SPECIALS = [
-    { type: "Volatility Spike", cls: "A", effect: "zero", keepsOther: true,
-      desc: "The candle snaps back to 0. Nobody scores." },
-    { type: "Canceled Order",   cls: "A", effect: "cancel",
-      desc: "Cancels their card — but scores nothing itself. Total wash, both discarded." },
-    { type: "Liquidated",       cls: "A", effect: "liquidate", swing: 5,
-      desc: "Destroys their card. You take the round, +5 your way." },
-    { type: "FOMO",             cls: "A", effect: "fomo", extra: 2, keepsOther: true,
-      desc: "Draw 2 more cards from your deck. The round is a wash." },
-    { type: "Stop Loss",        cls: "A", effect: "absorb", mult: 1,
-      desc: "Their card scores for YOU instead, at its own value. Their attack, your protection." },
-    { type: "Market News",      cls: "A", effect: "absorb", mult: 3,
-      desc: "Their card scores for YOU instead, at triple its value." },
-    { type: "Reversal",         cls: "A", effect: "flip", keepsOther: true,
-      desc: "Flips the candle to the same distance the other side of 0." },
-    { type: "Take Profit",      cls: "A", effect: "absorb", mult: 1, doubleUp: true,
-      desc: "Take their profit: their card scores for YOU at its value. Hold its match and you can double it." },
-    { type: "Momentum",         cls: "A", effect: "absorb", mult: 2,
-      desc: "Their card scores DOUBLE for YOU instead of its value for them." },
-    { type: "Discipline",       cls: "D", effect: "peek",
-      desc: "See their card first, then pick a numbered card from your hand to answer it." },
-    /* The last two are a different kind of card again. Neither has an effect
-       the resolver can switch on: each one stands aside and puts a different
-       card on the table in its place, and that card is what the round is
-       fought with. Class D, like Discipline, which does the same thing by
-       asking rather than by flipping — none of the three ever reaches
-       pwResolveRound as itself. */
-    { type: "YOLO",             cls: "D", effect: "flip",
-      desc: "Take the top two cards from your deck. Combine their points. Play the total against your opponent's card." },
-    { type: "Diamond Hands",    cls: "D", effect: "replay",
-      desc: "Replay the Power or effect of the card you played last round." },
-  ];
-  /* the three that are spent putting something else on the table */
-  const PW_SUBSTITUTES = ["YOLO", "Diamond Hands"];
-
-  const PW_CLASS_A = PW_SPECIALS.filter((s) => s.cls === "A").map((s) => s.type);
-  const PW_SPEC = {};
-  PW_SPECIALS.forEach((s) => { PW_SPEC[s.type] = s; });
-  /* ---- match settings ----
-     A match is not one shape any more. The host of a Create Match picks how
-     many points it runs to, and that one number sets the whole size of the
-     game: how many copies of every candle are in each deck, and how many
-     cards a player opens holding. A shorter target with a full-size deck
-     would be over before either player had drawn anything interesting, which
-     is why the three move together rather than separately.
-
-     25 is the default and is exactly today's game, so Start Match against the
-     computer is untouched by any of this. */
-  const PW_POINTS = [10, 15, 20, 25];
-  const PW_POINT_RULES = {
-    10: { copies: 2, hand: 3 },
-    15: { copies: 3, hand: 4 },
-    20: { copies: 4, hand: 5 },
-    25: { copies: 5, hand: 6 },
-  };
-
-  /* The specials, by the colour they are actually printed in — read off the
-     delivered faces rather than invented here, so the groups are the ones a
-     player sees: the border of each card is one saturated hue, and the four
-     of them fall out cleanly (yellow ~54°, blue ~196°, purple ~287°, and
-     Volatility Spike, which is the only card whose border is unsaturated).
-
-     White is short two cards on purpose. The brief says two more are coming
-     with their own mechanics and not to stand placeholders in for them, so
-     this group contributes whatever exists — one card today, three when they
-     land, with nothing here to change when they do. */
-  const PW_SPEC_COLOURS = [
-    { k: "white",  name: "White",  cards: ["Volatility Spike", "YOLO", "Diamond Hands"] },
-    { k: "purple", name: "Purple", cards: ["Liquidated", "Reversal", "Discipline"] },
-    { k: "blue",   name: "Blue",   cards: ["Stop Loss", "Market News", "Momentum"] },
-    { k: "yellow", name: "Yellow", cards: ["Canceled Order", "FOMO", "Take Profit"] },
-  ];
-  /* ---- and the order the twelve are shown in ----
-     The grid is four columns of three, one colour per column, so the order to
-     read them in is down each column: the table above, flattened. It is this
-     array and not PW_SPECIALS that the Library's grid, its swipe and its dots
-     follow, and the reference sheet with them.
-
-     PW_SPECIALS itself is deliberately left where it is. A finished match
-     stores each wild as its index in that array, so reordering it would make
-     every replay already on a player's phone name the wrong cards. The order
-     cards are shown in is a different thing from the order they are numbered
-     in, and this is the one that may move. */
-  const PW_SPECIALS_SHOWN = PW_SPEC_COLOURS
-    .reduce((all, c) => all.concat(c.cards), [])
-    .map((t) => PW_SPEC[t])
-    .filter(Boolean);
-  const PW_SPEC_PER_COLOUR = [0, 1, 2, 3];   // 0 is "not playable"
-  const PW_DEFAULT_SETTINGS = { points: 25, perColour: 3 };
-
-  /* Whatever the settings say, resolved and made safe. Anything unrecognised
-     falls back to the default match rather than to a broken one — these
-     numbers can arrive from a match code somebody typed in. */
-  function pwSettings(s) {
-    const raw = s || PW_DEFAULT_SETTINGS;
-    const points = PW_POINT_RULES[raw.points] ? raw.points : PW_DEFAULT_SETTINGS.points;
-    const per = PW_SPEC_PER_COLOUR.indexOf(raw.perColour) >= 0
-      ? raw.perColour : PW_DEFAULT_SETTINGS.perColour;
-    return Object.assign({ points, perColour: per }, PW_POINT_RULES[points]);
-  }
-  /* the settings the match on screen is running under */
-  const pwRules = () => pwSettings(pw && pw.settings);
-  const pwTarget = () => pwRules().points;
-  const pwCopies = () => pwRules().copies;
-
-  const PW_TARGET = 25;          // the default, and what an unstarted screen shows
-  const PW_TIER_COPIES = 5;      // likewise: one deck's worth at the default size
-  const PW_REVEAL_MS = 700;
-
-  let pwUid = 0;
-  const pwId = () => `pw${pwUid++}`;
+     The engine needs to be told which match it is talking about. In this file
+     there is only ever one, and it is `pw` — so every binding below is the
+     same function it always was with `pw` filled in. */
+  const R = window.PWRules;
 
   /* the whole game, in one place, so leaving the screen can drop it cleanly */
   let pw = null;
@@ -3401,356 +3260,79 @@
   let pwRollTimer = null;   // the side randomiser's flicker
   let pwRolling = false;
 
-  function pwBuildTierDeck(side, copies) {
-    const n = copies || PW_TIER_COPIES;
-    const cards = [];
-    pwTiers(side).forEach((t) => {
-      for (let i = 0; i < n; i++) {
-        cards.push({ id: pwId(), side, kind: "tier", type: t.type, pts: t.pts });
-      }
-    });
-    return cards;
-  }
-  /* Which specials are in this match: `perColour` of each colour, drawn at
-     random from that colour for this match only, so two matches on the same
-     setting are not the same deck. 0 means the match has no specials at all.
-     A colour short of that many contributes everything it has — which is what
-     white does until its other two cards arrive. */
-  function pwPickSpecialTypes(perColour) {
-    if (!perColour) return [];
-    /* All of them is all of them: taken in the sheet's own order, and without
-       drawing a single random number. That matters more than it looks. The
-       default match is specified as today's game exactly, and "exactly" has to
-       survive a seeded replay — choosing at random costs six draws off
-       Math.random, which would move the wild deck's shuffle and every match
-       recorded against a seed with it. Nothing to choose, nothing drawn, and
-       the default deal is bit-for-bit the one it has always been.
+  /* ---- the engine, under the names this file has always called it ----
+     Tables and pure helpers pass straight through. Anything that needs to know
+     which match it is looking at is handed `pw`, and that is the whole of the
+     binding: there is no logic on this page, and every name on the left is the
+     same function it was before the rules moved into their own file. */
+  const PW_TIERS_BY_SIDE   = R.TIERS_BY_SIDE;
+  const PW_SPECIALS        = R.SPECIALS;
+  const PW_SPECIALS_SHOWN  = R.SPECIALS_SHOWN;
+  const PW_SUBSTITUTES     = R.SUBSTITUTES;
+  const PW_CLASS_A         = R.CLASS_A;
+  const PW_SPEC            = R.SPEC;
+  const PW_POINTS          = R.POINTS;
+  const PW_POINT_RULES     = R.POINT_RULES;
+  const PW_SPEC_COLOURS    = R.SPEC_COLOURS;
+  const PW_SPEC_PER_COLOUR = R.SPEC_PER_COLOUR;
+  const PW_DEFAULT_SETTINGS = R.DEFAULT_SETTINGS;
+  const PW_STRONG_REPLAY   = R.STRONG_REPLAY;
+  const PW_SPECIAL_ART     = R.SPECIAL_ART;
+  const PW_TARGET          = R.TARGET;        // the default, and what an unstarted screen shows
+  const PW_TIER_COPIES     = R.TIER_COPIES;   // one deck's worth at the default size
 
-       (The test is on the colours rather than on the number, so it stays true
-       when white grows to three cards.) */
-    if (PW_SPEC_COLOURS.every((c) => c.cards.length <= perColour)) {
-      return PW_SPECIALS.map((x) => x.type);
-    }
-    const picked = [];
-    PW_SPEC_COLOURS.forEach((c) => {
-      pwShuffle(c.cards).slice(0, perColour).forEach((t) => { if (PW_SPEC[t]) picked.push(t); });
-    });
-    return picked;
-  }
-  /* the engine's own `kind` is written last on purpose — see the note above */
-  function pwBuildSpecialDeck(types) {
-    const want = types || PW_SPECIALS.map((s) => s.type);
-    return want
-      .map((t) => PW_SPEC[t])
-      .filter(Boolean)
-      .map((s) => Object.assign({}, s, { id: pwId(), side: "special", kind: "special" }));
-  }
+  const pwTiers            = R.tiers;
+  const pwSettings         = R.settings;
+  const pwId               = R.id;
+  const pwBuildTierDeck    = R.buildTierDeck;
+  const pwPickSpecialTypes = R.pickSpecialTypes;
+  const pwBuildSpecialDeck = R.buildSpecialDeck;
+  const pwShuffle          = R.shuffle;
+  const pwSign             = R.sign;
+  const pwSigned           = R.signed;
+  const pwEmptyCounts      = R.emptyCounts;
+  const pwEffPts           = R.effPts;
+  const pwCardLabel        = R.cardLabel;
+  const pwCardsMatch       = R.cardsMatch;
+  const pwTakeProfitMatch  = R.takeProfitMatch;
+  const pwWorthReplaying   = R.worthReplaying;
+  const pwResolveRound     = R.resolveRound;
+  const pwDisciplineWash   = R.disciplineWash;
+  const pwSubLog           = R.subLog;
+  const pwNewGame          = R.newGame;
 
-  function pwShuffle(arr) {
-    const a = arr.slice();
-    for (let i = a.length - 1; i > 0; i--) {
-      const j = Math.floor(Math.random() * (i + 1));
-      const t = a[i]; a[i] = a[j]; a[j] = t;
-    }
-    return a;
-  }
+  /* and the ones that read or move the match on screen */
+  const pwRules   = () => R.rules(pw);
+  const pwTarget  = () => R.target(pw);
+  const pwCopies  = () => R.copies(pw);
+  const pwClamp   = (v, target) => R.clamp(pw, v, target);
+  const pwOwnDeck = (side) => R.ownDeck(pw, side);
+  /* why a card can be in a hand and unplayable: see pwBlocked in js/pw-rules.js */
+  const pwBlocked = (card, who) => R.blocked(pw, card, who);
+  const pwSubstitute = (card, who) => R.substitute(pw, card, who);
+  const pwPlayable = (hand, who) => R.playable(pw, hand, who);
+  const pwFullyOut = (hand, side) => R.fullyOut(pw, hand, side);
+  const pwTopUp = (hand, side, who) => R.topUp(pw, hand, side, who);
+  const pwRecordLast = (pCard, aCard) => R.recordLast(pw, pCard, aCard);
+  const pwAiChooseCard = (hand) => R.aiChooseCard(pw, hand);
+  const pwAiAnswerPeek = (playerCard) => R.aiAnswerPeek(pw, playerCard);
+  const pwAiDrawSource = (specialCount) => R.aiDrawSource(pw, specialCount);
+  const pwPlay = (cardId) => R.play(pw, cardId);
+  const pwDisciplineAnswer = (cardId) => R.disciplineAnswer(pw, cardId);
+  const pwCommitPending = (silent) => R.commitPending(pw, silent);
+  const pwTakeProfitChoose = (doubleUp) => R.takeProfitChoose(pw, doubleUp);
+  const pwApplyResult = (result, pCard, aCard, silent) =>
+    R.applyResult(pw, result, pCard, aCard, silent);
+  const pwChooseDraw = (source) => R.chooseDraw(pw, source);
+  const pwFinishRound = (finalCandle, silent) => R.finishRound(pw, finalCandle, silent);
 
-  const pwSign = (side) => (side === "bull" ? 1 : -1);
-  /* the print never reads past the finish line either side of it */
-  const pwClamp = (v, target) => {
-    const t = target || pwTarget();
-    return Math.max(-t, Math.min(t, v));
-  };
-  const pwSigned = (n) => (n > 0 ? `+${n}` : String(n));
-  // keyed by the tier names of one side, since the two decks no longer share any
-  function pwEmptyCounts(side) {
-    const c = {};
-    pwTiers(side).forEach((t) => { c[t.type] = 0; });
-    return c;
-  }
-  /* What a card is worth in a plain comparison. Nothing alters the other
-     card's value any more — Fear was the only card that did, and Take Profit
-     replaced it. */
-  function pwEffPts(card) {
-    return card.pts;
-  }
+  /* the reveal beat, which is this file's and not the engine's */
+  const PW_REVEAL_MS = 700;
 
-  /* ---- the pure part: what the round does, without doing any of it ---- */
-  function pwResolveRound(pCard, aCard, playerSide, aiSide, candle) {
-    const log = [];
-    const r = {
-      candleDelta: 0, outcome: "wash",
-      pDrawOwn: 1, aDrawOwn: 1, pExtraOwn: 0, aExtraOwn: 0,
-      pReturnCard: false, aReturnCard: false,
-      pDiscard: false, aDiscard: false,
-      loserNeedsChoice: null, log,
-    };
-
-    const pIsA = pCard.kind === "special" && PW_CLASS_A.indexOf(pCard.type) >= 0;
-    const aIsA = aCard.kind === "special" && PW_CLASS_A.indexOf(aCard.type) >= 0;
-
-    /* Discipline never reaches here as a played card — it is a peek, and the
-       card chosen after it is what arrives. The one exception is both players
-       playing it at once, which cancels out: neither gets to answer the other. */
-    if (pCard.type === "Discipline" && aCard.type === "Discipline") {
-      r.outcome = "wash";
-      r.pDiscard = true;
-      r.aDiscard = true;
-      log.push("Both hold their discipline — neither commits. The round is a wash.");
-      return r;
-    }
-
-    /* A YOLO or a Diamond Hands that reached here as itself. It should not:
-       the hand dims them and the AI skips them in exactly the states where
-       they cannot substitute. But a hand holding nothing else has to play
-       something, so rather than hand the comparison below a card with no
-       power at all, the round is a wash and the card is spent. */
-    const dud = (c) => c.kind === "special" && PW_SUBSTITUTES.indexOf(c.type) >= 0;
-    if (dud(pCard) || dud(aCard)) {
-      r.outcome = "wash";
-      if (dud(pCard)) { r.pDiscard = true; log.push(`${pCard.type} has nothing to play — the card is spent for nothing.`); }
-      if (dud(aCard)) { r.aDiscard = true; log.push(`Their ${aCard.type} has nothing to play — the card is spent for nothing.`); }
-      return r;
-    }
-
-    /* What one Class-A does, given the card it was played against. Three of
-       them score off that card, so the opponent's card is an input here rather
-       than something resolved separately. Returns the candle delta from the
-       owner's point of view plus who, if anyone, took the round. */
-    function classAEffect(card, owner, ownerSide, otherCard, otherSide) {
-      const spec = PW_SPEC[card.type] || {};
-      const otherPts = otherCard && otherCard.kind === "tier" ? otherCard.pts : null;
-      switch (spec.effect) {
-        case "zero":
-          return { delta: -candle, extra: 0, outcome: "wash" };
-        case "flip":
-          return { delta: -2 * candle, extra: 0, outcome: "wash" };
-        case "fomo":
-          return { delta: 0, extra: spec.extra, outcome: "wash" };
-        case "cancel":
-          // voids their card and scores nothing of its own: a total wash
-          return { delta: 0, extra: 0, outcome: "wash" };
-        case "liquidate":
-          return { delta: pwSign(ownerSide) * spec.swing, extra: 0, outcome: owner };
-        case "absorb":
-          /* Stop Loss at face value, Momentum at double, Market News at
-             triple: their numbered card scores in the owner's direction
-             instead of their own. Against anything without a number there is
-             nothing to absorb. */
-          if (otherPts == null) return { delta: 0, extra: 0, outcome: "wash" };
-          return { delta: pwSign(ownerSide) * otherPts * spec.mult, extra: 0, outcome: owner };
-        default:
-          return { delta: 0, extra: 0, outcome: "wash" };
-      }
-    }
-
-    // one Class-A special against the other player's card
-    function oneClassA(card, owner, ownerSide, otherCard, otherSide) {
-      const eff = classAEffect(card, owner, ownerSide, otherCard, otherSide);
-      const spec = PW_SPEC[card.type] || {};
-      log.push(`${owner === "player" ? "You play" : "Opponent plays"} ${card.type} — ${card.desc}`);
-      r.candleDelta = eff.delta;
-      r.outcome = eff.outcome;
-      if (owner === "player") r.pExtraOwn = eff.extra; else r.aExtraOwn = eff.extra;
-
-      /* Only the effects that leave the other card alone give it back. A card
-         that was destroyed, cancelled or scored off has been spent. */
-      if (spec.keepsOther && otherCard.kind === "tier") {
-        if (owner === "player") r.aReturnCard = true; else r.pReturnCard = true;
-      }
-      // whoever lost the round replaces their card from a pile of their choosing
-      if (eff.outcome === "player") { r.aDrawOwn = 0; r.loserNeedsChoice = "ai"; }
-      else if (eff.outcome === "ai") { r.pDrawOwn = 0; r.loserNeedsChoice = "player"; }
-      return r;
-    }
-
-    if (pIsA && !aIsA) return oneClassA(pCard, "player", playerSide, aCard, aiSide);
-    if (aIsA && !pIsA) return oneClassA(aCard, "ai", aiSide, pCard, playerSide);
-
-    /* Both played a Class-A. Neither has a number for the other to read, so
-       any effect that scores off the opponent's card finds nothing; what is
-       left is the candle effects, which stack. */
-    if (pIsA && aIsA) {
-      const e1 = classAEffect(pCard, "player", playerSide, aCard, aiSide);
-      const e2 = classAEffect(aCard, "ai", aiSide, pCard, playerSide);
-      r.candleDelta = e1.delta + e2.delta;
-      r.pExtraOwn = e1.extra; r.aExtraOwn = e2.extra;
-      r.outcome = "wash";
-      log.push(`You play ${pCard.type} — ${pCard.desc}`);
-      log.push(`Opponent plays ${aCard.type} — ${aCard.desc}`);
-      return r;
-    }
-
-    // plain comparison
-    const pPts = pwEffPts(pCard);
-    const aPts = pwEffPts(aCard);
-    const pLabel = `${pCard.type} (${pPts})`;
-    const aLabel = `${aCard.type} (${aPts})`;
-
-    if (pPts === aPts) {
-      /* Equal points is a wash and both cards are spent — discarded outright,
-         not returned to a hand and not put back under either deck. Any equal
-         total ties, whether or not the two cards share a name. */
-      r.outcome = "wash";
-      r.pDiscard = true;
-      r.aDiscard = true;
-      log.push(`You play ${pLabel}, opponent plays ${aLabel} — a wash. Both cards are discarded.`);
-    } else if (pPts > aPts) {
-      r.outcome = "player";
-      r.candleDelta = pwSign(playerSide) * pPts;
-      r.loserNeedsChoice = "ai";
-      log.push(`You play ${pLabel}, opponent plays ${aLabel} — you win the round, ${pwSigned(r.candleDelta)}.`);
-    } else {
-      r.outcome = "ai";
-      r.candleDelta = pwSign(aiSide) * aPts;
-      r.loserNeedsChoice = "player";
-      log.push(`Opponent plays ${aLabel}, you play ${pLabel} — opponent wins the round, ${pwSigned(r.candleDelta)}.`);
-    }
-    return r;
-  }
-
-  /* ---- the AI ---- */
-  /* A card worth replaying: a big candle, or one of the three wilds that score
-     off whatever the other side put down. */
-  const PW_STRONG_REPLAY = ["Liquidated", "Momentum", "Market News"];
-  const pwWorthReplaying = (c) =>
-    !!c && (c.kind === "tier" ? c.pts >= 4 : PW_STRONG_REPLAY.indexOf(c.type) >= 0);
-
-  function pwAiChooseCard(hand) {
-    /* Nothing it cannot actually play. A hand of nothing BUT those is the one
-       case this cannot honour, and the resolver washes that round rather than
-       trying to fight with a card that has no power. */
-    const open = hand.filter((c) => !pwBlocked(c, "ai"));
-    const live = open.length ? open : hand;
-    const specials = live.filter((c) => c.kind === "special");
-    const behind = pwSign(pw.aiSide) * pw.candle < -6;
-
-    /* The two new wilds are played on a read of the board rather than at
-       random, which is the whole of their strategy: YOLO is a gamble, so it
-       comes out when the hand has nothing worth playing and the round is going
-       badly anyway; Diamond Hands is only worth a card when there is something
-       worth replaying. */
-    const weakHand = !live.some((c) => c.kind === "tier" && c.pts >= 4);
-    const yolo = specials.find((c) => c.type === "YOLO");
-    if (yolo && behind && weakHand && Math.random() < 0.6) return yolo;
-    const diamond = specials.find((c) => c.type === "Diamond Hands");
-    if (diamond && pwWorthReplaying(pw.lastA) && Math.random() < 0.55) return diamond;
-
-    if (specials.length && (behind || Math.random() < 0.2)) {
-      return specials[Math.floor(Math.random() * specials.length)];
-    }
-    const normals = live.filter((c) => c.kind === "tier");
-    const pool = normals.length ? normals : live;
-    if (Math.random() < 0.4) {
-      return pool.reduce((best, c) => (c.pts > best.pts ? c : best), pool[0]);
-    }
-    return pool[Math.floor(Math.random() * pool.length)];
-  }
-  /* A card in hand that matches the one just revealed. The spec asks for the
-     same tier NAME and the same point value — but the two decks stopped
-     sharing names when the tiers were split per side, so a name match can only
-     ever be Standard against Standard and the option would almost never
-     appear. Matching on value keeps the rule playable and means the same
-     thing: equal points is the equal rank. Tighten `pwCardsMatch` to compare
-     type as well if the literal reading is wanted. */
-  function pwCardsMatch(a, b) {
-    return a.kind === "tier" && b.kind === "tier" && a.pts === b.pts;
-  }
-  function pwTakeProfitMatch(hand, theirCard) {
-    if (!theirCard || theirCard.kind !== "tier") return null;
-    return hand.find((c) => pwCardsMatch(c, theirCard)) || null;
-  }
-
-  /* Cheapest card that beats what the peek showed, else the weakest held. */
-  function pwAiAnswerPeek(playerCard) {
-    const numbered = pw.aiHand.filter((c) => c.kind === "tier");
-    if (!numbered.length) return null;
-    const target = playerCard.kind === "tier" ? playerCard.pts : 0;
-    const winners = numbered.filter((c) => c.pts > target).sort((x, y) => x.pts - y.pts);
-    if (winners.length) return winners[0];
-    return numbered.slice().sort((x, y) => x.pts - y.pts)[0];
-  }
-
-  function pwAiDrawSource(specialCount) {
-    if (specialCount === 0) return "own";
-    const behind = pwSign(pw.aiSide) * pw.candle < -3;
-    return behind || Math.random() < 0.35 ? "special" : "own";
-  }
-
-  /* ---- state ---- */
-  function pwNewGame() {
-    return {
-      phase: "hub", playerSide: null, aiSide: null, candle: 0,
-      bull: [], bear: [], special: [],
-      playerHand: [], aiHand: [], playerPlayed: null, aiPlayed: null,
-      round: 1, log: [], winner: null, pendingCandle: 0, pending: null,
-      /* Which set the card library is showing, or null for the three tiles on
-         their own. The library is a screen of its own now rather than a list
-         that unrolled under the picker, so the picker's own state went with
-         it. */
-      libSet: "bull", seen: {},
-      /* which match off the record the replay screen is showing, by the
-         timestamp it was filed under */
-      savedT: null,
-      /* one entry per resolved round: where the print stood when the round
-         opened and where it stood when the round closed. That is a candle,
-         and the run of them is the match as a chart — which is what View
-         Match draws. Recorded as it happens because nothing else keeps it:
-         pw.log is prose, and the track only ever holds the latest figure. */
-      chart: [],
-      showMatch: false,     // the chart, in the result screen's own slot
-      showRound: null,      // which round's reveal is open under the row
-      hubAll: false,        // the whole match history rather than the last three
-      /* the performance chart, in the Match History box. `head` is what the
-         video header and the title bars were doing before it opened, so that
-         closing it puts them back the way they were rather than the way the
-         chart left them. */
-      perf: { on: false, side: "all", opp: "all", from: 0, count: 0, sel: null,
-              menu: null },   // which of the two filter menus is open
-      online: null,         // the live 1v1, when one is being found or played
-      discipline: null,     // a peek in progress: the Discipline card and theirs
-      tp: null,             // a Take Profit waiting on the double-up answer
-      aiDoubledUp: null,    // the card the AI spent doubling its own Take Profit
-      flipAnim: null,       // their card, on the render that reveals it
-      showSeen: false,      // the opponent's per-tier breakdown, on demand
-      showSpecials: false,  // the wilds and what they do, on demand
-      showChart: false,     // the live print, above the board
-      libCard: null,        // the Card Library card opened full size, by index
-      libFrom: "setup",     // where its back arrow goes
-      htPage: 0,            // which page of How to Play is showing
-      settings: null,       // this match's shape; null reads as the default
-      specialTypes: null,   // the wilds this match drew; null is "all of them"
-      /* What each side actually fought with last round — the flipped card for
-         a YOLO, the answer for a Discipline, the copy for a Diamond Hands.
-         Diamond Hands replays it, so it is the card that resolved and never
-         the card that was tapped. Null until the first round resolves, which
-         is what makes Diamond Hands unplayable in round one. */
-      lastP: null,
-      lastA: null,
-      sub: null,            // this round's substitutions, for the slots and the log
-    };
-  }
-
+  /* A dealt match, folded onto the object the screen already holds — the engine
+     builds it, this keeps it, and the only thing added here is the repaint. */
   function pwStart(side, settings) {
-    const other = side === "bull" ? "bear" : "bull";
-    const set = pwSettings(settings);
-    const bull = pwShuffle(pwBuildTierDeck("bull", set.copies));
-    const bear = pwShuffle(pwBuildTierDeck("bear", set.copies));
-    const specialTypes = pwPickSpecialTypes(set.perColour);
-    const special = pwShuffle(pwBuildSpecialDeck(specialTypes));
-    const mine = side === "bull" ? bull : bear;
-    const theirs = side === "bull" ? bear : bull;
-    Object.assign(pw, pwNewGame(), {
-      settings: set,
-      specialTypes,
-      playerSide: side, aiSide: other,
-      bull, bear, special,
-      playerHand: mine.splice(0, set.hand),
-      aiHand: theirs.splice(0, set.hand),
-      seen: pwEmptyCounts(other),      // the opponent's tiers, by their own names
-      log: [`Sides set — you are ${side === "bull" ? "Bull" : "Bear"}. Decks shuffled. Opening print: 0.`],
-      phase: "selecting",
-    });
+    Object.assign(pw, R.deal(side, settings));
     renderPointaeway();
   }
 
@@ -3818,448 +3400,20 @@
     step();
   }
 
-  const pwOwnDeck = (side) => (side === "bull" ? pw.bull : pw.bear);
+  /* ---- the three things the engine will not do itself ----
 
-  /* ---- the two cards that play something else ----
-
-     YOLO and Diamond Hands never fight. Each one steps aside and puts another
-     card on the table in its place, and that card is what the round resolves —
-     through the same pwResolveRound every other round goes through, with no
-     second copy of the rules anywhere. YOLO takes the top of its owner's deck;
-     Diamond Hands takes a copy of whatever that player last fought with.
-
-     Both have a state in which they cannot be played at all, and both the hand
-     and the AI ask the same function about it. */
-  function pwBlocked(card, who) {
-    if (!card || card.kind !== "special") return null;
-    if (card.type === "YOLO") {
-      const side = who === "ai" ? pw.aiSide : pw.playerSide;
-      return pwOwnDeck(side).length ? null : "Your deck is empty.";
-    }
-    if (card.type === "Diamond Hands") {
-      return (who === "ai" ? pw.lastA : pw.lastP) ? null : "Nothing to replay yet.";
-    }
-    return null;
-  }
-
-  /* What actually goes on the table, and a note for the slot and the log.
-     The deck is shifted here rather than in pwApplyResult on purpose: a
-     flipped card has left the deck the moment it is flipped, which is what
-     makes it count toward depletion, and the bags pwApplyResult copies are
-     taken afterwards. */
-  function pwSubstitute(card, who) {
-    if (!card || card.kind !== "special") return { card, note: null };
-    if (card.type === "YOLO") {
-      const side = who === "ai" ? pw.aiSide : pw.playerSide;
-      const deck = pwOwnDeck(side);
-      /* two off the top, or one if that is all there is. Both leave the deck
-         here rather than at the end of the round, which is what makes them
-         count toward depletion — and a YOLO ending a match sooner is the
-         point of the card. */
-      const flips = [];
-      while (flips.length < 2 && deck.length) flips.push(deck.shift());
-      if (!flips.length) return { card, note: null };   // pwBlocked should have stopped this
-      const pts = flips.reduce((n, c) => n + (c.kind === "tier" ? c.pts : 0), 0);
-      /* One card with the combined Power, so the resolver compares it, their
-         Stop Loss absorbs it and their Momentum doubles it exactly as they
-         would any other number — there is no second set of rules for this.
-         It carries the two cards it was made of so the slot can fan them and
-         the tally can count them both. */
-      const combined = {
-        id: pwId(), side, kind: "tier", type: "YOLO", pts,
-        art: PW_SPECIAL_ART["YOLO"], yolo: flips,
-      };
-      return { card: combined, note: { kind: "yolo", who, from: card, to: combined, flips } };
-    }
-    if (card.type === "Diamond Hands") {
-      const last = who === "ai" ? pw.lastA : pw.lastP;
-      if (!last) return { card, note: null };
-      /* a copy, and marked as one: it never came out of a deck, so it must not
-         be handed to a hand by a wash that returns the card it was played
-         against, and it must not count against the tier tally either */
-      const copy = Object.assign({}, last, { id: pwId(), ghost: true });
-      return { card: copy, note: { kind: "dh", who, from: card, to: copy } };
-    }
-    return { card, note: null };
-  }
-
-  const pwCardLabel = (c) => (c.kind === "tier" ? `${c.type} (Power ${c.pts})` : c.type);
-
-  function pwSubLog(note) {
-    if (!note) return null;
-    const me = note.who === "ai" ? "Opponent's " : "";
-    if (note.kind === "yolo") {
-      const parts = (note.flips || []).map((c) => `${c.type} (${c.pts})`).join(" + ");
-      return `${me}YOLO → ${parts} = ${note.to.pts}`;
-    }
-    return `${me}Diamond Hands → replaying ${pwCardLabel(note.to)}`;
-  }
-
-  function pwPlay(cardId) {
-    if (pw.phase !== "selecting") return;
-    const tapped = pw.playerHand.find((c) => c.id === cardId);
-    if (!tapped) return;
-    if (pwBlocked(tapped, "player")) return;        // dimmed in hand; nothing to do here
-    let aCard = pwAiChooseCard(pw.aiHand);
-    pw.playerHand = pw.playerHand.filter((c) => c.id !== tapped.id);
-    pw.aiHand = pw.aiHand.filter((c) => c.id !== aCard.id);
-
-    /* Both substitutions happen before either card is looked at, so two YOLOs
-       in one round each flip their own deck and the two flipped cards fight
-       each other — and so the AI's Discipline and Take Profit below read the
-       card that is really on the table rather than the one that was tapped. */
-    const pSub = pwSubstitute(tapped, "player");
-    const aSub = pwSubstitute(aCard, "ai");
-    let card = pSub.card;
-    aCard = aSub.card;
-    pw.sub = { player: pSub.note, ai: aSub.note };
-    [pSub.note, aSub.note].forEach((n) => {
-      const line = pwSubLog(n);
-      if (line) pw.log = [line].concat(pw.log);
-    });
-
-    /* The AI's Discipline resolves here and now: the player's card is already
-       chosen, so the peek has nothing to wait for. It answers with the cheapest
-       card that beats what it sees, and with its weakest if nothing does —
-       spending no more than the round is worth. */
-    /* The AI's Take Profit doubles itself when it can: more points its way is
-       a straight gain, and the card it spends was going to be spent anyway. */
-    if (aCard.type === "Take Profit") {
-      const m = pwTakeProfitMatch(pw.aiHand, card);
-      if (m) {
-        pw.aiHand = pw.aiHand.filter((c) => c.id !== m.id);
-        pw.aiDoubledUp = m;
-      }
-    }
-    if (aCard.type === "Discipline") {
-      const answer = pwAiAnswerPeek(card);
-      if (answer) {
-        pw.aiHand = pw.aiHand.filter((c) => c.id !== answer.id);
-        pw.log = [`Opponent plays Discipline, reads your card, and answers with ${answer.type}.`].concat(pw.log);
-        aCard = answer;
-      } else {
-        pw.log = ["Opponent plays Discipline but holds nothing numbered to answer with."].concat(pw.log);
-      }
-    }
-    pw.playerPlayed = card;
-    pw.aiPlayed = aCard;
-    /* their slot held a card back until this moment, so the face turns over
-       as it arrives — one render, then renderPointaeway clears the mark */
-    pw.flipAnim = aCard.id;
-    /* Discipline is a peek, not a play. Their card is revealed now and the
-       real answer is chosen against it — which means this one case genuinely
-       breaks simultaneous reveal, deliberately. */
-    if (card.type === "Discipline") {
-      pw.playerPlayed = null;          // Discipline itself never reaches the table
-      pw.aiPlayed = aCard;
-      pw.discipline = { card, aCard };
-      if (!pw.playerHand.some((c) => c.kind === "tier")) {
-        // nothing numbered left to answer with: the peek is spent for nothing
-        pw.log = ["You play Discipline, but hold no numbered card to answer with — the round is a wash."].concat(pw.log);
-        pw.discipline = null;
-        pw.phase = "resolving";
-        renderPointaeway();
-        pwTimer = setTimeout(() => {
-          pwTimer = null;
-          pwApplyResult(pwDisciplineWash(card, aCard), card, aCard);
-        }, PW_REVEAL_MS);
-        return;
-      }
-      pw.phase = "discipline-pick";
-      renderPointaeway();
-      return;
-    }
-
-    pw.phase = "resolving";
-    /* The round is decided the moment both cards are down; the delay is only
-       so the reveal can be seen. Holding the outcome here rather than in the
-       timer's closure means leaving the screen mid-reveal can still settle the
-       round instead of stranding the match in "resolving" with nothing
-       clickable on it. */
-    pw.pending = { result: pwResolveRound(card, aCard, pw.playerSide, pw.aiSide, pw.candle), card, aCard };
-    renderPointaeway();
-    pwTimer = setTimeout(() => { pwTimer = null; pwCommitPending(false); }, PW_REVEAL_MS);
-  }
-
-  /* The card each side fought with, kept for Diamond Hands. Discipline is the
-     only card that can still reach here as itself — the unanswerable wash —
-     and a peek nobody answered is not a card that fought, so it is skipped and
-     the previous round's record stands. */
-  function pwRecordLast(pCard, aCard) {
-    const keep = (c) => c && !(c.kind === "special" && c.type === "Discipline");
-    /* The two cards a YOLO flipped are dropped from the record and only the
-       combined Power is kept: Diamond Hands copies that total, it does not
-       flip two more cards — and a copy that still carried them would have the
-       tally count the same two reveals twice. */
-    const copy = (c) => { const o = Object.assign({}, c, { id: pwId(), ghost: true });
-      delete o.yolo; return o; };
-    if (keep(pCard)) pw.lastP = copy(pCard);
-    if (keep(aCard)) pw.lastA = copy(aCard);
-  }
-
-  /* A Discipline that cannot be answered: both cards are spent, nobody scores. */
-  function pwDisciplineWash(pCard, aCard) {
-    return {
-      candleDelta: 0, outcome: "wash",
-      pDrawOwn: 1, aDrawOwn: 1, pExtraOwn: 0, aExtraOwn: 0,
-      pReturnCard: false, aReturnCard: false,
-      pDiscard: true, aDiscard: true,
-      loserNeedsChoice: null, log: [],
-    };
-  }
-
-  /* The answer to a peeked card. Discipline is discarded and the chosen card is
-     what actually plays, resolved as any normal round would be. */
-  function pwDisciplineAnswer(cardId) {
-    if (pw.phase !== "discipline-pick" || !pw.discipline) return;
-    const card = pw.playerHand.find((c) => c.id === cardId);
-    if (!card || card.kind !== "tier") return;      // wilds cannot answer a peek
-    const { aCard } = pw.discipline;
-    pw.discipline = null;
-    pw.playerHand = pw.playerHand.filter((c) => c.id !== card.id);
-    pw.playerPlayed = card;
-    pw.phase = "resolving";
-    pw.pending = { result: pwResolveRound(card, aCard, pw.playerSide, pw.aiSide, pw.candle), card, aCard };
-    renderPointaeway();
-    pwTimer = setTimeout(() => { pwTimer = null; pwCommitPending(false); }, PW_REVEAL_MS);
-  }
-
-  function pwCommitPending(silent) {
-    if (!pw || !pw.pending) return;
-    const { result, card, aCard } = pw.pending;
-    pw.pending = null;
-
-    // the AI's double-up was decided when it played; fold it in now
-    if (pw.aiDoubledUp) {
-      result.candleDelta *= 2;
-      pw.log = [`Opponent doubles up with a matching ${pw.aiDoubledUp.type}.`].concat(pw.log);
-      pw.aiDoubledUp = null;
-    }
-
-    /* The player's Take Profit stops here to ask. Leaving the screen settles
-       the round instead, which passes — the safe half of the choice, since it
-       keeps the card in hand. */
-    if (card.type === "Take Profit" && !silent) {
-      const match = pwTakeProfitMatch(pw.playerHand, aCard);
-      if (match) {
-        pw.tp = { result, card, aCard, match };
-        pw.phase = "takeprofit-choice";
-        renderPointaeway();
-        return;
-      }
-    }
-    pwApplyResult(result, card, aCard, silent);
-  }
-
-  function pwTakeProfitChoose(doubleUp) {
-    if (pw.phase !== "takeprofit-choice" || !pw.tp) return;
-    const { result, card, aCard, match } = pw.tp;
-    pw.tp = null;
-    if (doubleUp) {
-      result.candleDelta *= 2;
-      // the matching card is spent: discarded, not returned and not recycled
-      pw.playerHand = pw.playerHand.filter((c) => c.id !== match.id);
-      pw.log = [`You double up with your matching ${match.type} — ${pwSigned(result.candleDelta)}.`].concat(pw.log);
-    } else {
-      pw.log = ["You pass on doubling up — your matching card stays in hand."].concat(pw.log);
-    }
-    pw.phase = "resolving";
-    pwApplyResult(result, card, aCard, false);
-  }
-
-  /* Local bags, one commit. Everything that draws does so against these
-     copies; pw's own decks are only replaced once, at the end. */
-  function pwApplyResult(result, pCard, aCard, silent) {
-    const newCandle = pwClamp(pw.candle + result.candleDelta);
-    /* The round's candle, recorded once, here — this function runs exactly
-       once per round on every path, including the two that stop to ask a
-       question and come back (the draw choice and the Take Profit double-up).
-       A wash opens and closes at the same figure, which is a doji, and that is
-       the right thing for the chart to show. */
-    pw.chart.push({
-      round: pw.round, open: pw.candle, close: newCandle,
-      /* Copied, not referenced: a Class-A wash hands the untouched card back
-         to its owner to be played again, so the same object can turn up in a
-         later round. The replay has to show what was on the table in THIS
-         one. */
-      you: Object.assign({}, pCard), opp: Object.assign({}, aCard),
-    });
-    pw.log = result.log.concat(pw.log);
-
-    /* An opponent tier card, once seen, is known for the rest of the match —
-       but only five of each exist, so the tally stops there. A card can still
-       be revealed more than once: a Class-A wash hands the untouched card back
-       to its owner's hand to be played again. Counting those repeats is what
-       pushed the tally past five into 6/5 and 7/5. Past five the tier is fully
-       accounted for and another reveal carries no new information. */
-    /* A YOLO total is two real cards, so both of them are what the tally
-       counts — the total itself is not a card anybody holds. A Diamond Hands
-       copy is the other way round and counts for nothing: it never came out of
-       a deck, and counting it would have the tally claim a sixth Marubozu off
-       a deck that only ever held five. */
-    const revealed = aCard.yolo ? aCard.yolo : [aCard];
-    if (!aCard.ghost) {
-      revealed.forEach((c) => {
-        if (c.kind !== "tier" || !pw.seen.hasOwnProperty(c.type)) return;
-        pw.seen[c.type] = Math.min(pwCopies(), (pw.seen[c.type] || 0) + 1);
-      });
-    }
-
-    /* What Diamond Hands will replay next round: the card that actually fought,
-       which is the flipped card after a YOLO and the answer after a Discipline
-       — both of those arrive here already substituted, so this needs to know
-       nothing about either. A Discipline nobody could answer is the one round
-       where no card fought, and it leaves the record alone rather than
-       overwriting it with the peek itself. */
-    pwRecordLast(pCard, aCard);
-
-    const bags = { bull: pw.bull.slice(), bear: pw.bear.slice(), special: pw.special.slice() };
-    const draw = (source, side) => {
-      const deck = bags[source === "special" ? "special" : side];
-      return deck && deck.length ? deck.shift() : null;
-    };
-
-    let pHand = pw.playerHand.slice();
-    let aHand = pw.aiHand.slice();
-
-    /* Ghosts are never handed back. A wash that returns the card it was played
-       against would otherwise turn a Diamond Hands copy into a real card in a
-       real hand — a sixth copy of something there are only five of. */
-    /* Ghosts and YOLO totals are never handed back. A wash that returns the
-       card it was played against would otherwise turn a Diamond Hands copy
-       into a real card in a real hand, or hand back one card where two were
-       spent — YOLO and both flipped cards are discarded whatever the round
-       did. */
-    if (result.pReturnCard && !pCard.ghost && !pCard.yolo) pHand.push(pCard);
-    if (result.aReturnCard && !aCard.ghost && !aCard.yolo) aHand.push(aCard);
-    /* Discarded cards leave play. They were already out of their owner's hand
-       when they were played, so there is nothing to do but not put them back —
-       which is exactly what a tie now means. */
-
-    for (let i = 0; i < result.aExtraOwn; i++) { const c = draw("own", pw.aiSide); if (c) aHand.push(c); }
-    for (let i = 0; i < result.pExtraOwn; i++) { const c = draw("own", pw.playerSide); if (c) pHand.push(c); }
-
-    // the winner's replacement is automatic; the loser gets the choice
-    if (result.loserNeedsChoice !== "ai" && result.aDrawOwn > 0) {
-      const c = draw("own", pw.aiSide); if (c) aHand.push(c);
-    }
-    if (result.loserNeedsChoice === "ai") {
-      const src = pwAiDrawSource(bags.special.length);
-      const c = draw(src, pw.aiSide);
-      if (c) {
-        aHand.push(c);
-        pw.log = [`Opponent draws from ${src === "special" ? "the wild pile" : "their own deck"}.`].concat(pw.log);
-      }
-    }
-
-    /* Nothing to choose between when both piles are empty: skip the screen and
-       let the round finish with no replacement drawn, which is what either
-       button would have done. The depletion check downstream is unchanged. */
-    const nothingToDraw = bags[pw.playerSide].length === 0 && bags.special.length === 0;
-    if (result.loserNeedsChoice === "player" && !nothingToDraw) {
-      // commit what is settled and stop for the player's choice of pile
-      pw.candle = newCandle;
-      pw.bull = bags.bull; pw.bear = bags.bear; pw.special = bags.special;
-      pw.playerHand = pHand; pw.aiHand = aHand;
-      pw.pendingCandle = newCandle;
-      pw.phase = "draw-choice";
-      if (!silent) renderPointaeway();
-      return;
-    }
-
-    if (result.pDrawOwn > 0) { const c = draw("own", pw.playerSide); if (c) pHand.push(c); }
-
-    pw.candle = newCandle;
-    pw.bull = bags.bull; pw.bear = bags.bear; pw.special = bags.special;
-    pw.playerHand = pHand; pw.aiHand = aHand;
-    pwFinishRound(newCandle, silent);
-  }
-
-  function pwChooseDraw(source) {
-    if (pw.phase !== "draw-choice") return;
-    const bags = { bull: pw.bull.slice(), bear: pw.bear.slice(), special: pw.special.slice() };
-    const deck = bags[source === "special" ? "special" : pw.playerSide];
-    const c = deck && deck.length ? deck.shift() : null;
-    if (c) {
-      pw.playerHand = pw.playerHand.concat([c]);
-      pw.log = [`You draw from ${source === "special" ? "the wild pile" : "your own deck"}.`].concat(pw.log);
-    } else {
-      pw.log = ["Nothing left in that pile."].concat(pw.log);
-    }
-    pw.bull = bags.bull; pw.bear = bags.bear; pw.special = bags.special;
-    pwFinishRound(pw.pendingCandle);
-  }
-
-  /* Out of POINT cards: none in hand and none left in the deck. Leftover
-     specials do not keep a player in the match.
-
-     ==> RULES CHANGE, and a deliberate one. This used to need the shared wild
-     pile to be empty as well, on the reasoning that a player with nothing but
-     wilds can still draw and play. The brief for the How to Play screen states
-     the rule the other way — "the match ends when a player has no point cards
-     left in hand or deck, leftover specials don't count" — and writes it into
-     page 8's copy, so the screen would otherwise describe a game this does not
-     play. Matches now end sooner, and a YOLO that spends two cards off a thin
-     deck can end one sooner still, which the brief calls intentional. */
-  /* "Nothing to play" is not the same as "no cards", now that two of them can
-     be in a hand and unplayable. A YOLO with an empty deck behind it is a card
-     you are holding and cannot put down, and the first version of this read it
-     as a hand with something in it — so a player left holding one sat in
-     `selecting` with nothing on screen to click and the match never ended.
-     Caught by the seeded run: seed 2 went to the harness's step cap at round
-     32 holding exactly that. What counts here is what can actually be played. */
-  const pwPlayable = (hand, who) => hand.filter((c) => !pwBlocked(c, who));
-
-  const pwFullyOut = (hand, side) =>
-    !hand.some((c) => c.kind === "tier") && pwOwnDeck(side).length === 0;
-
-  /* An empty hand now has to be refilled rather than ending the match, which
-     is new: under the old two-part rule an empty hand and an empty deck WAS
-     the end, so no round could ever begin with nothing to play. Now the wild
-     pile keeps that player in the game, and a card has to actually reach their
-     hand or the next round asks them to play one they do not have — the AI
-     reads .type straight off its choice and throws on nothing.
-
-     Own deck first, wild pile second. It runs before the depletion check, so
-     a hand is only still empty afterwards when every pile is empty too, which
-     is exactly the case that ends the match. */
-  function pwTopUp(hand, side, who) {
-    /* the same test: a hand of cards that cannot be played is a hand that
-       needs one, or the next round asks for a card nobody can put down */
-    if (pwPlayable(hand, who).length) return;
-    const own = pwOwnDeck(side);
-    const c = own.length ? own.shift() : (pw.special.length ? pw.special.shift() : null);
-    if (c) hand.push(c);
-  }
-
-  /* Win checks, in the documented order: the track first, then depletion.
-     Depletion is asymmetric on purpose — one player hitting it ends the match
-     even with the other holding a full hand, because the depleted player can
-     never play or draw again and there is no game left to play against them.
-     An exact 0 at depletion is a Doji, and a draw. */
-  function pwFinishRound(finalCandle, silent) {
-    const done = (w) => {
-      if (pw.phase === "gameover") return;   // a match ends once
-      pw.winner = w; pw.phase = "gameover";
-      pwRecordMatch(w);
-      if (!silent) renderPointaeway();
-    };
-    if (finalCandle >= pwTarget()) return done("bull");
-    if (finalCandle <= -pwTarget()) return done("bear");
-    // draw before judging: a hand that can be refilled is not a depleted one
-    pwTopUp(pw.playerHand, pw.playerSide, "player");
-    pwTopUp(pw.aiHand, pw.aiSide, "ai");
-    const playerOut = pwFullyOut(pw.playerHand, pw.playerSide);
-    const aiOut = pwFullyOut(pw.aiHand, pw.aiSide);
-    if (playerOut || aiOut) return done(finalCandle === 0 ? "draw" : finalCandle > 0 ? "bull" : "bear");
-    /* The played cards stay where they are — win, loss or wash alike. They are
-       the round that just happened, and clearing them the instant it resolves
-       leaves nothing to read in the gap before the next one. The next play
-       replaces them. */
-    pw.round++;
-    pw.phase = "selecting";
-    if (!silent) renderPointaeway();
-  }
+     It repaints nothing, files nothing and waits for nothing, because a bot on
+     a server has no screen, no match history and no reveal to watch. Those are
+     this file's, so this file hands them over — and the reveal is the one that
+     matters: the round is already decided when the hook is called, and all the
+     timer buys is the beat in which the opponent's card turns over. A headless
+     match settles it immediately instead, which is the same game played
+     faster. */
+  R.hooks.render = () => renderPointaeway();
+  R.hooks.recordMatch = (g, winner) => pwRecordMatch(winner);
+  R.hooks.reveal = (g, settle) => {
+    pwTimer = setTimeout(() => { pwTimer = null; settle(); }, PW_REVEAL_MS);
+  };
 
   /* Leaving the screen stops the reveal timer, but the round it was waiting on
      is already decided — so settle it rather than drop it, or coming back would
@@ -4310,20 +3464,6 @@
       "Bearish Weak Rejection": "bear-weak-rejection-str1",
       "Bearish Null": "bear-null-str0",
     },
-  };
-  const PW_SPECIAL_ART = {
-    "Volatility Spike": "special-volatility-spike",
-    "Canceled Order": "special-canceled-order",
-    "Liquidated": "special-liquidated",
-    "FOMO": "special-fomo",
-    "Stop Loss": "special-stop-loss",
-    "Market News": "special-market-news",
-    "Reversal": "special-reversal",
-    "Take Profit": "special-take-profit",
-    "Momentum": "special-momentum",
-    "Discipline": "special-discipline",
-    "YOLO": "special-yolo",
-    "Diamond Hands": "special-diamond-hands",
   };
   function pwArtFile(card) {
     /* a card may name its own face: a YOLO total is a number card of its
