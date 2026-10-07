@@ -1,0 +1,51 @@
+{
+ "version": 1,
+ "generated": "2026-10-07 14:13 UTC",
+ "days": 90,
+ "candles": 25920,
+ "matches": 103715218,
+ "epsilon": 0.0000094,
+ "startPrice": 10000,
+ "rejected": 0,
+ "rejects": [],
+ "throughput": {
+  "matchesPerCandle": 4001.3587191358024,
+  "pointsPerCandle": 52264.49158950617,
+  "pointsPerWin": 13.47737857921587
+ },
+ "balance": {
+  "bullRate": 0.48459180792542905,
+  "bearRate": 0.4845644734603942,
+  "drawRate": 0.030843718614176754,
+  "meanRounds": 28.531382742694518,
+  "meanSeconds": 327.85197170240184,
+  "onTrackRate": 0.2896008471967923,
+  "yoloNewsPerMatch": 0.0037048854296386864,
+  "yoloNewsDeciderRate": 0.0006379006020119439,
+  "pointsBull": 677377116,
+  "pointsBear": 677318506
+ },
+ "likeness": {
+  "candles": 25920,
+  "sd": 0.0005814875998280122,
+  "kurtosis": 3.0145592456783015,
+  "tail4": 0.00007716049382716049,
+  "acf": [
+   -0.08668668414901547,
+   0.024093383241446425,
+   0.00766240664743022,
+   -0.009089982309009583,
+   -0.0007698908512253592
+  ],
+  "volAcf": 0.010801552350375864,
+  "meanStreak": 1.8984150387025434,
+  "maxStreak": 12,
+  "medRange": 0.0008836,
+  "p95Range": 0.001457,
+  "dailySd": 0.010109593855530388,
+  "days": 90,
+  "es": null,
+  "summary": "Shows mild mean reversion: a candle leans against the one before it (lag 1 = -0.087), which comes from bots alternating sides while the play styles win at different rates — a strong bot wins as Bull, then wins again as Bear. No ES data to compare against yet.",
+  "winsVsPoints": 0.8308444806059992
+ }
+}
