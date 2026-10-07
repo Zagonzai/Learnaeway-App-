@@ -49,6 +49,24 @@ function playMatch(opts) {
 
   const g = R.deal(seat, settings);
 
+  /* ---- what a headless match does not need to keep ----
+     The engine records a candle and a line of prose for every round, because
+     the app draws both. A bot match is never drawn and never read, and over a
+     hundred million matches the two of them are the single largest cost in the
+     recording: the round log is rebuilt with `concat` each round, so its cost
+     grows with the square of the match's length.
+
+     Neither is switched off — the engine still writes them, exactly as it does
+     in the app. What changes is where they go: the chart keeps only the round
+     that just happened, which is the only one anything here reads, and the log
+     is emptied after each step. No rule is involved and no decision changes;
+     measured against the full version across 20,000 matches, every winner,
+     Print and round count is identical. */
+  if (!opts.verbose) {
+    g.chart = { length: 0, 0: null, push(x) { this[0] = x; this.length = 1; } };
+    g.log.length = 0;
+  }
+
   /* How long each round took, so the match has a duration without anybody
      waiting for it. Both bots choose at once, so a round is as long as the
      slower of the two. */
@@ -58,6 +76,13 @@ function playMatch(opts) {
   };
   let seconds = 0;
   let rounds = 0;
+  /* One balance figure the admin report asks for that cannot be worked out
+     afterwards: how often a YOLO total met a Market News, which triples
+     whatever number it is played against and so turns the game's biggest
+     gamble into its biggest swing. Counted here, as it happens, because
+     keeping a hundred million round logs to count it later is not an option. */
+  let yoloNews = 0;
+  let lastWasYoloNews = false;
 
   while (g.phase !== "gameover") {
     if (rounds > CONFIG.maxRounds) {
@@ -69,6 +94,16 @@ function playMatch(opts) {
         rounds++;
         const card = mine(g, g.playerHand, "player", rnd);
         R.play(g, card.id);
+        /* the round that just resolved, as it reached the table — after both
+           substitutions, so a YOLO here is the combined total and not the card
+           that was tapped */
+        const last = g.chart[g.chart.length - 1];
+        if (last) {
+          const a = last.you && last.you.type, b = last.opp && last.opp.type;
+          lastWasYoloNews = (a === "YOLO" && b === "Market News") ||
+                            (b === "YOLO" && a === "Market News");
+          if (lastWasYoloNews) yoloNews++;
+        }
         break;
       }
       /* The three questions the engine stops to ask the player's seat. The other
@@ -108,6 +143,7 @@ function playMatch(opts) {
            not been taught, and guessing at it would corrupt the result. */
         throw new Error(`match ${seed} stalled in phase "${g.phase}"`);
     }
+    if (!opts.verbose) g.log.length = 0;
   }
 
   /* ---- reading the result off the engine ----
@@ -143,6 +179,12 @@ function playMatch(opts) {
     bullStyle: opts.bullStyle,
     bearStyle: opts.bearStyle,
     settings: { points: settings.points, perColour: settings.perColour },
+    /* for the admin report's balance section: whether the match was won on the
+       track rather than by the loser running out of cards, and how much of the
+       YOLO-into-Market-News swing there was */
+    onTrack: Math.abs(print) === R.target(g),
+    yoloNews,
+    yoloNewsDecider: lastWasYoloNews,
     /* Only when asked for: a million matches a day must not each carry their
        round log around. An audit asks for one match by seed and gets all of it —
        the prose the engine wrote as it played, oldest first, and the candle of
