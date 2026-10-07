@@ -1,0 +1,21 @@
+{
+ "version": 1,
+ "generated": "2026-10-07T14:13:30.877Z",
+ "bots": 10000,
+ "settings": {
+  "points": 25,
+  "perColour": 3
+ },
+ "epsilon": 0.0000094,
+ "startPrice": 10000,
+ "candleMs": 300000,
+ "sampleMs": 10000,
+ "samples": 30,
+ "candlesPerDay": 288,
+ "days": 90,
+ "totalCandles": 25920,
+ "netPerLap": 2835,
+ "meanPrint": 13.47737857921587,
+ "drawRate": 0.030843718614176754,
+ "key": "aeway-recording-v1"
+}
