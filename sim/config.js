@@ -28,6 +28,10 @@ module.exports = {
      these numbers are per bot and not per round. They are what sets how long a
      match lasts, and they are tuned — see sim/README.md — so that most matches
      land between 2 and 10 minutes with the middle of the distribution at 5–6. */
+  /* Only the population split and the thinking time are here. How each style
+     CHOOSES a card is js/pw-styles.js, beside the rules rather than inside
+     sim/, because the app plays two of these styles too now — Easy and Hard
+     are the aggressive and the smart bot. */
   styles: {
     random:     { share: 1, think: { min: 5, max: 12 } },
     aggressive: { share: 1, think: { min: 4, max: 13 } },
@@ -41,15 +45,19 @@ module.exports = {
   maxRounds: 400,
 
   /* ---- who may post a result ----
-     Every finished match, bot or human, reaches the market through one function.
-     Human matches are not switched on yet, so the door only accepts bots and
-     says so out loud rather than silently dropping anything else. */
-  acceptFrom: ["bot"],
+     Every finished match reaches the market through one function, and it carries
+     where it came from. Three sources exist:
 
-  /* Patient holds its good cards for this many rounds before it starts spending
-     them, and nobody but Smart and the engine's own opponent plays a wild on a
-     read of the board. */
-  patientHoldRounds: 6,
+       "bot"       the simulator's own matches. The market runs on these.
+       "human"     a real 1v1 between two people. Not switched on yet.
+       "computer"  a player against the app's computer opponent.
+
+     ==> "computer" is not on this list and must never be. A player picking Easy
+     and a ten-point target can win a match every two minutes; if those reached
+     the chart, the market would be whatever one determined person decided it
+     should be. It is refused at the door rather than filtered later, so there is
+     one place to read and one place to get wrong. */
+  acceptFrom: ["bot"],
 
   /* ---- the market the matches move ----
      Price is a log-space walk: a Bull win adds `epsilon` to the log price and a

@@ -181,6 +181,13 @@ function ok(cond, what, detail) {
   try { submitResult({ source: "bot", winner: "sideways", points: 5 }); }
   catch (e) { threw = e.message; }
   ok(!!threw, "a result with no winner is refused", threw);
+
+  /* the one that matters most: a match a player won against the app's own
+     computer opponent, at whatever settings they liked, cannot move the market */
+  threw = null;
+  try { submitResult({ source: "computer", winner: "bull", points: 25 }); }
+  catch (e) { threw = e.message; }
+  ok(!!threw, "a match against the app's computer is refused by the market", threw);
 }
 
 /* ---- the generator itself ---- */

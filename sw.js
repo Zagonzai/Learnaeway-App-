@@ -3,7 +3,7 @@
  * deploys show up immediately; only falls back to cache when offline.
  * Heavy binary assets (images) are cache-first since they rarely change.
  */
-const CACHE = "learnaeway-v226";
+const CACHE = "learnaeway-v228";
 
 /* ---- two caches, on purpose ----
  * CACHE is the code: HTML, CSS, JS, course data. Its name carries the
@@ -32,6 +32,9 @@ const SHELL = [
   /* the rules, which app.js reads as it loads — it is not optional and it is
      not large, so it belongs beside the file that cannot start without it */
   "./js/pw-rules.js",
+  /* and the four play styles beside them: two of them are the computer's Easy
+     and Hard, so they are needed the moment a match starts */
+  "./js/pw-styles.js",
   /* the ÆWAY market's three files, same reasoning. The recording's day files
      under data/aeway/ are deliberately NOT here: they are 62KB each and a
      player only ever needs the day they are looking at, so they are fetched on

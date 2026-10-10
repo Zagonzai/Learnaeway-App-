@@ -155,6 +155,16 @@
     20: { copies: 4, hand: 5 },
     25: { copies: 5, hand: 6 },
   };
+  /* ---- and the two of them on their own ----
+     The table above is now the DEFAULT shape of a match rather than the only
+     one: a player setting up a game against the computer picks the copies and
+     the hand separately, so a twenty-five point match can be played off a thin
+     deck or a ten-point one off a fat one.
+     Settings that do not name them still get the table's values, which is every
+     online match, every match already on a phone, and the default — so nothing
+     that existed before this chooses anything different. */
+  const PW_COPIES = [2, 3, 4, 5];
+  const PW_HANDS = [3, 4, 5, 6];
 
   /* The specials, by the colour they are actually printed in — read off the
      delivered faces rather than invented here, so the groups are the ones a
@@ -198,7 +208,18 @@
     const points = PW_POINT_RULES[raw.points] ? raw.points : PW_DEFAULT_SETTINGS.points;
     const per = PW_SPEC_PER_COLOUR.indexOf(raw.perColour) >= 0
       ? raw.perColour : PW_DEFAULT_SETTINGS.perColour;
-    return Object.assign({ points, perColour: per }, PW_POINT_RULES[points]);
+    const base = PW_POINT_RULES[points];
+    /* Unrecognised falls back to the point's own shape rather than to a broken
+       match, and so does absent — which is the case that matters, because it is
+       every match that existed before copies and hand could be chosen. */
+    const copies = PW_COPIES.indexOf(raw.copies) >= 0 ? raw.copies : base.copies;
+    const hand = PW_HANDS.indexOf(raw.hand) >= 0 ? raw.hand : base.hand;
+    /* The difficulty is not a rule and the engine never reads it — it decides
+       which opponent sits in the second seat, which is app.js's business. It is
+       carried here so that one object describes a whole match, which is what
+       gets written onto the record and what a replay is rebuilt from. */
+    const difficulty = raw.difficulty || null;
+    return { points, perColour: per, copies, hand, difficulty };
   }
   /* the settings this match is running under */
   const pwRules = (g) => pwSettings(g && g.settings);
@@ -505,9 +526,23 @@
     return numbered.slice().sort((x, y) => x.pts - y.pts)[0];
   }
 
-  function pwAiDrawSource(g, specialCount, side) {
+  /* Which pile the loser of a round replaces their card from — the most
+     valuable decision in Pointæway, by a distance: a bot that always takes the
+     wild pile beats the same bot always taking its own deck 71% to 28%.
+
+     `candle` is the Print to judge it on. Left out it is the match's current
+     one, which when the engine asks this question is the Print as the round
+     OPENED, because the new one has not been committed yet. A human answering
+     the same question has already seen the round resolve, so they are deciding
+     on a Print one round fresher.
+
+     That gap is handed over deliberately rather than closed: it is the
+     difference between the computer Pointæway has always had and a harder one,
+     and Hard is the only difficulty that passes the newer number in. */
+  function pwAiDrawSource(g, specialCount, side, candle) {
     if (specialCount === 0) return "own";
-    const behind = pwSign(side || g.aiSide) * g.candle < -3;
+    const print = candle === undefined ? g.candle : candle;
+    const behind = pwSign(side || g.aiSide) * print < -3;
     return behind || rnd() < 0.35 ? "special" : "own";
   }
 
@@ -927,7 +962,11 @@
       const c = draw("own", g.aiSide); if (c) aHand.push(c);
     }
     if (result.loserNeedsChoice === "ai") {
-      const src = pwAiDrawSource(g, bags.special.length);
+      /* g.hardPile is set only by a Hard match, so every other match — the
+         default one, every online one, every one already recorded — asks this
+         with exactly the information it has always been asked with. */
+      const src = pwAiDrawSource(g, bags.special.length, null,
+        g.hardPile ? newCandle : undefined);
       const c = draw(src, g.aiSide);
       if (c) {
         aHand.push(c);
@@ -1079,6 +1118,8 @@
     SPEC: PW_SPEC,
     POINTS: PW_POINTS,
     POINT_RULES: PW_POINT_RULES,
+    COPIES: PW_COPIES,
+    HANDS: PW_HANDS,
     SPEC_COLOURS: PW_SPEC_COLOURS,
     SPEC_PER_COLOUR: PW_SPEC_PER_COLOUR,
     DEFAULT_SETTINGS: PW_DEFAULT_SETTINGS,
