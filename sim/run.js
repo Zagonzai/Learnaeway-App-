@@ -72,6 +72,94 @@ if (A.replay !== undefined && A.replay !== true) {
   process.exit(0);
 }
 
+/* ---- how hard are Easy, Normal and Hard ----
+   The app's three difficulties are two of these styles plus the engine's own
+   opponent, so they can be measured the same way everything else here is:
+   play a lot of matches and count.
+
+   The reference player is each of the four styles in turn, so the answer is not
+   about one opponent. It sits in the engine's "player" seat and the computer in
+   the "ai" seat, which is where the app puts them, and — like a human — it
+   makes its pile choice on the Print as it stands AFTER the round resolves.
+   That is the information a person has, so it is the information the reference
+   has, and Hard is the only computer that gets the same. */
+if (A.difficulty) {
+  const R = require("../js/pw-rules.js");
+  const { STYLES, difficultyOf } = require("../js/pw-styles.js");
+  const { rngFrom } = require("./rng.js");
+  R.hooks.render = () => {};
+  R.hooks.recordMatch = () => {};
+  R.hooks.reveal = (g, settle) => settle();
+
+  const N = A.matches || 4000;
+  const settings = CONFIG.settings;
+
+  function duel(seed, playerStyle, diffId) {
+    const rnd = rngFrom(seed);
+    R.setRandom(rnd);
+    const d = difficultyOf(diffId);
+    const me = STYLES[playerStyle];
+    /* Normal is the engine's own opponent, untouched — which is exactly what
+       leaving the slot alone means */
+    R.setAiChoice(d.style ? (g, h) => STYLES[d.style](g, h, "ai", rnd) : null);
+    /* the sides are coin-flipped per match so neither Bull nor Bear is always
+       the computer's */
+    const seat = rnd() < 0.5 ? "bull" : "bear";
+    const g = R.deal(seat, settings);
+    g.hardPile = d.hardPile;
+    g.chart = { length: 0, 0: null, push(x) { this[0] = x; this.length = 1; } };
+    g.log.length = 0;
+    let n = 0;
+    while (g.phase !== "gameover") {
+      if (n++ > CONFIG.maxRounds) throw new Error("stalled");
+      if (g.phase === "selecting") R.play(g, me(g, g.playerHand, "player", rnd).id);
+      else if (g.phase === "discipline-pick")
+        R.disciplineAnswer(g, R.aiAnswerPeek(g, g.discipline.aCard, g.playerHand).id);
+      else if (g.phase === "takeprofit-choice") R.takeProfitChoose(g, true);
+      else if (g.phase === "draw-choice") {
+        /* the person's own choice, on the Print they can see */
+        R.chooseDraw(g, R.aiDrawSource({ candle: g.candle, aiSide: g.playerSide },
+          g.special.length));
+      } else throw new Error(g.phase);
+      g.log.length = 0;
+    }
+    /* did the computer win? the computer is the ai seat, which is the side the
+       player is not on */
+    const cpuSide = g.aiSide;
+    return g.winner === "draw" ? null : g.winner === cpuSide;
+  }
+
+  console.log(`${N.toLocaleString()} matches per pairing · ` +
+    `${settings.points}-point match, ${settings.perColour} of each wild colour\n`);
+  const names = ["random", "aggressive", "patient", "smart"];
+  const head = "the computer wins".padEnd(12) + names.map((n) => n.padStart(12)).join("") +
+    "      average";
+  console.log(head);
+  const avg = {};
+  for (const d of ["easy", "normal", "hard"]) {
+    const cells = [];
+    let won = 0, dec = 0;
+    for (const p of names) {
+      let w = 0, k = 0;
+      for (let i = 1; i <= N; i++) {
+        const r = duel(i * 7919 + names.indexOf(p) * 101 + 1, p, d);
+        if (r === null) continue;
+        k++; if (r) w++;
+      }
+      won += w; dec += k;
+      cells.push(`${(100 * w / k).toFixed(1)}%`.padStart(12));
+    }
+    avg[d] = 100 * won / dec;
+    console.log(d.padEnd(12) + cells.join("") + `${avg[d].toFixed(1)}%`.padStart(13));
+  }
+  console.log("");
+  const ok = avg.easy < avg.normal && avg.normal < avg.hard;
+  console.log(ok
+    ? `Easy < Normal < Hard holds: ${avg.easy.toFixed(1)}% < ${avg.normal.toFixed(1)}% < ${avg.hard.toFixed(1)}%`
+    : `==> IT DOES NOT HOLD: easy ${avg.easy.toFixed(1)}%, normal ${avg.normal.toFixed(1)}%, hard ${avg.hard.toFixed(1)}%`);
+  return;
+}
+
 /* ---- the live service ----
    What the server runs: wake up, play the market forward to now, hand every
    finished match to the one door, sleep. The tick is a second because the chart

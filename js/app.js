@@ -3273,6 +3273,10 @@
      there is only ever one, and it is `pw` — so every binding below is the
      same function it always was with `pw` filled in. */
   const R = window.PWRules;
+  /* the four bot play styles, beside the rules they play by. Two of them are
+     the computer's Easy and Hard; Normal is the engine's own opponent and is
+     not one of these. */
+  const PWStyles = window.PWStyles;
 
   /* the whole game, in one place, so leaving the screen can drop it cleanly */
   let pw = null;
@@ -3323,6 +3327,12 @@
 
   /* and the ones that read or move the match on screen */
   const pwRules   = () => R.rules(pw);
+  /* ---- does this match have wilds in it ----
+     With specials off there is no wild in either deck and nothing in the match
+     is allowed to mention them: no count, no View Specials, no wild pile on the
+     draw choice. Asked in one place so that "off" means the same thing
+     everywhere it is asked. */
+  const pwHasWilds = () => pwRules().perColour > 0;
   const pwTarget  = () => R.target(pw);
   const pwCopies  = () => R.copies(pw);
   const pwClamp   = (v, target) => R.clamp(pw, v, target);
@@ -3350,10 +3360,32 @@
   const PW_REVEAL_MS = 700;
 
   /* A dealt match, folded onto the object the screen already holds — the engine
-     builds it, this keeps it, and the only thing added here is the repaint. */
+     builds it, this keeps it, and the only two things added here are the
+     opponent and the repaint. */
   function pwStart(side, settings) {
     Object.assign(pw, R.deal(side, settings));
+    pwSeatOpponent(pw);
     renderPointaeway();
+  }
+
+  /* ---- who sits in the other seat ----
+     Normal leaves the slot alone, which is what "exactly today's computer
+     opponent, unchanged" has to mean: the engine's own pwAiChooseCard, picked
+     the way it has always been picked. Easy and Hard swap in a bot style from
+     js/pw-styles.js — the same four the market simulator plays — and Hard also
+     gets the one extra thing a person has and the engine's opponent does not:
+     the Print as it stands after the round resolves, when it chooses which pile
+     to replace its card from.
+
+     The slot is module-wide, so it is set on every deal rather than once: an
+     online match or a quick Start Match after a Hard one has to get its own
+     opponent back. */
+  function pwSeatOpponent(g) {
+    const d = PWStyles.difficultyOf(g.settings && g.settings.difficulty);
+    g.hardPile = !!d.hardPile;
+    R.setAiChoice(d.style
+      ? (gg, hand) => PWStyles.STYLES[d.style](gg, hand, "ai", R.random)
+      : null);
   }
 
   /* ---- picking a side at random ----
@@ -3386,7 +3418,7 @@
     const side = Math.random() < 0.5 ? "bull" : "bear";
     const pick = (sd) => document.querySelector(`.pw-pick[data-pw-side="${sd}"]`);
     const bull = pick("bull"), bear = pick("bear");
-    if (!bull || !bear) { pwStart(side); return; }        // nothing to flicker
+    if (!bull || !bear) { pwStart(side, pw.settings); return; }   // nothing to flicker
 
     const light = (sd) => {
       bull.classList.toggle("lit", sd === "bull");
@@ -3397,7 +3429,7 @@
       pwRolling = false;
       const w = pick(side);
       if (w) { w.classList.remove("lit"); w.classList.add("won"); }
-      pwTimer = setTimeout(() => { pwTimer = null; pwStart(side); }, PW_ROLL_SETTLE_MS);
+      pwTimer = setTimeout(() => { pwTimer = null; pwStart(side, pw.settings); }, PW_ROLL_SETTLE_MS);
     };
 
     /* someone who has asked for less movement gets the answer, not the show */
@@ -3638,8 +3670,23 @@
     /* the print as the player reads it: their own side's direction is the
        positive one, so a bear winning by ten shows as +10 and not as −10 */
     const pts = side === "bear" ? -pw.candle : pw.candle;
+    const set = pwRules();
     store.pwHistory.unshift({
       t: Date.now(), side, opp: "computer", result, pts, rounds: pw.round,
+      /* ---- the settings this match was played under ----
+         Not a label: the whole shape of it, so a replay is rebuilt rather than
+         guessed at, and so the performance chart can scale a ten-point win
+         against a twenty-five-point one. A record written before this build has
+         no `set`, and everything that reads one treats its absence as the
+         default twenty-five-point match — which is what those matches were. */
+      set: { points: set.points, copies: set.copies, hand: set.hand,
+             perColour: set.perColour, difficulty: set.difficulty || "normal" },
+      /* ==> where this result came from, and the only reason it is written
+         down: a computer match must never be able to move the ÆWAY chart. The
+         market's door refuses anything whose source it does not accept, and it
+         accepts bots today and human matches when they are switched on. A
+         player who could farm Easy wins into the market would own it. */
+      source: "computer",
       /* the match itself, not just its scoreline: this is what the hub's
          history rows open, and it is the same shape the live result screen's
          replay draws from */
@@ -3678,6 +3725,39 @@
 
   const pwHasReplay = (m) => Array.isArray(m && m.chart) && m.chart.length > 0;
 
+  /* ---- what a match was set to, in one line ----
+     "vs Computer · Easy · 15 pts · No specials". Written once and shown in
+     three places: the board while the match is live, the history row, and the
+     review. A record from before settings were stored has none, and gets the
+     default twenty-five-point match, because that is what it was. */
+  const PW_SET_DEFAULT = { points: 25, copies: 5, hand: 6, perColour: 3, difficulty: "normal" };
+  const pwSetOf = (m) => pwSettings(Object.assign({}, PW_SET_DEFAULT, (m && m.set) || {}));
+
+  function pwSetLine(m, opts) {
+    const o = opts || {};
+    const s = pwSetOf(m);
+    const online = m && m.opp === "friend";
+    const bits = [];
+    if (!o.noWho) bits.push(online ? "Online" : "vs Computer");
+    if (!online && !o.noDiff) bits.push(PWStyles.difficultyOf(s.difficulty).label);
+    bits.push(`${s.points} pts`);
+    /* the deck's shape only when it is not the one those points usually carry,
+       so the common line stays short and a custom one says what is custom */
+    const base = R.POINT_RULES[s.points];
+    /* `short` is the history row, where the line shares a 42px row with the
+       opponent, the side, the result, the points and the date: the same facts
+       in as few words as carry them, so a custom match says it is custom
+       instead of being cut off mid-word by the ellipsis. The review and the
+       board have the room for the long form and use it. */
+    if (s.copies !== base.copies) bits.push(o.short ? `${s.copies}×` : `${s.copies}× cards`);
+    if (s.hand !== base.hand) bits.push(o.short ? `${s.hand} hand` : `${s.hand} in hand`);
+    bits.push(s.perColour
+      ? (o.short ? `${s.perColour} wild${s.perColour === 1 ? "" : "s"}`
+                 : `${s.perColour} wild${s.perColour === 1 ? "" : "s"} a colour`)
+      : "No specials");
+    return bits.join(" · ");
+  }
+
   /* A row is a button when there is a match behind it to open, and a plain row
      when there is not — which is every match played before matches were kept.
      Those still count in the record and still print their scoreline; there is
@@ -3699,7 +3779,13 @@
         <span class="pw-hrow-ico">
           <img src="${PW_HUB}ico-${m.side === "bull" ? "bull" : "bear"}.png" alt="">
         </span>
-        <span class="pw-hrow-opp">vs ${m.opp === "friend" ? "Friend" : "Computer"}</span>
+        <span class="pw-hrow-mid">
+          <span class="pw-hrow-opp">vs ${m.opp === "friend" ? "Friend" : "Computer"}</span>
+          ${/* what it was set to, under the line that says who it was against.
+                A default twenty-five point match says so rather than saying
+                nothing, because the row next to it may not be one. */""}
+          <span class="pw-hrow-set">${esc(pwSetLine(m, { noWho: true, short: true }))}</span>
+        </span>
         <span class="pw-hrow-side">${m.side === "bull" ? "Bull" : "Bear"}</span>
         <span class="pw-hrow-res ${tone}">${label}</span>
         <span class="pw-hrow-pts ${tone}">${pwSigned(m.pts)}</span>
@@ -3744,14 +3830,16 @@
           <span class="pw-saved-res ${tone}">${label}</span>
           <span class="pw-saved-meta">
             as ${m.side === "bull" ? "Bull" : "Bear"} ·
-            vs ${m.opp === "friend" ? "Friend" : "Computer"} ·
             ${rows.length || m.rounds || 0} round${(rows.length || m.rounds) === 1 ? "" : "s"}
           </span>
           <span class="pw-saved-pts ${tone}">${pwSigned(m.pts)}</span>
           <span class="pw-saved-when">${esc(pwHubWhen(m.t))}</span>
         </div>
+        <div class="pw-set-line review">${esc(pwSetLine(m))}</div>
 
-        ${pwMatchChartHTML(rows)}
+        ${/* on the axis that match was played to, whatever this screen is
+              currently set up for */""}
+        ${pwMatchChartHTML(rows, { target: pwSetOf(m).points })}
       </div>`;
   }
 
@@ -3780,27 +3868,48 @@
 
      Older matches, recorded before replays were stored, keep their body: open
      to close, no wicks. They are not dropped. */
+  /* ---- every match on the same scale ----
+     A match to ten points and a match to twenty-five are not the same unit:
+     winning the first by ten is as complete a win as winning the second by
+     twenty-five, and the chart has to say so or a run of short matches reads as
+     a flat week. So a result is scaled to what it would have been at
+     twenty-five — result × 25 ÷ target — and so are the wicks, which are the
+     furthest the Print got either way.
+
+     A twenty-five point match scales by one and is therefore untouched, which
+     is every match recorded before this build. */
+  const PW_SCALE_TO = 25;
+  const pwScaleOf = (m) => PW_SCALE_TO / pwSetOf(m).points;
+  /* rounded, so the chain stays in whole points and the running total under the
+     chart is a number rather than a long division */
+  const pwScaled = (m, v) => Math.round(v * pwScaleOf(m));
+
   function pwMatchWalk(m) {
-    /* the print after each round, from this player's side */
+    /* the print after each round, from this player's side, on the 25-point
+       scale the chart draws everything on */
     if (!Array.isArray(m && m.chart) || !m.chart.length) return null;
     const sign = m.side === "bear" ? -1 : 1;
     const out = [0];
     m.chart.forEach((e) => {
       const v = Number(e && e.c);
-      if (Number.isFinite(v)) out.push(sign * v);
+      if (Number.isFinite(v)) out.push(pwScaled(m, sign * v));
     });
     return out.length > 1 ? out : null;
   }
 
   /* one candle, given where the last one closed */
   function pwCandleOf(m, open) {
-    const pts = Number(m.pts) || 0;
+    const raw = Number(m.pts) || 0;
+    const pts = pwScaled(m, raw);
     const close = open + pts;
     const walk = pwMatchWalk(m);
     const hi = walk ? open + Math.max.apply(null, walk) : Math.max(open, close);
     const lo = walk ? open + Math.min.apply(null, walk) : Math.min(open, close);
     return {
       t: m.t, side: m.side, opp: m.opp || "computer", result: m.result, pts,
+      /* the match's own figure as well, so the readout can say what actually
+         happened rather than only what it is worth on the chart's scale */
+      raw, target: pwSetOf(m).points, set: m.set || null,
       o: open, c: close,
       /* belt and braces: a replay that disagrees with the scoreline — an
          online match whose last round was never written — still may not
@@ -3960,7 +4069,8 @@
   const pwPerfSay = (c) =>
     `${c.result === "draw" ? "Draw" : c.result === "win" ? "Win" : "Loss"} as `
     + `${c.side === "bull" ? "Bull" : "Bear"} vs ${c.opp === "friend" ? "a friend" : "the computer"}, `
-    + `${pwSigned(c.pts)}, total ${pwSigned(c.c)}, ${pwHubWhen(c.t)}`;
+    + `${pwSigned(c.raw)}${c.target && c.target !== 25 ? ` in a ${c.target}-point match, `
+        + `${pwSigned(c.pts)} scaled to 25` : ""}, total ${pwSigned(c.c)}, ${pwHubWhen(c.t)}`;
 
   function pwPerfLayout() {
     const g = pwPerfEnsure();
@@ -4066,9 +4176,16 @@
         else tip.classList.add("lowright");                         // bottom-right
       }
     }
+    /* A match to anything but twenty-five was scaled to fit the chart's one
+       scale, so the tooltip says what actually happened as well as what it is
+       worth here — otherwise a ten-point win by ten reads as +25 with nothing
+       to explain it. A twenty-five point match was not scaled and says nothing. */
+    const scaled = c.target && c.target !== 25;
     tip.innerHTML = `
       <b class="${tone}">${c.result === "draw" ? "Draw" : c.result === "win" ? "Win" : "Loss"}</b>
       <span>as ${c.side === "bull" ? "Bull" : "Bear"} · ${c.opp === "friend" ? "Online" : "vs Computer"}</span>
+      ${scaled ? `<span class="pw-perf-scaled">${pwSigned(c.raw)} in a ${c.target}-point
+        match · ${pwSigned(c.pts)} at 25</span>` : ""}
       <span>${esc(pwHubWhen(c.t))}</span>
       <i>O ${pwSigned(c.o)} · H ${pwSigned(c.h)} · L ${pwSigned(c.l)} · C ${pwSigned(c.c)}</i>`;
   }
@@ -4252,10 +4369,14 @@
           ${/* Play Online, renamed and given a screen: the queue is not a
                 lobby of strangers any more but a lobby of two, opened by a
                 code the host sends. Challenge a Player is gone — it was the
-                same errand done by looking somebody up, and this replaces it. */""}
+                same errand done by looking somebody up, and this replaces it.
+
+                Its line changed with this build: Create Match now asks who the
+                match is against before it asks anything else, so it is no
+                longer only the way to play a friend. */""}
           <button type="button" class="pw-hub-pill find" data-pw-hub-create>
             <span class="pw-hub-pill-t">Create Match</span>
-            <span class="pw-hub-pill-s">Set the rules · play a friend</span>
+            <span class="pw-hub-pill-s">Set the rules · computer or a friend</span>
           </button>
         </div>
         ${/* Play Local is off the hub for now, by the switch above: the screen,
@@ -4551,10 +4672,25 @@
       code: null,         // the match code this room was opened under
     };
   }
-  function pwCreateNew() {
+  /* ---- what the computer's last match was set to ----
+     Remembered on the device so a player who likes a short game off a thin deck
+     does not rebuild it every time. Online is deliberately not remembered: its
+     settings travel in the code, and a host who changes them is changing them
+     for somebody else. */
+  const PW_CPU_DEFAULT = { points: 25, perColour: 3, copies: 5, hand: 6, difficulty: "normal" };
+  function pwCpuSettings() {
+    return pwSettings(Object.assign({}, PW_CPU_DEFAULT, store.pwCpu || {}));
+  }
+
+  function pwCreateNew(mode) {
+    /* mode is null until the player picks one, which is the first thing the
+       screen asks: vs Computer or Online */
+    const cpu = mode === "cpu";
     return {
-      step: "setup",                              // setup | join | preview
-      settings: Object.assign({}, PW_DEFAULT_SETTINGS),
+      step: mode ? "setup" : "pick",              // pick | setup | join | preview
+      mode: mode || null,                         // "cpu" | "online"
+      settings: cpu ? Object.assign({}, pwCpuSettings())
+                    : Object.assign({}, PW_DEFAULT_SETTINGS),
       joinCode: "",
       joinSettings: null,
       err: null,
@@ -4852,13 +4988,54 @@
     const c = pw && pw.online && pw.online.create;
     if (!c || c.step !== "setup") return;
     c.settings[key] = value;
+    /* ---- the one thing an online match cannot carry ----
+       A match code is six characters and four of them are the room: there is
+       room in it for the points and the wilds and nothing else. So an online
+       match's copies and hand follow its points, the way they always have, and
+       changing the points moves them. A computer match keeps whatever was
+       picked, because nothing has to agree with anybody about it. */
+    if (c.mode !== "cpu" && key === "points") {
+      delete c.settings.copies;
+      delete c.settings.hand;
+    }
+    if (c.mode === "cpu") pwCpuRemember(c.settings);
     renderPointaeway();
   }
 
+  function pwCpuRemember(set) {
+    const s = pwSettings(set);
+    store.pwCpu = { points: s.points, perColour: s.perColour,
+                    copies: s.copies, hand: s.hand, difficulty: s.difficulty };
+    save();
+  }
+
+  /* Create, and the two things that can mean. An online match is a code to
+     send; a computer match is the side picker, which is the screen a match
+     against the computer has always started from. */
   function pwCreateGo() {
     const c = pw && pw.online && pw.online.create;
     if (!c) return;
+    if (c.mode === "cpu") {
+      const set = pwSettings(c.settings);
+      pwCpuRemember(set);
+      pwOnlineLeave();
+      pw.online = null;
+      pw.settings = set;
+      pw.specialTypes = null;
+      pw.localNote = false;
+      pw.phase = "setup";
+      renderPointaeway();
+      return;
+    }
     pwOnlineStart(pwMakeCode(c.settings));
+  }
+
+  function pwCreateMode(mode) {
+    const c = pw && pw.online && pw.online.create;
+    if (!c) return;
+    const fresh = pwCreateNew(mode);
+    pw.online.create = fresh;
+    renderPointaeway();
   }
 
   function pwCreateJoinOpen() {
@@ -4938,7 +5115,10 @@
         <button type="button" class="pw-hub-back" data-pw-online-back aria-label="Back to Match Hub">
           <img src="assets/nav-icons/icon-arrow-back@2x.png" alt="">
         </button>
-        <span class="pw-lib-title">${c.step === "setup" ? "Create Match" : "Join a Match"}</span>
+        ${/* the who-picker is a Create Match screen too — it is the first one —
+              so only the code screen is titled as joining */""}
+        <span class="pw-lib-title">${c.step === "join" || c.step === "preview"
+          ? "Join a Match" : "Create Match"}</span>
       </div>`;
 
     if (c.step === "join" || c.step === "preview") {
@@ -4965,44 +5145,94 @@
         </div>`;
     }
 
+    /* ---- the choice, before the settings ----
+       Two buttons and nothing else. The settings behind them are the same
+       screen either way, which is the point of asking here rather than building
+       two of them. */
+    if (c.step === "pick") {
+      return `
+        <div class="pw-on pw-create">${head}
+          <div class="pw-chal-intro">Who are you playing?</div>
+          <div class="pw-cm-pick">
+            <button type="button" class="pw-cm-who" data-pw-create-mode="cpu">
+              <span class="pw-cm-who-t">vs Computer</span>
+              <span class="pw-cm-who-s">Set the rules and the difficulty. Plays right away.</span>
+            </button>
+            <button type="button" class="pw-cm-who" data-pw-create-mode="online">
+              <span class="pw-cm-who-t">Online</span>
+              <span class="pw-cm-who-s">Set the rules, send the code, play a friend.</span>
+            </button>
+          </div>
+          <button type="button" class="pw-hub-link" data-pw-create-joinopen>
+            Have a code? Join a match <span aria-hidden="true">›</span>
+          </button>
+        </div>`;
+    }
+
     const set = pwSettings(c.settings);
+    const cpu = c.mode === "cpu";
+    /* ---- one row per setting ----
+       The screen used to be four big buttons per setting with a line of prose
+       under each, and it overflowed a 390×844 phone by 172 pixels before this
+       build added three more settings to it. A setting is a label and a choice,
+       so that is what each one is now: one row, one segmented control, and the
+       prose that used to be under every option moved into a single summary line
+       at the bottom, where it says the same thing once. */
+    const row = (key, label, opts, cur, attr, locked) => `
+      <div class="pw-cm2-row${locked ? " locked" : ""}">
+        <span class="pw-cm2-k">${esc(label)}</span>
+        <span class="pw-cm2-seg" role="group" aria-label="${esc(label)}">
+          ${opts.map((o) => `<button type="button"
+            class="pw-cm2-opt${o.v === cur ? " on" : ""}"
+            ${locked ? "disabled" : `${attr}="${o.v}"`}
+            aria-pressed="${o.v === cur}">${esc(o.t)}</button>`).join("")}
+        </span>
+      </div>`;
+
+    const specCount = PW_SPEC_COLOURS.reduce((n, g) => n + Math.min(set.perColour, g.cards.length), 0);
+    const summary = [
+      `${set.points} points`,
+      `${set.copies}× each card`,
+      `${set.hand} in hand`,
+      set.perColour ? `${specCount} special${specCount === 1 ? "" : "s"}` : "no specials",
+    ].concat(cpu ? [PWStyles.difficultyOf(set.difficulty).label] : []).join(" · ");
+
     return `
-      <div class="pw-on pw-create">${head}
-        <div class="pw-chal-intro">Set the match up, then send the code to whoever you want to play.</div>
-
-        <div class="pw-cm-group">
-          <div class="pw-cm-cap">Match points</div>
-          <div class="pw-cm-sub">How far the print has to travel to win — and how big the decks and hands are.</div>
-          <div class="pw-cm-opts pts">
-            ${PW_POINTS.map((n) => {
-              const r = PW_POINT_RULES[n];
-              return `<button type="button" class="pw-cm-opt${set.points === n ? " on" : ""}"
-                        data-pw-create-points="${n}" aria-pressed="${set.points === n}">
-                <span class="pw-cm-opt-t">${n}</span>
-                <span class="pw-cm-opt-s">${r.copies}× each card · ${r.hand} in hand</span>
-              </button>`;
-            }).join("")}
-          </div>
+      <div class="pw-on pw-create pw-cm2">${head}
+        <div class="pw-cm2-who">
+          ${cpu ? "vs Computer" : "Online"}
+          <button type="button" class="pw-cm2-swap" data-pw-create-mode="${cpu ? "online" : "cpu"}">
+            ${cpu ? "Play a friend instead" : "Play the computer instead"} <span aria-hidden="true">›</span>
+          </button>
         </div>
 
-        <div class="pw-cm-group">
-          <div class="pw-cm-cap">Specialty cards</div>
-          <div class="pw-cm-sub">The wilds come in colours of three. Pick how many of each colour are in play.</div>
-          <div class="pw-cm-opts spec">
-            ${PW_SPEC_CHOICES.map((x) => `
-              <button type="button" class="pw-cm-opt wide${set.perColour === x.v ? " on" : ""}"
-                      data-pw-create-spec="${x.v}" aria-pressed="${set.perColour === x.v}">
-                <span class="pw-cm-opt-t">${esc(x.t)}</span>
-                <span class="pw-cm-opt-s">${esc(x.s)}</span>
-              </button>`).join("")}
-          </div>
-          ${set.perColour ? `<div class="pw-cm-note">${esc(pwSpecCountNote(set.perColour))}</div>` : ""}
-        </div>
+        ${row("points", "Points to win",
+              PW_POINTS.map((n) => ({ v: n, t: String(n) })),
+              set.points, "data-pw-create-points")}
+        ${row("copies", "Copies of each card",
+              R.COPIES.map((n) => ({ v: n, t: String(n) })),
+              set.copies, "data-pw-create-copies", !cpu)}
+        ${row("hand", "Hand size",
+              R.HANDS.map((n) => ({ v: n, t: String(n) })),
+              set.hand, "data-pw-create-hand", !cpu)}
+        ${row("spec", "Specialty cards",
+              PW_SPEC_CHOICES.map((x) => ({ v: x.v, t: x.v ? String(x.v) : "Off" })),
+              set.perColour, "data-pw-create-spec")}
+        ${cpu ? row("diff", "Difficulty",
+              PWStyles.DIFFICULTIES.map((d) => ({ v: d.id, t: d.label })),
+              set.difficulty || "normal", "data-pw-create-diff") : ""}
 
-        <button type="button" class="pw-over-pill on pw-cm-go" data-pw-create-go><span>Create Match</span></button>
-        <button type="button" class="pw-hub-link" data-pw-create-joinopen>
+        ${cpu
+          ? `<div class="pw-cm2-note">${esc(PWStyles.difficultyOf(set.difficulty).blurb)}</div>`
+          : `<div class="pw-cm2-note">A match code carries the points and the wilds, so
+              copies and hand follow the points for an online match.</div>`}
+        <div class="pw-cm2-sum">${esc(summary)}</div>
+
+        <button type="button" class="pw-over-pill on pw-cm-go" data-pw-create-go>
+          <span>${cpu ? "Start Match" : "Create Match"}</span></button>
+        ${cpu ? "" : `<button type="button" class="pw-hub-link" data-pw-create-joinopen>
           Have a code? Join a match <span aria-hidden="true">›</span>
-        </button>
+        </button>`}
       </div>`;
   }
 
@@ -5845,8 +6075,15 @@
     if (!rows.length) {
       return `<div class="pw-chart-empty">${esc(o.empty || "No rounds to replay.")}</div>`;
     }
-    const span = pwTarget() * 2;                 // the finish line, either side
-    const pct = (v) => ((pwTarget() - v) / span) * 100;   // 0% is the top
+    /* The axis belongs to the match being drawn, not to the one the screen
+       happens to be set up for: a ten-point replay opened after a twenty-five
+       point match has to be drawn on ten, or its candles are squashed into the
+       middle of the box, and a twenty-five point replay opened after a
+       ten-point one would run off the top of it. The live chart passes nothing
+       and gets the match in progress, which is its own. */
+    const target = o.target || pwTarget();
+    const span = target * 2;                     // the finish line, either side
+    const pct = (v) => ((target - v) / span) * 100;       // 0% is the top
     const open = pw.showRound;
 
     const bars = rows.map((r) => {
@@ -5896,7 +6133,7 @@
         <div class="pw-chart-body">
           <div class="pw-chart-axis">
             <div class="pw-chart-ends">
-              <span>+${pwTarget()}</span><span>OPEN</span><span>−${pwTarget()}</span>
+              <span>+${target}</span><span>OPEN</span><span>−${target}</span>
             </div>
             <div class="pw-chart-rowcap">Cards<br>Played</div>
           </div>
@@ -6327,15 +6564,26 @@
      </svg>`;
   const PW_INTRO = "assets/pointaeway/intro/";
   /* read off the match rather than typed in: the deck is 12 candles times
-     however many copies this match deals, the wild pile is however many
-     specials exist, and the finish line is whatever the host picked */
-  const pwFeats = () => [
-    { art: null,       title: "Build Your Deck",
-      sub: `${12 * pwCopies()} Candle Cards · ${PW_SPECIALS.length} Effect Cards` },
-    { art: "ico-wild", title: "Play Wild Cards",     sub: "Turn the tide with strategy" },
-    { art: "ico-25",   title: `First to ${pwTarget()} Wins`, sub: "Every card makes a move" },
-    { art: "ico-learn",title: "Learn While You Play",sub: "Master candles through action" },
-  ];
+     however many copies this match deals, the wild pile is however many this
+     match drew, and the finish line is whatever was picked */
+  /* how many wilds this match actually deals — one to three of each colour, or
+     none at all, rather than the ten the full pile holds */
+  const pwSpecTotal = () => PW_SPEC_COLOURS.reduce(
+    (n, c) => n + Math.min(pwRules().perColour, c.cards.length), 0);
+  const pwFeats = () => {
+    const wilds = pwSpecTotal();
+    return [
+      { art: null,       title: "Build Your Deck",
+        sub: `${12 * pwCopies()} Candle Cards${wilds ? ` · ${wilds} Effect Cards` : ""}` },
+      /* a match dealt no wilds must not be sold one on the way in: the row
+         keeps its place in the grid and says what this match is instead */
+      wilds
+        ? { art: "ico-wild", title: "Play Wild Cards", sub: "Turn the tide with strategy" }
+        : { art: "ico-wild", title: "Candles Only",    sub: "No effects, nothing to hide" },
+      { art: "ico-25",   title: `First to ${pwTarget()} Wins`, sub: "Every card makes a move" },
+      { art: "ico-learn",title: "Learn While You Play",sub: "Master candles through action" },
+    ];
+  };
 
   function pwIntroHTML() {
     return `
@@ -6887,6 +7135,15 @@
       return;
     }
     if (pw.phase === "create") {
+      /* The two screens this build added — who are you playing, and the
+         settings — are fixed-height columns by the same rule the rest of the
+         game follows, which is what lets the Start Match button sit at the
+         foot of the card instead of halfway up it. The code screens are left
+         as ordinary scrollers: a typed code, an error and a preview of the
+         host's settings is more than a view on a short phone, and clipping
+         that would be worse than scrolling it. */
+      const c = pw.online && pw.online.create;
+      if (!c || c.step === "pick" || c.step === "setup") cardScroll.classList.add("pw-fixed");
       const keep = cardScroll.scrollTop;
       cardScroll.innerHTML = pwCreateHTML();
       cardScroll.scrollTop = keep;
@@ -6955,9 +7212,14 @@
        syncChartPanel. So there is nothing for the board to give up, and
        nothing here changes when it opens. */
     cardScroll.innerHTML = `
+      ${/* what this match was set to, where a player can see it without going
+            looking: the computer's difficulty is the half of it nothing else on
+            the board says. */""}
+      <div class="pw-set-line board">${esc(pwSetLine({ opp: pw.online ? "friend" : "computer",
+          set: pwRules() }))}</div>
       <div class="pw-counts">
           <span class="pw-count"><b>${ownCount}</b><i>Deck</i></span>
-          <span class="pw-count wild"><b>${pw.special.length}</b><i>Wild</i></span>
+          ${pwHasWilds() ? `<span class="pw-count wild"><b>${pw.special.length}</b><i>Wild</i></span>` : ""}
           ${/* their hand, as a number and nothing else. It used to be a stack
                 of card backs in a box of its own, which is a lot of screen to
                 spend saying "six" */""}
@@ -6983,11 +7245,12 @@
             five things belongs in the hand's place right now. */""}
       <div class="pw-handhead">
         <span class="pw-hand-cap">Your Hand <b>(${pw.playerHand.length})</b></span>
+        ${pwHasWilds() ? `
         <button type="button" class="pw-specials-btn${pw.showSpecials ? " on" : ""}"
                 data-pw-specials aria-expanded="${pw.showSpecials}" aria-controls="pwSheet">
           <span class="pw-specials-ico" aria-hidden="true"></span>
           <span>View Specials</span>
-        </button>
+        </button>` : ""}
       </div>
 
       ${pw.showSpecials ? pwSpecialsSheetHTML() : pw.showSeen ? `
@@ -7017,8 +7280,13 @@
         <div class="pw-choice-btns">
           <button class="pw-choice-btn ${pw.playerSide}" data-pw-draw="own"
             ${ownCount === 0 ? "disabled" : ""}>Your deck (${ownCount})</button>
-          <button class="pw-choice-btn wild" data-pw-draw="special"
-            ${pw.special.length === 0 ? "disabled" : ""}>Wild pile (${pw.special.length})</button>
+          ${/* an empty wild pile is not a pile to choose between: with specials
+                off there has never been one, and late in a normal match there
+                is no longer one. Either way the only live choice is the deck,
+                and offering a second button that does nothing is worse than
+                offering one. */""}
+          ${pw.special.length ? `<button class="pw-choice-btn wild" data-pw-draw="special"
+            >Wild pile (${pw.special.length})</button>` : ""}
         </div>
       </div>` : `
       <div class="pw-hand${peeking ? " peeking" : ""}">
@@ -14360,7 +14628,7 @@
   /* ---------------- delegated clicks (rendered content + overlays) ------ */
 
   document.addEventListener("click", (e) => {
-    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-aw-pick],[data-aw-menu],[data-aw-tf],[data-aw-jump],[data-aw-history],[data-aw-admin],[data-aw-back],[data-aw-retry],[data-aw-project],[data-aw-csv],[data-aw-admin-go],[data-aw-admin-no],[data-aw-reset],[data-aw-reset-ok],[data-aw-reset-no],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-contents],[data-contents-back],[data-open-connections],[data-conn-back],[data-conn-retry],[data-conn-list],[data-conn-find],[data-conn-add],[data-conn-cancel],[data-conn-approve],[data-conn-deny],[data-conn-msg],[data-conn-thread-close],[data-conn-send],[data-chal-bar-hide],[data-online-reconnect],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-library],[data-pw-lib-back],[data-pw-lib-set],[data-pw-lib-card],[data-pw-lib-close],[data-pw-lib-step],[data-pw-howto],[data-pw-ht-close],[data-pw-ht-step],[data-pw-ht-go],[data-pw-setup-back],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-pw-hub-start],[data-pw-hub-create],[data-pw-hub-local],[data-pw-create-points],[data-pw-create-spec],[data-pw-create-go],[data-pw-create-joinopen],[data-pw-create-check],[data-pw-create-join],[data-pw-create-back],[data-pw-code-copy],[data-pw-code-share],[data-pw-perf],[data-pw-perf-menu],[data-pw-perf-side],[data-pw-perf-opp],[data-pw-hub-all],[data-pw-hub-back],[data-pw-hub-open],[data-pw-saved-back],[data-pw-hub-history],[data-pw-online-cancel],[data-pw-online-back],[data-pw-online-retry],[data-pw-online-signin],[data-pw-online-card],[data-pw-online-chart],[data-pw-chart],[data-pw-online-seen],[data-pw-online-specials],[data-pw-online-forfeit],[data-pw-online-forfeit-yes],[data-pw-online-forfeit-no],[data-pw-online-again],[data-pw-online-rematch],[data-pw-oh-open],[data-pr-online-save],[data-pr-online-level],[data-pr-online-signin],[data-pr-online-retry],[data-jnote-new],[data-jnote-cancel],[data-jnote-save],[data-jnote-img],[data-jnote-img-clear],[data-jnote-edit],[data-jnote-del],[data-jnote-del-yes],[data-jnote-del-no],[data-jnote-open],[data-jnote-retry],[data-jnote-signin],[data-pw-chal-cancel],[data-pw-oh-rematch],[data-pw-inv-accept],[data-pw-inv-decline],[data-pr-code-copy],[data-pr-code-share],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
+    const t = e.target.closest("[data-tab],[data-panel-close],[data-tp-tab],[data-tp-tf],[data-tp-sym],[data-tp-add],[data-tp-del],[data-tp-q],[data-dc-tool],[data-dc-tf],[data-dc-del],[data-dc-sym],[data-dc-add],[data-dc-del-sym],[data-tp-mode],[data-dc-mode],[data-aw-pick],[data-aw-menu],[data-aw-tf],[data-aw-jump],[data-aw-history],[data-aw-admin],[data-aw-back],[data-aw-retry],[data-aw-project],[data-aw-csv],[data-aw-admin-go],[data-aw-admin-no],[data-aw-reset],[data-aw-reset-ok],[data-aw-reset-no],[data-tp-patsave],[data-dc-patsave],[data-tp-pat],[data-dc-pat],[data-pat-open],[data-pat-del],[data-pat-close],[data-tp-menu],[data-tp-tool],[data-tp-draw-del],[data-tp-prac],[data-tp-prac-end],[data-tp-prac-again],[data-tp-prac-phase],[data-tp-prac-dir],[data-tp-prac-submit],[data-tp-prac-next],[data-tp-day],[data-tp-plan],[data-ae-go],[data-mod],[data-sec],[data-sub],[data-screen],[data-close],[data-menu-sec],[data-set-sound],[data-set-size],[data-save-note],[data-notes-list],[data-logout],[data-reset-progress],[data-vcat],[data-vid],[data-vback],[data-vfull],[data-grid],[data-grid-back],[data-grid-play],[data-ci],[data-ci-submit],[data-ci-before],[data-ci-exit],[data-ci-review],[data-bt],[data-bt2],[data-bt2-continue],[data-bt2-change],[data-bt-submit],[data-bt-stage2],[data-bt-back],[data-bt-exit],[data-bt-open],[data-at],[data-at-submit],[data-at-open],[data-at-exit],[data-at-add],[data-at-cancel],[data-at-detail],[data-bt-detail],[data-ds-open],[data-ds-month],[data-ds-day],[data-ds-back],[data-ds-detail],[data-jtab],[data-jmonth],[data-jadd],[data-jimport],[data-jmanual],[data-jsave],[data-jacct],[data-jaddacct],[data-jsaveacct],[data-jcash],[data-jsavecash],[data-pfsave],[data-pfpill],[data-pfadd],[data-pfedit],[data-pfdel],[data-pfdelok],[data-pfcancel],[data-jsection],[data-jviewall],[data-jday],[data-jdayback],[data-jdelmanual],[data-jdelbatch],[data-jreplace],[data-jdelok],[data-jdelcancel],[data-photo-pick],[data-photo-clear],[data-pr-edit],[data-pr-save],[data-pr-cancel],[data-pr-market],[data-contents],[data-contents-back],[data-open-connections],[data-conn-back],[data-conn-retry],[data-conn-list],[data-conn-find],[data-conn-add],[data-conn-cancel],[data-conn-approve],[data-conn-deny],[data-conn-msg],[data-conn-thread-close],[data-conn-send],[data-chal-bar-hide],[data-online-reconnect],[data-pk-replay],[data-pk-build],[data-game],[data-pa-count],[data-pa-mode],[data-pa-back],[data-pa-diff],[data-pa-copy],[data-pa-dice],[data-pa-start],[data-pa-howto],[data-pa-history],[data-pa-hopen],[data-pa-hround],[data-pa-clear],[data-pa-clearok],[data-pa-clearcancel],[data-pa-reveal],[data-pa-tap],[data-pa-next],[data-pa-round],[data-pa-save],[data-pa-new],[data-pw-side],[data-pw-random],[data-pw-play],[data-pw-draw],[data-pw-library],[data-pw-lib-back],[data-pw-lib-set],[data-pw-lib-card],[data-pw-lib-close],[data-pw-lib-step],[data-pw-howto],[data-pw-ht-close],[data-pw-ht-step],[data-pw-ht-go],[data-pw-setup-back],[data-pw-restart],[data-pw-again],[data-pw-specials],[data-pw-seen],[data-pw-answer],[data-pw-tp],[data-pw-match],[data-pw-home],[data-pw-round],[data-pw-round-close],[data-pw-hub-start],[data-pw-hub-create],[data-pw-hub-local],[data-pw-create-mode],[data-pw-create-points],[data-pw-create-copies],[data-pw-create-hand],[data-pw-create-diff],[data-pw-create-spec],[data-pw-create-go],[data-pw-create-joinopen],[data-pw-create-check],[data-pw-create-join],[data-pw-create-back],[data-pw-code-copy],[data-pw-code-share],[data-pw-perf],[data-pw-perf-menu],[data-pw-perf-side],[data-pw-perf-opp],[data-pw-hub-all],[data-pw-hub-back],[data-pw-hub-open],[data-pw-saved-back],[data-pw-hub-history],[data-pw-online-cancel],[data-pw-online-back],[data-pw-online-retry],[data-pw-online-signin],[data-pw-online-card],[data-pw-online-chart],[data-pw-chart],[data-pw-online-seen],[data-pw-online-specials],[data-pw-online-forfeit],[data-pw-online-forfeit-yes],[data-pw-online-forfeit-no],[data-pw-online-again],[data-pw-online-rematch],[data-pw-oh-open],[data-pr-online-save],[data-pr-online-level],[data-pr-online-signin],[data-pr-online-retry],[data-jnote-new],[data-jnote-cancel],[data-jnote-save],[data-jnote-img],[data-jnote-img-clear],[data-jnote-edit],[data-jnote-del],[data-jnote-del-yes],[data-jnote-del-no],[data-jnote-open],[data-jnote-retry],[data-jnote-signin],[data-pw-chal-cancel],[data-pw-oh-rematch],[data-pw-inv-accept],[data-pw-inv-decline],[data-pr-code-copy],[data-pr-code-share],[data-crop-save],[data-jpick],[data-jeditlist],[data-jdellist],[data-jeditacct],[data-jdelacct],[data-jdelconfirm],[data-jsaveedit],[data-jpicktoggle],[data-jpickclose],[data-jlinkall],[data-bmins],[data-bmcool],[data-bmcd],[data-bmdiff],[data-bmrisk],[data-bmtier],[data-bmstake],[data-bmback],[data-bmstart],[data-mkpick],[data-mkrisk],[data-mkrr],[data-mkexpand],[data-mkreplay],[data-mkrematch],[data-mkdone],[data-rvtf]");
     if (!t) return;
 
     if (t.dataset.jtab) {
@@ -14735,13 +15003,20 @@
     }
     /* mid-flicker the randomiser owns the choice; a tap on a card it happens
        to be lighting would otherwise start a match on it */
-    else if (t.hasAttribute("data-pw-side")) { if (!pwRolling) pwStart(t.getAttribute("data-pw-side")); }
+    else if (t.hasAttribute("data-pw-side")) {
+      /* whatever Create Match left on pw.settings, or null for the quick Start
+         Match, which is the default game and always has been */
+      if (!pwRolling) pwStart(t.getAttribute("data-pw-side"), pw.settings);
+    }
     else if (t.hasAttribute("data-pw-random")) pwRollStart();
     else if (t.hasAttribute("data-pw-play")) pwPlay(t.getAttribute("data-pw-play"));
     else if (t.hasAttribute("data-pw-answer")) pwDisciplineAnswer(t.getAttribute("data-pw-answer"));
     else if (t.hasAttribute("data-pw-tp")) pwTakeProfitChoose(t.getAttribute("data-pw-tp") === "double");
     else if (t.hasAttribute("data-pw-draw")) pwChooseDraw(t.getAttribute("data-pw-draw"));
-    else if (t.hasAttribute("data-pw-specials")) { pw.showSpecials = !pw.showSpecials; renderPointaeway(); }
+    else if (t.hasAttribute("data-pw-specials")) {
+      pw.showSpecials = pwHasWilds() && !pw.showSpecials;
+      renderPointaeway();
+    }
     else if (t.hasAttribute("data-pw-seen")) { pw.showSeen = !pw.showSeen; renderPointaeway(); }
     else if (t.hasAttribute("data-pw-chart")) { pw.showChart = !pw.showChart; renderPointaeway(); }
     /* ---- the performance chart's toggle ----
@@ -14807,8 +15082,14 @@
     else if (t.hasAttribute("data-pw-setup-back")) { pw.phase = "hub"; renderPointaeway(); }
     else if (t.hasAttribute("data-pw-restart") || t.hasAttribute("data-pw-again")) {
       /* straight back to the side picker: these two mean play again, not go
-         and look at the record */
-      pwAbort(); pw = pwNewGame(); pw.phase = "setup"; renderPointaeway();
+         and look at the record — and again means the match that was just
+         played, so a ten-point no-specials game is dealt again as one rather
+         than quietly becoming the default twenty-five. The wilds themselves
+         are dropped: a new deal draws its own. */
+      const same = (pw && pw.settings) || null;
+      pwAbort(); pw = pwNewGame();
+      pw.settings = same; pw.specialTypes = null;
+      pw.phase = "setup"; renderPointaeway();
     }
     else if (t.hasAttribute("data-pw-hub-start")) {
       /* back to the default shape: a Create Match at 10 points leaves its
@@ -14821,8 +15102,20 @@
     /* the whole of Play Local, for now: the brief asks for the button and the
        one line under it and nothing else until the build-out */
     else if (t.hasAttribute("data-pw-hub-local")) { pw.localNote = true; renderPointaeway(); }
+    else if (t.hasAttribute("data-pw-create-mode")) {
+      pwCreateMode(t.getAttribute("data-pw-create-mode"));
+    }
     else if (t.hasAttribute("data-pw-create-points")) {
       pwCreateSet("points", Number(t.getAttribute("data-pw-create-points")));
+    }
+    else if (t.hasAttribute("data-pw-create-copies")) {
+      pwCreateSet("copies", Number(t.getAttribute("data-pw-create-copies")));
+    }
+    else if (t.hasAttribute("data-pw-create-hand")) {
+      pwCreateSet("hand", Number(t.getAttribute("data-pw-create-hand")));
+    }
+    else if (t.hasAttribute("data-pw-create-diff")) {
+      pwCreateSet("difficulty", t.getAttribute("data-pw-create-diff"));
     }
     else if (t.hasAttribute("data-pw-create-spec")) {
       pwCreateSet("perColour", Number(t.getAttribute("data-pw-create-spec")));
